@@ -59,6 +59,8 @@ fn the_examples_are_read_and_every_cut_of_them_is_read_without_a_panic() {
     }
 }
 
+const PIECES: &[u8] = b"0123456789.-eE\n \t<>/=\"ZMLCQ";
+
 #[test]
 fn copies_with_bytes_changed_inserted_or_cut_are_read_without_a_panic() {
     let mut rng = Rng(0xA076_1D64_78BD_642F);
