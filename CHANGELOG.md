@@ -4,6 +4,7 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+- **The Rust toolchain is pinned:** `rust-toolchain.toml` fixes the version of Rust (the same one in every repository of the suite) with `rustfmt` and `clippy`, the workflows install that version and not `stable`, so a new release of Rust cannot turn the CI red by itself.
 - **Fuzz tests with a fixed seed:** every cut of the example DXF and SVG drawings, 600 damaged copies of them and bytes that are not a drawing are read without a panic and without a shape that holds a number that is not finite.
 
 - **The G-code of the calibration grid and of an engraving is walked in the strict mode of the debugger:** `tests/generated_gcode.rs` reads it back with the reader of the suite and fails on a warning of the reader, a cut with the laser off, a cutting move with no feed or a program that does not end.
