@@ -4,6 +4,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+- **Fuzz tests with a fixed seed:** every cut of the example DXF and SVG drawings, 600 damaged copies of them and bytes that are not a drawing are read without a panic and without a shape that holds a number that is not finite.
+
 - **The G-code of the calibration grid and of an engraving is walked in the strict mode of the debugger:** `tests/generated_gcode.rs` reads it back with the reader of the suite and fails on a warning of the reader, a cut with the laser off, a cutting move with no feed or a program that does not end.
 
 - **The number and the header of the G-code are the ones of the suite:** `gcode_out.rs` re-exports `number`, `sha256_hex` and `header` from `eh3d-parser-gcode` (EH3D-CORE-LIBS) instead of keeping its own copies, which are tested there; the CI checks out that repository at its tag next to this one.
