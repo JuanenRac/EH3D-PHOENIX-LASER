@@ -4,6 +4,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+- **The G-code of the calibration grid and of an engraving is walked in the strict mode of the debugger:** `tests/generated_gcode.rs` reads it back with the reader of the suite and fails on a warning of the reader, a cut with the laser off, a cutting move with no feed or a program that does not end.
+
 - **The number and the header of the G-code are the ones of the suite:** `gcode_out.rs` re-exports `number`, `sha256_hex` and `header` from `eh3d-parser-gcode` (EH3D-CORE-LIBS) instead of keeping its own copies, which are tested there; the CI checks out that repository at its tag next to this one.
 
 - **The energy of a pass for each layer:** the new key `laser_watts` of `[machine]` (the optical power of the laser at full power, 0 to 1000 W; 0 by default, which means it is not known) lets `phoenix-laser layers` end the line of each layer with the energy one pass puts into the material: the power of the layer over its speed in joules for each millimetre of a cut (10 W at 50 % and 600 mm/min is 0.500 J/mm), and spread over the distance between the lines of a hatch in joules for each square millimetre of an engraving (5.000 J/mm2 with lines 0.1 mm apart). It is plain arithmetic in `energy.rs`, with its tests; it says nothing of how a material answers, and with `laser_watts = 0` the lines are the same as before. The key is documented in `docs/vector-settings.md`.
