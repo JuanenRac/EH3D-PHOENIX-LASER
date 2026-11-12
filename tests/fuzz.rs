@@ -71,7 +71,7 @@ fn copies_with_bytes_changed_inserted_or_cut_are_read_without_a_panic() {
             for _ in 0..1 + round % 5 {
                 let at = rng.below(copy.len());
                 match rng.below(4) {
-                    0 => copy[at] = b"0123456789.-eE\n \t<>/=\"ZMLCQ"[rng.below(28)],
+                    0 => copy[at] = PIECES[rng.below(PIECES.len())],
                     1 => copy.insert(at, rng.next() as u8),
                     2 => {
                         copy.remove(at);
