@@ -4,6 +4,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.0.5] - Energy by layer, picture mode and strict G-code header
+
 - **The Rust toolchain is pinned:** `rust-toolchain.toml` fixes the version of Rust (the same one in every repository of the suite) with `rustfmt` and `clippy`, the workflows install that version and not `stable`, so a new release of Rust cannot turn the CI red by itself.
 - **Fuzz tests with a fixed seed:** every cut of the example DXF and SVG drawings, 600 damaged copies of them and bytes that are not a drawing are read without a panic and without a shape that holds a number that is not finite.
 
