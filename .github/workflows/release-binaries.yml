@@ -99,14 +99,14 @@ jobs:
         with:
           persist-credentials: false
           repository: JuanenRac/EH3D-COMMON
-          ref: v0.2.0
+          ref: v0.2.1
           path: EH3D-COMMON
       - name: Check out the sibling EH3D-CORE-LIBS (a path dependency)
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           persist-credentials: false
           repository: JuanenRac/EH3D-CORE-LIBS
-          ref: v0.0.8
+          ref: v0.0.9
           path: EH3D-CORE-LIBS
       - name: Linux libraries of the window
         if: runner.os == 'Linux'

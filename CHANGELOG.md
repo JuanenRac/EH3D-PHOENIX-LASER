@@ -6,6 +6,8 @@ All notable changes to this project are documented here.
 
 - **The CI is split in two workflows:** the validation of the repository (manifest, documentation, pictures, tools) stays in `ci.yml` and the Rust jobs move to `rust.yml`, which does not run for a change that only touches Markdown files or pictures, so a change of the documentation no longer builds the code on two systems, and they keep a cache of the build. The names of the jobs are the same.
 
+- **The pins follow the new releases:** the CI and the release build take `EH3D-COMMON` at `v0.2.1` and `EH3D-CORE-LIBS` at `v0.0.9`, and the manifest asks for `min_common` 0.2.1.
+
 ## [0.0.5] - Energy by layer, picture mode and strict G-code header
 
 - **The Rust toolchain is pinned:** `rust-toolchain.toml` fixes the version of Rust (the same one in every repository of the suite) with `rustfmt` and `clippy`, the workflows install that version and not `stable`, so a new release of Rust cannot turn the CI red by itself.
