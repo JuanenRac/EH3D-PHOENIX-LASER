@@ -4,6 +4,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+- **No rapid move of the image or of the test grid travels with a power set:** the image writer and the grid write `S0` before a `G0` when the line before burned and nothing had put the power to zero (an image without overscan, the squares of the grid). Tested by reading the power in force at every rapid move.
+
 ## [0.0.6] - Shared tools in step and pins on the newest releases
 
 - **The shared validation tools are updated:** the validator also runs the workflow and lessons checks of the suite with their latest rules, including a check to run before every push.

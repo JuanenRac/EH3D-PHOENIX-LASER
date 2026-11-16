@@ -65,11 +65,16 @@ pub fn grid(powers_percent: &[f64], feeds_mm_min: &[f64], g: &Grid) -> Result<St
     }
     let mut out = String::from("G21\nG90\nM4 S0\n");
     let lines = (g.square_mm / g.line_spacing_mm).floor() as usize + 1;
+    let mut last_s = 0u32;
     for (row, feed) in feeds_mm_min.iter().enumerate() {
         for (col, power) in powers_percent.iter().enumerate() {
             let x0 = col as f64 * (g.square_mm + g.gap_mm);
             let y0 = row as f64 * (g.square_mm + g.gap_mm);
             let s = (f64::from(g.s_max) * power / 100.0).round() as u32;
+            // no rapid move with the power of the last square still set
+            if last_s != 0 {
+                out.push_str("S0\n");
+            }
             out.push_str(&format!(
                 "(power {}% feed {})\nG0 X{} Y{}\n",
                 n(*power)?,
@@ -87,6 +92,7 @@ pub fn grid(powers_percent: &[f64], feeds_mm_min: &[f64], g: &Grid) -> Result<St
                 out.push_str(&format!("G1 X{} Y{} S0 F{}\n", n(a)?, n(y)?, n(*feed)?));
                 out.push_str(&format!("G1 X{} S{s} F{}\n", n(b)?, n(*feed)?));
             }
+            last_s = s;
         }
     }
     out.push_str("M5\nM2\n");
