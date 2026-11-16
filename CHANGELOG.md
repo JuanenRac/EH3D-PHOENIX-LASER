@@ -4,6 +4,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+- **`engrave` and `calibrate` write their file the way `cut` does:** through a temporary file that replaces the output only when it is complete, so a full disk leaves no half program under the final name; `engrave` refuses an output that is the image it is made from; `--smax` of both takes a whole number only (1000.7 is an error instead of 1000).
+- **A name in a comment of the G-code loses the characters GRBL obeys at once:** `!`, `~` and `?` become `_` in the layer names written to comments, as the common header already does.
 - **No rapid move of the image or of the test grid travels with a power set:** the image writer and the grid write `S0` before a `G0` when the line before burned and nothing had put the power to zero (an image without overscan, the squares of the grid). Tested by reading the power in force at every rapid move.
 
 ## [0.0.6] - Shared tools in step and pins on the newest releases

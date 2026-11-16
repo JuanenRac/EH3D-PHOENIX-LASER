@@ -73,15 +73,16 @@ fn note(notes: &mut Vec<String>, text: String) {
     }
 }
 
-/// A name that is safe inside a comment of G-code: no line breaks or other control characters, nothing that is not plain ASCII, and not too long.
+/// A name that is safe inside a comment of G-code: no line breaks or other control characters, nothing that is not plain ASCII, none of the characters that GRBL obeys at once even
+/// inside a comment (`!`, `~`, `?`), and not too long.
 pub fn comment_text(text: &str) -> String {
     text.chars()
         .take(60)
         .map(|c| {
-            if c.is_ascii() && !c.is_ascii_control() {
+            if c.is_ascii() && !c.is_ascii_control() && !matches!(c, '!' | '~' | '?') {
                 c
             } else {
-                '?'
+                '_'
             }
         })
         .collect()
@@ -1314,8 +1315,9 @@ mod tests {
         for l in p.gcode.lines() {
             assert!(!l.starts_with("M3"), "{l}");
         }
-        assert!(p.gcode.contains("; layer a?m3 s1000??(x);?"), "{}", p.gcode);
-        assert_eq!(comment_text("é\n"), "??");
+        assert!(p.gcode.contains("; layer a_m3 s1000__(x);_"), "{}", p.gcode);
+        assert_eq!(comment_text("é\n"), "__");
+        assert_eq!(comment_text("a!b~c?d"), "a_b_c_d");
         assert_eq!(comment_text(&"x".repeat(100)).len(), 60);
     }
 
