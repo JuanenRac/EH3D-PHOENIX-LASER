@@ -93,6 +93,7 @@ pub fn engrave(dots: &Dots, p: &Params) -> Result<Engraving, String> {
     let mut g = format!("G21\nG90\nM4 S0\nF{}\n", n(p.feed_mm_min)?);
     let (mut rows, mut runs, mut burn_mm, mut travel_mm) = (0usize, 0usize, 0.0f64, 0.0f64);
     let mut head_x = p.origin.0;
+    let mut burning = false;
     for y in 0..dots.h {
         // runs of burning dots in the order of the x axis
         let mut found: Vec<(usize, usize)> = Vec::new();
@@ -124,6 +125,11 @@ pub fn engrave(dots: &Dots, p: &Params) -> Result<Engraving, String> {
         let first = ordered[0].0;
         let approach = first - dir * p.overscan_mm;
         travel_mm += (approach - head_x).abs();
+        // the power is put to zero before the rapid move, so that no G0 travels with a power still set
+        if burning {
+            g.push_str("S0\n");
+            burning = false;
+        }
         g.push_str(&format!("G0 X{} Y{}\n", n(approach)?, n(ypos)?));
         if p.overscan_mm > 0.0 {
             g.push_str(&format!("G1 X{} S0\n", n(first)?));
@@ -136,6 +142,7 @@ pub fn engrave(dots: &Dots, p: &Params) -> Result<Engraving, String> {
                 travel_mm += (from - here).abs();
             }
             g.push_str(&format!("G1 X{} S{s}\n", n(to)?));
+            burning = s != 0;
             burn_mm += (to - from).abs();
             runs += 1;
             here = to;
@@ -143,6 +150,7 @@ pub fn engrave(dots: &Dots, p: &Params) -> Result<Engraving, String> {
         let end = here + dir * p.overscan_mm;
         if p.overscan_mm > 0.0 {
             g.push_str(&format!("G1 X{} S0\n", n(end)?));
+            burning = false;
             travel_mm += p.overscan_mm;
         }
         head_x = end;
