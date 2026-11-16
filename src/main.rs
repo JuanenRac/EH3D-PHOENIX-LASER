@@ -295,7 +295,7 @@ fn run(mut args: Vec<String>) -> Result<(), String> {
                 p.power_percent = num(&v, "--power")?;
             }
             if let Some(v) = flag(&mut args, "--smax")? {
-                p.s_max = num(&v, "--smax")? as u32;
+                p.s_max = whole(&v, "--smax")?;
             }
             if let Some(v) = flag(&mut args, "--origin")? {
                 let o = list(&v, "--origin")?;
@@ -338,6 +338,12 @@ fn run(mut args: Vec<String>) -> Result<(), String> {
                 });
             }
             finish(&args, 2)?;
+            if !dry_run && same_file(Path::new(&args[0]), Path::new(&args[1])) {
+                return Err(format!(
+                    "{}: the output would be written over the image it is made from",
+                    args[1]
+                ));
+            }
             let bytes = fs::read(&args[0]).map_err(|e| format!("{}: {e}", args[0]))?;
             let img = from_bytes(&bytes)?;
             if !(width.is_finite() && width > 0.0 && width <= 2000.0) {
@@ -363,8 +369,7 @@ fn run(mut args: Vec<String>) -> Result<(), String> {
                     source: Some((&name, sha256_hex(&bytes))),
                     tools: &tools,
                 });
-                fs::write(&args[1], format!("{head}{}", e.gcode))
-                    .map_err(|er| format!("{}: {er}", args[1]))?;
+                write_atomic(Path::new(&args[1]), &format!("{head}{}", e.gcode))?;
             }
             println!("{} x {} dots ({:.1} x {:.1} mm), {} lines, {} runs, {:.0} mm burned, about {:.0} s", dots.w, dots.h, dots.w as f64 * p.pixel_mm, dots.h as f64 * p.pixel_mm, e.rows, e.runs, e.burn_mm, e.seconds);
             Ok(())
@@ -380,7 +385,7 @@ fn run(mut args: Vec<String>) -> Result<(), String> {
             )?;
             let mut g = Grid::default();
             if let Some(v) = flag(&mut args, "--smax")? {
-                g.s_max = num(&v, "--smax")? as u32;
+                g.s_max = whole(&v, "--smax")?;
             }
             finish(&args, 1)?;
             let out = args.first().ok_or("calibrate needs an output file")?;
@@ -390,8 +395,10 @@ fn run(mut args: Vec<String>) -> Result<(), String> {
                 source: None,
                 tools: &format!("laser, S 0-{}, grid of power against feed", g.s_max),
             });
-            fs::write(out, format!("{head}{}", grid(&powers, &feeds, &g)?))
-                .map_err(|e| format!("{out}: {e}"))?;
+            write_atomic(
+                Path::new(out),
+                &format!("{head}{}", grid(&powers, &feeds, &g)?),
+            )?;
             println!("{} squares written to {out}", powers.len() * feeds.len());
             Ok(())
         }
