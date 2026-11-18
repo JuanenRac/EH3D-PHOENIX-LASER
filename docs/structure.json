@@ -43,14 +43,14 @@
         {
           "name": "main.rs",
           "desc": {
-            "en": "the command line: engrave, calibrate, info, cut, vector, trace and layers",
-            "es": "la línea de comandos: engrave, calibrate, info, cut, vector, trace y layers",
-            "de": "die Befehlszeile: engrave, calibrate, info, cut, vector, trace und layers",
-            "fr": "la ligne de commande : engrave, calibrate, info, cut, vector, trace et layers",
-            "it": "la riga di comando: engrave, calibrate, info, cut, vector, trace e layers",
-            "ja": "コマンドライン：engrave、calibrate、info、cut、vector、trace、layers",
-            "zh": "命令行：engrave、calibrate、info、cut、vector、trace 和 layers",
-            "pt": "a linha de comandos: engrave, calibrate, info, cut, vector, trace e layers"
+            "en": "the command line: engrave, calibrate, info, cut, vector, trace, verify and layers",
+            "es": "la línea de comandos: engrave, calibrate, info, cut, vector, trace, verify y layers",
+            "de": "die Befehlszeile: engrave, calibrate, info, cut, vector, trace, verify und layers",
+            "fr": "la ligne de commande : engrave, calibrate, info, cut, vector, trace, verify et layers",
+            "it": "la riga di comando: engrave, calibrate, info, cut, vector, trace, verify e layers",
+            "ja": "コマンドライン：engrave、calibrate、info、cut、vector、trace、verify、layers",
+            "zh": "命令行：engrave、calibrate、info、cut、vector、trace、verify 和 layers",
+            "pt": "a linha de comandos: engrave, calibrate, info, cut, vector, trace, verify e layers"
           }
         },
         {
@@ -207,6 +207,19 @@
             "ja": "読み込んだ図面：mm の図形、レイヤー、上限、基本の幾何",
             "zh": "读入的图纸：毫米图形、图层、限制和基础几何",
             "pt": "um desenho lido: formas em mm, camadas, limites e a geometria básica"
+          }
+        },
+        {
+          "name": "verify.rs",
+          "desc": {
+            "en": "the check of a program: its SHA-256, what it does and a verdict against the limits of the machine",
+            "es": "la comprobación de un programa: su SHA-256, lo que hace y un veredicto frente a los límites de la máquina",
+            "de": "die Prüfung eines Programms: sein SHA-256, was es tut und ein Urteil gegen die Grenzen der Maschine",
+            "fr": "la vérification d'un programme : son SHA-256, ce qu'il fait et un verdict face aux limites de la machine",
+            "it": "il controllo di un programma: il suo SHA-256, ciò che fa e un verdetto rispetto ai limiti della macchina",
+            "ja": "プログラムの検査：SHA-256、内容、機械の上限に対する判定",
+            "zh": "程序检查：其 SHA-256、动作以及对照机器上限的判定",
+            "pt": "a verificação de um programa: o seu SHA-256, o que faz e um veredicto face aos limites da máquina"
           }
         },
         {

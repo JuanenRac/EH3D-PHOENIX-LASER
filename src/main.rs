@@ -22,6 +22,7 @@ use eh3d_phoenix_laser::tone::Tone;
 use eh3d_phoenix_laser::trace;
 use eh3d_phoenix_laser::vconfig::{self, KerfSide, LayerMode, LayerParams, Settings};
 use eh3d_phoenix_laser::vector::Drawing;
+use eh3d_phoenix_laser::verify;
 use eh3d_phoenix_laser::window::{same_file, write_atomic};
 use std::env;
 use std::fs;
@@ -49,6 +50,7 @@ const HELP: &str = "phoenix-laser: laser engraving from an image
   phoenix-laser frame OUT.nc --size W,H | --gcode PROGRAM.nc [--origin X,Y] [--margin MM] [--feed 3000] [--laps 1] [--bed X,Y] [--smax N]
                 [--pilot P --confirm-laser-on] [--max-power P] [--max-speed MM/MIN] [--config FILE] [--profile NAME]
   phoenix-laser preview PROGRAM.nc [OUT.svg] [--accel 1000] [--rapid 6000] [--smax N] [--bed X,Y] [--width-px 900] [--config FILE] [--profile NAME]
+  phoenix-laser verify PROGRAM.nc [--config FILE] [--profile NAME] [--smax N] [--max-power P] [--max-speed MM/MIN] [--bed X,Y] [--accel 1000] [--json]
   phoenix-laser [gui] [FILE]                     the window (a build with --features gui): with no arguments, with a file or with gui it opens; the commands above never open it
   phoenix-laser gui [FILE] --shot OUT.png [--size WxH] [--theme forge|dark|light] [--wait N] [--lang CODE] [--replace]   a picture of the window (a build with --features gui)
 
@@ -63,6 +65,7 @@ materials FILE lists the materials of a library: a plain text file with a [mater
 focus writes a focus test: short lines side by side, each burnt with the head at another height (Z); the sharpest and thinnest line shows where the beam is in focus. --z-step has no default because which way is down depends on the machine: check it before running the program, which moves Z. The usual values live in the [focus] section of --config.
 frame writes a program that traces the rectangle of the work with the laser OFF, to see where it will land: --size W,H from the corner --origin, or the box of what burns in --gcode PROGRAM.nc (its real place). --margin widens it. A --pilot power (a percent, at most max_pilot_percent of [frame], 5 unless the file says another, and at most the limit of power) turns the laser on weakly and only with --confirm-laser-on; the [frame] section of --config holds the usual values.
 preview reads a G-code program (this program's or another's) and says what it would do: moves, burnt and travelled length, the box, the powers, a time that counts the corners (--accel in mm/s2) and what looks dangerous (the laser on during a rapid move, a burning move with no feed, S above --smax, work outside --bed, no end); with OUT.svg it also draws the path. It only reads text.
+verify reads a G-code program as text (it never runs it) and says its SHA-256, what it does and whether it passes: under the limit of power and of speed, inside the bed, with the laser off during every rapid move and a feed on every burning move; --json gives the report for another program to keep, and the exit code is 1 when it fails.
 --max-power is the limit of power, a percent of full power (100 when nothing says another): a program whose power is more than the limit is refused, never lowered. engrave and calibrate also read the limit and --smax from the [machine] section of the file of --config, and engrave the tone curve from its [tone] section (a material and the tone options win over it). --max-speed is the limit of speed (mm/min, 30000 when nothing says another) and works the same way: a feed over it is refused, never lowered.
 A [profile NAME] section of the file of --config describes a machine and laser (its travel, its limit of power and of speed, its S and its watts); --profile NAME (or profile = NAME in [machine]) makes it the machine, over [machine] and under the options of the command line.";
 
@@ -1008,6 +1011,66 @@ fn run(mut args: Vec<String>) -> Result<(), String> {
                 preview::clock(r.seconds)
             );
             Ok(())
+        }
+        "verify" => {
+            let json = switch(&mut args, "--json");
+            let config = flag(&mut args, "--config")?;
+            let mut settings = match &config {
+                Some(path) => vconfig::load(Path::new(path))?,
+                None => Settings::default(),
+            };
+            take_profile(&mut args, &mut settings, config.is_some())?;
+            let m = settings.machine;
+            let mut l = verify::Limits {
+                s_max: m.s_max,
+                max_power_percent: m.max_power_percent,
+                max_speed_mm_min: m.max_speed_mm_min,
+                bed_mm: m.bed_mm,
+                accel_mm_s2: 1000.0,
+                rapid_mm_min: m.rapid_mm_min,
+            };
+            if let Some(v) = flag(&mut args, "--smax")? {
+                l.s_max = whole(&v, "--smax")?;
+            }
+            if let Some(v) = flag(&mut args, "--max-power")? {
+                l.max_power_percent = num(&v, "--max-power")?;
+            }
+            if let Some(v) = flag(&mut args, "--max-speed")? {
+                l.max_speed_mm_min = num(&v, "--max-speed")?;
+            }
+            if let Some(v) = flag(&mut args, "--accel")? {
+                l.accel_mm_s2 = num(&v, "--accel")?;
+            }
+            if let Some(v) = flag(&mut args, "--bed")? {
+                let b = list(&v, "--bed")?;
+                if b.len() != 2 {
+                    return Err("--bed needs X,Y".into());
+                }
+                l.bed_mm = Some((b[0], b[1]));
+            }
+            finish(&args, 1)?;
+            let input = args.first().ok_or("verify needs a G-code file")?;
+            let meta = fs::metadata(input).map_err(|e| format!("{input}: {e}"))?;
+            if meta.len() > MAX_PROGRAM_BYTES {
+                return Err(format!(
+                    "{input}: the program is larger than {MAX_PROGRAM_BYTES} bytes"
+                ));
+            }
+            let bytes = fs::read(input).map_err(|e| format!("{input}: {e}"))?;
+            let v = verify::verify(&bytes, &l)?;
+            if json {
+                print!("{}", v.json(&l));
+            } else {
+                print!("{}", v.text());
+            }
+            if v.passes() {
+                Ok(())
+            } else {
+                Err(format!(
+                    "{input}: the program fails {} check(s)",
+                    v.problems.len()
+                ))
+            }
         }
         "materials" => {
             finish(&args, 1)?;

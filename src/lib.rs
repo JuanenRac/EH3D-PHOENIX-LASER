@@ -29,5 +29,6 @@ pub mod tone;
 pub mod trace;
 pub mod vconfig;
 pub mod vector;
+pub mod verify;
 pub mod viewport;
 pub mod window;

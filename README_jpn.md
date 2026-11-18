@@ -73,6 +73,7 @@
 * **ウィンドウでのフォーカステスト**（`src/window.rs`）：`[focus]` セクションのボックス（最初の線の高さ、刻み、線の数と長さ、間隔、速度、出力）を持つモードです。テストは `phoenix-laser focus` と同じ関数で計算され、出力と速度は上限に従い、下がどちらかは機械によって決まるため既定の刻みはなく、テストが Z を動かすという警告がメモに残ります。
 * **ウィンドウでのフレーム**（`src/window.rs`、設定ファイルの `[frame]`）：開いている画像や図面を、レーザーを消したまま囲むモードです。余白、周回数、速度はボックスです。0 より大きいパイロット出力はレーザーを点灯するため、ウィンドウが確認し、利用者が「はい」と答えるまで何も計算も書き出しもされません。これは毎回必要で（ボックスの変更、モードの変更、ファイルの書き出しで回答は取り消されます）、`max_pilot_percent` の上限、出力の上限、ベッドの範囲の内側でのみ有効です。
 * **ウィンドウでのプレビュー**（`src/window.rs`）：ウィンドウが計算する G-code はすべて `phoenix-laser preview` と同じプレビューで集計されます（移動回数、焼いた長さと移動した長さ、ボックスの加速度で角を数えた時間、設定ファイルのベッドの外に出る作業など危険に見えるもの）。出所を問わない G-code プログラム（`.nc`、`.ngc`、`.gcode`、`.gc`、`.tap`）も、開くかウィンドウにドロップして経路とメモを確認できます。テキストとして読むだけで、実行も再書き込みもされません。
+* **プログラムの検査**（`src/verify.rs`）：`phoenix-laser verify PROGRAM.nc` は、G-code プログラム（このプログラムのものでも他のものでも）をテキストとして読み、決して実行せず、そのファイルそのものの SHA-256、内容、判定を出します。機械の出力と速度の上限の下、ベッドの内側で、早送りのたびにレーザーが消え、焼く移動のたびに送り速度がある場合にだけ合格します。`--json` は、そのハッシュに結び付けた承認の隣に別のプログラムが保管できるレポートを出し、不合格のときの終了コードは 1 です。
 * **規則的ディザリング**（`src/dither.rs`）：`--dither bayer`（ウィンドウでも選べます）は 8 x 8 のベイヤー行列で、各ドットをその位置と灰色だけで決めます。模様は規則的で、同じ灰色は常に同じドットを焼きます。テストは行列の各レベルが 1 回ずつ現れることと、灰色の濃さが保たれることを確認します。
 * **トーンカーブ**（`src/tone.rs`）：ドットを作る前に、グレー階調を全範囲に伸ばす（`--auto-level`）、コントラストと明るさを変える、ガンマで曲げる、反転する、といった調整を 256 項目の 1 つの表で行います。既定値では画像はまったく変わりません。
 * **検証済みの G コード：**図面のプログラムは渡す前に1行ずつ検証されます。早送り中や速度なしでレーザーが点灯せず、`S` は全出力を超えず、ベッド外への移動はなく、最後は `M5` です。元の図面や設定の上にファイルが書かれることはありません。
@@ -136,6 +137,7 @@ phoenix-laser materials FILE
 phoenix-laser focus OUT.nc --z-step MM [--z-start MM] [--steps 9] [--length 10] [--spacing 2] [--feed 1000] [--power 30] [--smax 1000] [--max-power P] [--max-speed MM/MIN] [--config FILE] [--profile NAME]
 phoenix-laser frame OUT.nc --size W,H | --gcode PROGRAM.nc [--origin X,Y] [--margin MM] [--feed 3000] [--laps 1] [--bed X,Y] [--smax N]
               [--pilot P --confirm-laser-on] [--max-power P] [--max-speed MM/MIN] [--config FILE] [--profile NAME]
+phoenix-laser verify PROGRAM.nc [--config FILE] [--profile NAME] [--smax N] [--max-power P] [--max-speed MM/MIN] [--bed X,Y] [--accel 1000] [--json]
 phoenix-laser preview PROGRAM.nc [OUT.svg] [--accel 1000] [--rapid 6000] [--smax N] [--bed X,Y] [--width-px 900] [--config FILE] [--profile NAME]
 phoenix-laser [gui] [FILE]                       the window (a build with --features gui); with no arguments it opens
 ```
@@ -186,7 +188,7 @@ cargo run --release --features gui -- --shot screen.png examples/plate.svg   # a
 EH3D-PHOENIX-LASER/
 ├── src/
 │   ├── lib.rs                                   ライブラリ：各コマンドが使うもの
-│   ├── main.rs                                  コマンドライン：engrave、calibrate、info、cut、vector、trace、layers
+│   ├── main.rs                                  コマンドライン：engrave、calibrate、info、cut、vector、trace、verify、layers
 │   ├── calibrate.rs                             ロジックの一部
 │   ├── cli_args.rs                              コマンドライン引数：小さなツールすべてで同じファイル
 │   ├── dither.rs                                ロジックの一部
@@ -199,6 +201,7 @@ EH3D-PHOENIX-LASER/
 │   ├── safety.rs                                出力の上限と、作業範囲を示す間レーザーを消しておく規則
 │   ├── shot.rs                                  ウィンドウの画像モード（--shot）：画面なしで読み取り・検証される引数
 │   ├── vector.rs                                読み込んだ図面：mm の図形、レイヤー、上限、基本の幾何
+│   ├── verify.rs                                プログラムの検査：SHA-256、内容、機械の上限に対する判定
 │   ├── flatten.rs                               許容差内で曲線を直線に分割（ベジェ、円弧）
 │   ├── frame.rs                                 作業のフレーム：レーザーを消してなぞる長方形
 │   ├── svg.rs                                   SVG リーダー：安全なサブセット（スクリプト・画像・エンティティなし）

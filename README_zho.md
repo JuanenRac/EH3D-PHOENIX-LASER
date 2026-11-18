@@ -73,6 +73,7 @@
 * **窗口中的对焦测试**（`src/window.rs`）：一种带有 `[focus]` 部分输入框的模式（第一条线的高度、步进、线的数量和长度、间距、速度和功率）；测试使用与 `phoenix-laser focus` 相同的函数计算，其功率和速度遵守上限，没有默认步进，因为哪个方向向下取决于机器，并且测试会移动 Z 的警告保留在备注中。
 * **窗口中的边框**（`src/window.rs`，设置文件中的 `[frame]`）：一种在激光关闭状态下框出当前打开的图像或图纸的模式；边距、圈数和速度都是输入框。大于 0 的指示功率会开启激光，因此窗口会先询问，在用户回答“是”之前不会计算或写出任何内容，而且每次都要确认（更改输入框、更改模式或写出文件都会收回回答），并受 `max_pilot_percent` 上限、功率上限和工作台范围的约束。
 * **窗口中的预览**（`src/window.rs`）：窗口算出的每一份 G-code 都由与 `phoenix-laser preview` 相同的预览统计（移动次数、烧蚀与空行程长度、按输入框加速度计算拐角的时间，以及看起来危险的情况，例如作业超出设置文件的工作台范围），任何来源的程序（`.nc`、`.ngc`、`.gcode`、`.gc`、`.tap`）都可以打开或拖入窗口查看其路径和备注。它只作为文本读取，从不执行，也不会再次写出。
+* **程序检查**（`src/verify.rs`）：`phoenix-laser verify PROGRAM.nc` 将 G-code 程序（本程序或其他程序生成的）作为文本读取，从不执行，并给出该文件的 SHA-256、它的动作以及判定：只有在机器的功率和速度上限之下、位于工作台之内、每次快速移动时激光关闭、每次烧蚀移动都有进给速度时才算通过。`--json` 输出报告，供其他程序与绑定到该哈希的授权一起保存；未通过时退出码为 1。
 * **有序抖动**（`src/dither.rs`）：`--dither bayer`（窗口中也可选）用 8 x 8 的拜耳矩阵，仅凭每个点的位置和灰度决定它是否烧蚀，因此图案规则，相同的灰度总是烧同样的点；测试检查矩阵的每个级别各出现一次，并且灰度的深浅得以保持。
 * **色调曲线**（`src/tone.rs`）：生成点阵之前，可以把灰度拉伸到整个范围（`--auto-level`）、调整对比度和亮度、用伽马曲线弯曲或反相，只用一张 256 项的表；使用默认值时图像完全不变。
 * **经过检查的 G 代码：**图纸的程序在交出之前逐行检查：快速移动时或没有速度时激光不会开启，`S` 不会超过满功率，不会移动到床面之外，结尾是 `M5`；文件绝不会写在它所来自的图纸或设置之上。
@@ -136,6 +137,7 @@ phoenix-laser materials FILE
 phoenix-laser focus OUT.nc --z-step MM [--z-start MM] [--steps 9] [--length 10] [--spacing 2] [--feed 1000] [--power 30] [--smax 1000] [--max-power P] [--max-speed MM/MIN] [--config FILE] [--profile NAME]
 phoenix-laser frame OUT.nc --size W,H | --gcode PROGRAM.nc [--origin X,Y] [--margin MM] [--feed 3000] [--laps 1] [--bed X,Y] [--smax N]
               [--pilot P --confirm-laser-on] [--max-power P] [--max-speed MM/MIN] [--config FILE] [--profile NAME]
+phoenix-laser verify PROGRAM.nc [--config FILE] [--profile NAME] [--smax N] [--max-power P] [--max-speed MM/MIN] [--bed X,Y] [--accel 1000] [--json]
 phoenix-laser preview PROGRAM.nc [OUT.svg] [--accel 1000] [--rapid 6000] [--smax N] [--bed X,Y] [--width-px 900] [--config FILE] [--profile NAME]
 phoenix-laser [gui] [FILE]                       the window (a build with --features gui); with no arguments it opens
 ```
@@ -186,7 +188,7 @@ cargo run --release --features gui -- --shot screen.png examples/plate.svg   # a
 EH3D-PHOENIX-LASER/
 ├── src/
 │   ├── lib.rs                                   库：每个命令所使用的部分
-│   ├── main.rs                                  命令行：engrave、calibrate、info、cut、vector、trace 和 layers
+│   ├── main.rs                                  命令行：engrave、calibrate、info、cut、vector、trace、verify 和 layers
 │   ├── calibrate.rs                             逻辑的一部分
 │   ├── cli_args.rs                              命令行参数：每个小工具中的同一个文件
 │   ├── dither.rs                                逻辑的一部分
@@ -199,6 +201,7 @@ EH3D-PHOENIX-LASER/
 │   ├── safety.rs                                功率上限，以及展示工作范围时保持激光关闭的规则
 │   ├── shot.rs                                  窗口的截图模式（--shot）：无需屏幕即可读取和检查其参数
 │   ├── vector.rs                                读入的图纸：毫米图形、图层、限制和基础几何
+│   ├── verify.rs                                程序检查：其 SHA-256、动作以及对照机器上限的判定
 │   ├── flatten.rs                               在容差内将曲线分段为直线（贝塞尔、圆弧）
 │   ├── frame.rs                                 作业边框：在激光关闭时描出的矩形
 │   ├── svg.rs                                   SVG 读取器：安全子集，不含脚本、图像和实体

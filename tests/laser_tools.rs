@@ -75,6 +75,124 @@ fn the_tone_curve_can_come_from_the_settings_file_and_the_options_win_over_it() 
     assert!(err.contains("gamma"), "{err}");
 }
 
+const GOOD_PROGRAM: &str = "G21\nG90\nF1000\nG0 X0 Y0\nM3 S200\nG1 X10 Y0\nM5\nM2\n";
+
+#[test]
+fn verify_gives_the_hash_of_the_file_and_a_verdict_and_the_exit_code_follows_it() {
+    let nc = tmp("verify-good.nc");
+    std::fs::write(&nc, GOOD_PROGRAM).unwrap();
+    let (ok, out, err) = run(&["verify", &nc]);
+    assert!(ok, "{err}");
+    assert!(out.contains("verdict: pass"), "{out}");
+    // the same hash as the one the program writes in its own headers
+    let hash = out
+        .lines()
+        .find_map(|l| l.strip_prefix("toolpath sha256: "))
+        .unwrap()
+        .to_string();
+    assert_eq!(hash.len(), 64);
+    assert!(hash.bytes().all(|b| b.is_ascii_hexdigit()));
+    // the JSON form
+    let (ok, out, err) = run(&["verify", &nc, "--json"]);
+    assert!(ok, "{err}");
+    assert!(
+        out.contains(&format!("\"toolpath_sha256\": \"{hash}\"")),
+        "{out}"
+    );
+    assert!(out.contains("\"verdict\": \"pass\""), "{out}");
+    // a limit that the program is over fails it, with the problems on the standard output and the exit code 1
+    let (ok, out, err) = run(&["verify", &nc, "--max-power", "10"]);
+    assert!(!ok);
+    assert!(
+        out.contains("problem:") && out.contains("verdict: FAIL"),
+        "{out}"
+    );
+    assert!(err.contains("fails 1 check"), "{err}");
+    let (ok, out, _) = run(&["verify", &nc, "--max-speed", "500", "--json"]);
+    assert!(!ok);
+    assert!(
+        out.contains("\"verdict\": \"fail\"") && out.contains("limit of speed"),
+        "{out}"
+    );
+    let (ok, _, _) = run(&["verify", &nc, "--bed", "5,5"]);
+    assert!(!ok);
+    let (ok, _, _) = run(&["verify", &nc, "--smax", "100"]);
+    assert!(!ok);
+    // the limits can come from a profile of the settings file
+    let cfg = profiles_file(
+        "verify-profile.cfg",
+        "[defaults]\npower = 5\nspeed = 1000\n",
+    );
+    let (ok, _, err) = run(&["verify", &nc, "--config", &cfg, "--profile", "small diode"]);
+    assert!(!ok, "S200 of S255 is more than 5 %");
+    assert!(err.contains("fails"), "{err}");
+    let (ok, out, err) = run(&[
+        "verify",
+        &nc,
+        "--config",
+        &cfg,
+        "--profile",
+        "big",
+        "--bed",
+        "400,300",
+    ]);
+    assert!(ok && out.contains("verdict: pass"), "{out} {err}");
+}
+
+#[test]
+fn verify_refuses_what_it_cannot_read_and_what_is_not_a_program() {
+    let (ok, _, err) = run(&["verify"]);
+    assert!(!ok);
+    assert!(err.contains("G-code file"), "{err}");
+    let (ok, _, err) = run(&["verify", "/no/such/folder/a.nc"]);
+    assert!(!ok);
+    assert!(err.contains("a.nc"), "{err}");
+    let junk = tmp("verify-junk.nc");
+    std::fs::write(&junk, "this is not a program").unwrap();
+    let (ok, out, _) = run(&["verify", &junk]);
+    assert!(!ok);
+    assert!(out.contains("no move in the plane"), "{out}");
+    let (ok, _, err) = run(&["verify", &junk, "--max-power", "0"]);
+    assert!(!ok);
+    assert!(err.contains("max_power_percent"), "{err}");
+    let (ok, _, err) = run(&["verify", &junk, "extra", "words"]);
+    assert!(!ok);
+    assert!(err.contains("unexpected"), "{err}");
+}
+
+#[test]
+fn the_program_the_engraving_writes_passes_its_own_check() {
+    let nc = tmp("verify-own.nc");
+    let (ok, _, err) = run(&[
+        "engrave",
+        GRADIENT,
+        &nc,
+        "--width-mm",
+        "16",
+        "--dot-mm",
+        "0.5",
+        "--power",
+        "40",
+    ]);
+    assert!(ok, "{err}");
+    let (ok, out, err) = run(&["verify", &nc, "--max-power", "40"]);
+    assert!(ok, "{out} {err}");
+    let (ok, _, _) = run(&["verify", &nc, "--max-power", "39"]);
+    assert!(!ok);
+    // the same for a drawing that is cut
+    let cut = tmp("verify-cut.nc");
+    let (ok, _, err) = run(&[
+        "cut",
+        "examples/plate.svg",
+        &cut,
+        "--config",
+        "examples/plate.cfg",
+    ]);
+    assert!(ok, "{err}");
+    let (ok, out, err) = run(&["verify", &cut, "--config", "examples/plate.cfg"]);
+    assert!(ok, "{out} {err}");
+}
+
 #[test]
 fn inverting_the_picture_changes_what_burns() {
     let (plain, flipped) = (tmp("plain.nc"), tmp("flipped.nc"));

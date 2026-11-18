@@ -73,6 +73,7 @@ Chaque ligne est une partie de ce dépôt et le feu dit où elle en est aujourd'
 * **Le test de mise au point dans la fenêtre** (`src/window.rs`) : un mode avec les cases de la section `[focus]` (la hauteur de la première ligne, le pas, le nombre et la longueur des lignes, leur espacement, la vitesse et la puissance) ; le test est calculé avec la même fonction que `phoenix-laser focus`, sa puissance et sa vitesse obéissent aux limites, il n'y a pas de pas par défaut car le sens du bas dépend de la machine, et un avertissement que le test déplace Z reste dans les notes.
 * **Le cadre dans la fenêtre** (`src/window.rs`, `[frame]` dans le fichier de réglages) : un mode qui encadre l'image ou le dessin ouvert laser éteint ; la marge, les tours et la vitesse sont des cases. Une puissance pilote supérieure à 0 allume le laser, donc la fenêtre demande et rien n'est calculé ni écrit tant que la personne n'a pas répondu oui, à chaque fois (changer une case, changer de mode ou écrire le fichier retire la réponse), sous le plafond de `max_pilot_percent`, la limite de puissance et le plateau.
 * **L'aperçu dans la fenêtre** (`src/window.rs`) : tout G-code que calcule la fenêtre est compté par le même aperçu que `phoenix-laser preview` (déplacements, longueur brûlée et parcourue, un temps qui compte les coins avec l'accélération de la case, et ce qui semble dangereux, comme un travail hors du plateau du fichier de réglages), et un programme de n'importe quelle origine (`.nc`, `.ngc`, `.gcode`, `.gc`, `.tap`) peut être ouvert ou déposé sur la fenêtre pour voir son tracé et ses notes. Il est lu comme du texte, jamais exécuté et jamais réécrit.
+* **La vérification d'un programme** (`src/verify.rs`) : `phoenix-laser verify PROGRAMME.nc` lit un programme G-code (de ce programme ou d'un autre) comme du texte, ne l'exécute jamais, et donne le SHA-256 du fichier exact, ce qu'il fait et un verdict : il ne passe que sous la limite de puissance et de vitesse de la machine, dans le plateau, avec le laser éteint pendant chaque déplacement rapide et une avance sur chaque déplacement qui brûle. `--json` donne le rapport qu'un autre programme peut conserver à côté d'une autorisation liée à ce hash, et le code de sortie est 1 en cas d'échec.
 * **Tramage ordonné** (`src/dither.rs`) : `--dither bayer` (aussi dans la fenêtre) décide chaque point selon sa place et son gris avec une matrice de Bayer 8 x 8, donc le motif est régulier et le même gris brûle toujours les mêmes points ; les tests vérifient que chaque niveau de la matrice apparaît une fois et que le noircissement d'un gris est conservé.
 * **La courbe de tons** (`src/tone.rs`) : avant de fabriquer les points, les niveaux de gris peuvent être étirés sur toute la plage (`--auto-level`), recevoir plus ou moins de contraste et de luminosité, être courbés par un gamma ou inversés, avec une seule table de 256 entrées ; avec les valeurs par défaut l'image n'est pas modifiée du tout.
 * **Un G-code vérifié :** le programme d'un dessin est vérifié ligne par ligne avant d'être livré : aucun laser allumé pendant un déplacement rapide ou sans vitesse, aucun `S` au-dessus de la pleine puissance, aucun déplacement hors du plateau, `M5` à la fin ; le fichier n'est jamais écrit sur le dessin ni sur les réglages dont il provient.
@@ -136,6 +137,7 @@ phoenix-laser materials FILE
 phoenix-laser focus OUT.nc --z-step MM [--z-start MM] [--steps 9] [--length 10] [--spacing 2] [--feed 1000] [--power 30] [--smax 1000] [--max-power P] [--max-speed MM/MIN] [--config FILE] [--profile NAME]
 phoenix-laser frame OUT.nc --size W,H | --gcode PROGRAM.nc [--origin X,Y] [--margin MM] [--feed 3000] [--laps 1] [--bed X,Y] [--smax N]
               [--pilot P --confirm-laser-on] [--max-power P] [--max-speed MM/MIN] [--config FILE] [--profile NAME]
+phoenix-laser verify PROGRAM.nc [--config FILE] [--profile NAME] [--smax N] [--max-power P] [--max-speed MM/MIN] [--bed X,Y] [--accel 1000] [--json]
 phoenix-laser preview PROGRAM.nc [OUT.svg] [--accel 1000] [--rapid 6000] [--smax N] [--bed X,Y] [--width-px 900] [--config FILE] [--profile NAME]
 phoenix-laser [gui] [FILE]                       the window (a build with --features gui); with no arguments it opens
 ```
@@ -186,7 +188,7 @@ La version se trouve dans `Cargo.toml` et `eh3d.project.json` ; chaque version a
 EH3D-PHOENIX-LASER/
 ├── src/
 │   ├── lib.rs                                   la bibliothèque : ce que chaque commande utilise
-│   ├── main.rs                                  la ligne de commande : engrave, calibrate, info, cut, vector, trace et layers
+│   ├── main.rs                                  la ligne de commande : engrave, calibrate, info, cut, vector, trace, verify et layers
 │   ├── calibrate.rs                             une partie de la logique
 │   ├── cli_args.rs                              les arguments de la ligne de commande, le même fichier dans chaque petit utilitaire
 │   ├── dither.rs                                une partie de la logique
@@ -199,6 +201,7 @@ EH3D-PHOENIX-LASER/
 │   ├── safety.rs                                la limite de puissance et les règles qui gardent le laser éteint pendant qu'on montre le travail
 │   ├── shot.rs                                  le mode capture de la fenêtre (--shot) : ses arguments, lus et vérifiés sans écran
 │   ├── vector.rs                                un dessin lu : formes en mm, calques, limites et géométrie de base
+│   ├── verify.rs                                la vérification d'un programme : son SHA-256, ce qu'il fait et un verdict face aux limites de la machine
 │   ├── flatten.rs                               courbes en segments droits dans une tolérance (Bézier, arcs)
 │   ├── frame.rs                                 le cadre du travail : le rectangle parcouru laser éteint
 │   ├── svg.rs                                   le lecteur SVG : un sous-ensemble sûr, sans scripts, images ni entités
