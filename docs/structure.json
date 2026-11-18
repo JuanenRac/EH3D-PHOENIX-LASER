@@ -210,6 +210,19 @@
           }
         },
         {
+          "name": "frame.rs",
+          "desc": {
+            "en": "the frame of the work: the rectangle traced with the laser off",
+            "es": "el marco del trabajo: el rectángulo recorrido con el láser apagado",
+            "de": "der Rahmen der Arbeit: das Rechteck bei ausgeschaltetem Laser",
+            "fr": "le cadre du travail : le rectangle parcouru laser éteint",
+            "it": "la cornice del lavoro: il rettangolo percorso con il laser spento",
+            "ja": "作業のフレーム：レーザーを消してなぞる長方形",
+            "zh": "作业边框：在激光关闭时描出的矩形",
+            "pt": "a moldura do trabalho: o retângulo percorrido com o laser desligado"
+          }
+        },
+        {
           "name": "svg.rs",
           "desc": {
             "en": "the SVG reader: a safe subset, no scripts, images or entities",

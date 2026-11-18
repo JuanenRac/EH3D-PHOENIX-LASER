@@ -193,6 +193,64 @@ impl Default for Machine {
     }
 }
 
+/// The frame of the work (`phoenix-laser frame`): the rectangle that the head traces to show where the work will be. The laser stays off unless `pilot_percent` is more than 0 and the
+/// command is also told `--confirm-laser-on`.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct FrameSettings {
+    pub feed_mm_min: f64,
+    /// How many times the rectangle is traced.
+    pub laps: u32,
+    /// How far outside of the work the rectangle goes.
+    pub margin_mm: f64,
+    /// A small power to make the frame visible; 0 keeps the laser off.
+    pub pilot_percent: f64,
+}
+
+impl Default for FrameSettings {
+    fn default() -> Self {
+        FrameSettings {
+            feed_mm_min: 3000.0,
+            laps: 1,
+            margin_mm: 0.0,
+            pilot_percent: 0.0,
+        }
+    }
+}
+
+impl FrameSettings {
+    pub fn validate(&self, max_power_percent: f64) -> Result<(), String> {
+        let range = |name: &str, v: f64, lo: f64, hi: f64| {
+            if v.is_finite() && (lo..=hi).contains(&v) {
+                Ok(())
+            } else {
+                Err(format!("{name} is {v}: it must be from {lo} to {hi}"))
+            }
+        };
+        range("frame feed_mm_min", self.feed_mm_min, 1.0, 30_000.0)?;
+        range("frame margin_mm", self.margin_mm, 0.0, 100.0)?;
+        range(
+            "frame pilot_percent",
+            self.pilot_percent,
+            0.0,
+            crate::safety::MAX_PILOT_PERCENT,
+        )?;
+        if self.laps == 0 || self.laps > 20 {
+            return Err(format!(
+                "frame laps is {}: it must be from 1 to 20",
+                self.laps
+            ));
+        }
+        if self.pilot_percent > 0.0 {
+            crate::safety::check_power(
+                "frame pilot_percent",
+                self.pilot_percent,
+                max_power_percent,
+            )?;
+        }
+        Ok(())
+    }
+}
+
 /// Where the lower left corner of the drawing goes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Align {
@@ -221,6 +279,7 @@ pub struct Settings {
     pub offset_max_points: usize,
     pub max_hatch_lines: usize,
     pub machine: Machine,
+    pub frame: FrameSettings,
     pub defaults: LayerParams,
     /// The settings of the layers that the file names, by name (lower case).
     pub layers: Vec<(String, LayerParams)>,
@@ -242,6 +301,7 @@ impl Default for Settings {
             offset_max_points: 5_000,
             max_hatch_lines: 100_000,
             machine: Machine::default(),
+            frame: FrameSettings::default(),
             defaults: LayerParams::default(),
             layers: Vec::new(),
         }
@@ -304,6 +364,7 @@ impl Settings {
         if self.two_opt_budget > 10_000_000_000 {
             return Err("two_opt_budget is too large".to_string());
         }
+        self.frame.validate(m.max_power_percent)?;
         self.defaults.validate(m.max_passes)?;
         if self.defaults.mode != LayerMode::Skip {
             crate::safety::check_power("power", self.defaults.power_percent, m.max_power_percent)
@@ -437,6 +498,13 @@ fn set_global(s: &mut Settings, section: &str, key: &str, value: &str) -> Result
             let x = s.machine.bed_mm.map_or(0.0, |b| b.0);
             s.machine.bed_mm = (v > 0.0 || x > 0.0).then_some((x, v));
         }
+        ("frame", "feed_mm_min") => s.frame.feed_mm_min = number(value)?,
+        ("frame", "laps") => {
+            s.frame.laps =
+                u32::try_from(whole(value)?).map_err(|_| "laps is too large".to_string())?
+        }
+        ("frame", "margin_mm") => s.frame.margin_mm = number(value)?,
+        ("frame", "pilot_percent") => s.frame.pilot_percent = number(value)?,
         ("machine", "max_power_percent") => s.machine.max_power_percent = number(value)?,
         ("machine", "max_passes") => {
             s.machine.max_passes =
@@ -472,12 +540,12 @@ pub fn parse(text: &str) -> Result<Settings, String> {
             let (word, rest) = head.split_once(char::is_whitespace).unwrap_or((head, ""));
             let word = word.to_ascii_lowercase();
             section = match word.as_str() {
-                "limits" | "read" | "order" | "offset" | "hatch" | "machine" | "defaults" if rest.trim().is_empty() => word,
+                "limits" | "read" | "order" | "offset" | "hatch" | "machine" | "frame" | "defaults" if rest.trim().is_empty() => word,
                 "layer" if !rest.trim().is_empty() => {
                     named.push(rest.trim().to_lowercase());
                     format!("layer {}", rest.trim().to_lowercase())
                 }
-                _ => return Err(format!("line {line}: '[{head}]' is not a section (limits, read, order, offset, hatch, machine, defaults or layer NAME)")),
+                _ => return Err(format!("line {line}: '[{head}]' is not a section (limits, read, order, offset, hatch, machine, frame, defaults or layer NAME)")),
             };
             continue;
         }
@@ -800,5 +868,80 @@ power = 0.1
             );
             assert!(parse(&text).is_err(), "{bad}");
         }
+    }
+
+    #[test]
+    fn the_frame_keeps_the_laser_off_by_default() {
+        let f = Settings::default().frame;
+        assert_eq!((f.feed_mm_min, f.laps, f.margin_mm), (3000.0, 1, 0.0));
+        assert_eq!(f.pilot_percent, 0.0);
+        let s = parse(
+            "[frame]
+feed_mm_min = 1200
+laps = 2
+margin_mm = 1.5
+pilot_percent = 2
+",
+        )
+        .unwrap();
+        assert_eq!(
+            s.frame,
+            FrameSettings {
+                feed_mm_min: 1200.0,
+                laps: 2,
+                margin_mm: 1.5,
+                pilot_percent: 2.0
+            }
+        );
+    }
+
+    #[test]
+    fn a_frame_setting_out_of_range_is_refused() {
+        for text in [
+            "[frame]
+feed_mm_min = 0
+",
+            "[frame]
+feed_mm_min = 30001
+",
+            "[frame]
+laps = 0
+",
+            "[frame]
+laps = 21
+",
+            "[frame]
+margin_mm = -1
+",
+            "[frame]
+margin_mm = 101
+",
+            "[frame]
+pilot_percent = 5.1
+",
+            "[frame]
+pilot_percent = -1
+",
+            "[frame]
+laps = 1.5
+",
+            "[frame]
+speed = 5
+",
+        ] {
+            assert!(parse(text).is_err(), "{text:?}");
+        }
+        // the pilot power obeys the limit of power of the machine
+        let e = parse(
+            "[machine]
+max_power_percent = 2
+[defaults]
+power = 1
+[frame]
+pilot_percent = 3
+",
+        )
+        .unwrap_err();
+        assert!(e.contains("pilot_percent"), "{e}");
     }
 }

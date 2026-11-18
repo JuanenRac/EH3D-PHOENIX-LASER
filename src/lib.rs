@@ -12,6 +12,7 @@ pub mod dither;
 pub mod dxf;
 pub mod energy;
 pub mod flatten;
+pub mod frame;
 pub mod gcode_out;
 #[cfg(feature = "gui")]
 pub mod gui;

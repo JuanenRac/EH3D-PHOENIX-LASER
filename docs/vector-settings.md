@@ -17,7 +17,7 @@ key = value
 key = value
 ```
 
-Sections: `[limits]`, `[read]`, `[order]`, `[offset]`, `[hatch]`, `[machine]`, `[defaults]` and one `[layer NAME]` for each layer or colour. `[defaults]` is what a layer gets that the file
+Sections: `[limits]`, `[read]`, `[order]`, `[offset]`, `[hatch]`, `[machine]`, `[frame]`, `[defaults]` and one `[layer NAME]` for each layer or colour. `[defaults]` is what a layer gets that the file
 does not name, and also what every `[layer NAME]` starts from (wherever in the file `[defaults]` is written). The switches are `on` and `off`.
 
 ## What a layer is
@@ -137,6 +137,19 @@ the settings file it is made from.
 | `max_power_percent` | 100 | the limit of power, from 0.1 to 100 percent of full power: a layer (or `[defaults]`) that asks for more is an error that names it, never lowered; `--max-power` of the commands overrides it |
 
 The keys of `[machine]` are `s_max`, `overscan_mm`, `rapid_mm_min`, `laser_watts`, `origin_x`, `origin_y`, `focus_z_mm`, `bed_x_mm`, `bed_y_mm`, `max_passes` and `max_power_percent`.
+
+### `[frame]`
+
+The frame of the work (`phoenix-laser frame`): the rectangle the head traces to show where the work will land. The laser stays off unless `pilot_percent` is more than 0 **and** the command is given `--confirm-laser-on`; the file alone never turns it on.
+
+| Key | Default | Meaning |
+|---|---|---|
+| `feed_mm_min` | 3000 | the speed of the trace, from 1 to 30000 |
+| `laps` | 1 | how many times the rectangle is traced, from 1 to 20 |
+| `margin_mm` | 0 | how far outside of the work the rectangle goes, from 0 to 100 |
+| `pilot_percent` | 0 | a weak power to make the frame visible, from 0 to 5 percent of full power and no more than `max_power_percent`; 0 keeps the laser off |
+
+The keys of `[frame]` are `feed_mm_min`, `laps`, `margin_mm` and `pilot_percent`.
 
 ### `[defaults]` and `[layer NAME]`
 

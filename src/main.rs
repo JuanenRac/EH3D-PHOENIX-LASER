@@ -10,6 +10,7 @@ use eh3d_phoenix_laser::cut::{layers as layer_list, plan};
 use eh3d_phoenix_laser::dither::{dither, Method};
 use eh3d_phoenix_laser::dxf::read_dxf;
 use eh3d_phoenix_laser::energy::describe;
+use eh3d_phoenix_laser::frame::{self, Frame};
 use eh3d_phoenix_laser::gcode_out::{header, sha256_hex, Header};
 use eh3d_phoenix_laser::image::from_bytes;
 use eh3d_phoenix_laser::materials::{self, Material};
@@ -42,6 +43,8 @@ const HELP: &str = "phoenix-laser: laser engraving from an image
   phoenix-laser vector DRAWING OUT.nc [the options of cut] [--angle DEG] [--spacing MM]
   phoenix-laser layers DRAWING [--config FILE] [--dpi N]
   phoenix-laser materials FILE
+  phoenix-laser frame OUT.nc --size W,H | --gcode PROGRAM.nc [--origin X,Y] [--margin MM] [--feed 3000] [--laps 1] [--bed X,Y] [--smax N]
+                [--pilot P --confirm-laser-on] [--max-power P] [--config FILE]
   phoenix-laser preview PROGRAM.nc [OUT.svg] [--accel 1000] [--rapid 6000] [--smax N] [--bed X,Y] [--width-px 900] [--config FILE]
   phoenix-laser [gui] [FILE]                     the window (a build with --features gui): with no arguments, with a file or with gui it opens; the commands above never open it
   phoenix-laser gui [FILE] --shot OUT.png [--size WxH] [--theme forge|dark|light] [--wait N] [--lang CODE] [--replace]   a picture of the window (a build with --features gui)
@@ -53,6 +56,7 @@ DRAWING is an SVG or a DXF file. cut follows the contours (the ones inside first
 own settings in the file of --config (see the documentation); an option of the command line changes them for all the layers. Without --config, cut cuts everything and vector engraves everything.
 layers lists the layers of a drawing with what would be done with each.
 materials FILE lists the materials of a library: a plain text file with a [material NAME] section for each material and way of working (see the documentation). --material NAME takes the power, the speed, the passes and the rest that the library says for it, before the other options, which win; the library is --materials FILE or the file named by PHOENIX_LASER_MATERIALS.
+frame writes a program that traces the rectangle of the work with the laser OFF, to see where it will land: --size W,H from the corner --origin, or the box of what burns in --gcode PROGRAM.nc (its real place). --margin widens it. A --pilot power (a percent, at most 5 and at most the limit of power) turns the laser on weakly and only with --confirm-laser-on; the [frame] section of --config holds the usual values.
 preview reads a G-code program (this program's or another's) and says what it would do: moves, burnt and travelled length, the box, the powers, a time that counts the corners (--accel in mm/s2) and what looks dangerous (the laser on during a rapid move, a burning move with no feed, S above --smax, work outside --bed, no end); with OUT.svg it also draws the path. It only reads text.
 --max-power is the limit of power, a percent of full power (100 when nothing says another): a program whose power is more than the limit is refused, never lowered. engrave and calibrate also read the limit and --smax from the [machine] section of the file of --config.";
 
@@ -534,6 +538,142 @@ fn run(mut args: Vec<String>) -> Result<(), String> {
         "cut" => drawing_job(args, LayerMode::Cut),
         "vector" => drawing_job(args, LayerMode::Engrave),
         "layers" => layers_job(args),
+        "frame" => {
+            let config = flag(&mut args, "--config")?;
+            let mut settings = Settings::default();
+            if let Some(path) = &config {
+                settings = vconfig::load(Path::new(path))?;
+            }
+            let mut machine = settings.machine;
+            let mut fr = settings.frame;
+            if let Some(v) = flag(&mut args, "--max-power")? {
+                machine.max_power_percent = num(&v, "--max-power")?;
+            }
+            if let Some(v) = flag(&mut args, "--smax")? {
+                machine.s_max = whole(&v, "--smax")?;
+            }
+            if let Some(v) = flag(&mut args, "--bed")? {
+                let b = list(&v, "--bed")?;
+                if b.len() != 2 {
+                    return Err("--bed needs X,Y".into());
+                }
+                machine.bed_mm = Some((b[0], b[1]));
+            }
+            let origin = flag(&mut args, "--origin")?
+                .map(|v| {
+                    let o = list(&v, "--origin")?;
+                    if o.len() == 2 {
+                        Ok((o[0], o[1]))
+                    } else {
+                        Err("--origin needs X,Y".to_string())
+                    }
+                })
+                .transpose()?;
+            if let Some(v) = flag(&mut args, "--margin")? {
+                fr.margin_mm = num(&v, "--margin")?;
+            }
+            if let Some(v) = flag(&mut args, "--feed")? {
+                fr.feed_mm_min = num(&v, "--feed")?;
+            }
+            if let Some(v) = flag(&mut args, "--laps")? {
+                fr.laps = whole(&v, "--laps")?;
+            }
+            if let Some(v) = flag(&mut args, "--pilot")? {
+                fr.pilot_percent = num(&v, "--pilot")?;
+            }
+            let confirmed = switch(&mut args, "--confirm-laser-on");
+            let size = flag(&mut args, "--size")?;
+            let source = flag(&mut args, "--gcode")?;
+            finish(&args, 1)?;
+            let out = args.first().ok_or("frame needs an output file")?;
+            safety::validate_max(machine.max_power_percent)?;
+            let pilot =
+                safety::pilot_percent(fr.pilot_percent, confirmed, machine.max_power_percent)?;
+            let (lo, hi) = match (&size, &source) {
+                (Some(v), None) => {
+                    let wh = list(v, "--size")?;
+                    if wh.len() != 2 || wh.iter().any(|d| *d <= 0.0) {
+                        return Err("--size needs W,H, both more than 0".into());
+                    }
+                    let lo = origin.unwrap_or(machine.origin);
+                    (lo, (lo.0 + wh[0], lo.1 + wh[1]))
+                }
+                (None, Some(path)) => {
+                    if origin.is_some() {
+                        return Err(
+                            "--origin does nothing with --gcode: the frame is where the work is"
+                                .into(),
+                        );
+                    }
+                    let meta = fs::metadata(path).map_err(|e| format!("{path}: {e}"))?;
+                    if meta.len() > MAX_PROGRAM_BYTES {
+                        return Err(format!(
+                            "{path}: the program is larger than {MAX_PROGRAM_BYTES} bytes"
+                        ));
+                    }
+                    let bytes = fs::read(path).map_err(|e| format!("{path}: {e}"))?;
+                    let program = preview::read(&String::from_utf8_lossy(&bytes));
+                    let report = preview::analyse(&program, &preview::Options::default())?;
+                    report
+                        .burn_bounds
+                        .or(report.bounds)
+                        .ok_or_else(|| format!("{path}: the program has no move in the plane"))?
+                }
+                _ => return Err("frame needs one of --size W,H or --gcode PROGRAM.nc".into()),
+            };
+            let (lo, hi) = frame::grow(lo, hi, fr.margin_mm);
+            let pilot_s = frame::pilot_value(machine.s_max, pilot)?;
+            let text = frame::gcode(
+                &Frame {
+                    lo,
+                    hi,
+                    feed_mm_min: fr.feed_mm_min,
+                    laps: fr.laps,
+                    s_max: machine.s_max,
+                    pilot_s,
+                },
+                machine.bed_mm,
+            )?;
+            let out_path = Path::new(out);
+            if source
+                .iter()
+                .chain(config.iter())
+                .any(|f| same_file(Path::new(f), out_path))
+            {
+                return Err(format!(
+                    "{out}: the frame would be written over a file it is made from"
+                ));
+            }
+            let tools = if pilot_s > 0 {
+                format!(
+                    "laser, S 0-{}, frame of the work with a pilot power of S{pilot_s}",
+                    machine.s_max
+                )
+            } else {
+                "laser OFF, frame of the work".to_string()
+            };
+            let head = header(&Header {
+                generator: "phoenix-laser",
+                version: env!("CARGO_PKG_VERSION"),
+                source: None,
+                tools: &tools,
+            });
+            write_atomic(out_path, &format!("{head}{text}"))?;
+            println!(
+                "frame of {:.1} x {:.1} mm at {:.1},{:.1}, {} lap(s), {}",
+                hi.0 - lo.0,
+                hi.1 - lo.1,
+                lo.0,
+                lo.1,
+                fr.laps,
+                if pilot_s > 0 {
+                    format!("pilot power S{pilot_s} ({pilot} %): the laser is ON, keep eyes and material safe")
+                } else {
+                    "laser off".to_string()
+                }
+            );
+            Ok(())
+        }
         "preview" => {
             let mut o = preview::Options::default();
             let config = flag(&mut args, "--config")?;

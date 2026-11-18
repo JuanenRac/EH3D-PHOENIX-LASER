@@ -539,3 +539,135 @@ fn a_program_without_a_move_and_rubbish_are_errors_not_pictures() {
     assert!(!ok);
     assert!(err.contains("--bed needs X,Y"), "{err}");
 }
+
+fn written(path: &str) -> String {
+    std::fs::read_to_string(path).unwrap()
+}
+
+#[test]
+fn the_frame_of_a_size_traces_the_rectangle_with_the_laser_off() {
+    let nc = tmp("frame-size.nc");
+    let (ok, out, err) = run(&[
+        "frame", &nc, "--size", "40,20", "--origin", "5,10", "--margin", "1",
+    ]);
+    assert!(ok, "{err}");
+    assert!(
+        out.contains("42.0 x 22.0 mm at 4.0,9.0") && out.contains("laser off"),
+        "{out}"
+    );
+    let text = written(&nc);
+    assert!(text.contains("G0 X4 Y9"), "{text}");
+    assert!(text.contains("G1 X46 Y31"), "{text}");
+    assert!(!text.contains("M3") && !text.contains("M4"), "{text}");
+    assert!(text.contains("laser OFF"), "{text}");
+}
+
+#[test]
+fn the_frame_of_a_program_is_where_the_work_burns() {
+    let work = engraved("frame-work.nc");
+    let nc = tmp("frame-of-work.nc");
+    let (ok, out, err) = run(&["frame", &nc, "--gcode", &work]);
+    assert!(ok, "{err}");
+    // the gradient burns 15 x 7.5 mm from the corner, not the run past the work
+    assert!(out.contains("15.0 x 7.5 mm at 0.0,0.0"), "{out}");
+    let (ok, _, err) = run(&["frame", &nc, "--gcode", &work, "--origin", "1,1"]);
+    assert!(!ok);
+    assert!(err.contains("--origin"), "{err}");
+}
+
+#[test]
+fn a_pilot_power_needs_the_confirmation_and_stays_small() {
+    let nc = tmp("frame-pilot.nc");
+    let base = ["frame", nc.as_str(), "--size", "10,10"];
+    let mut ask = base.to_vec();
+    ask.extend(["--pilot", "1"]);
+    let (ok, _, err) = run(&ask);
+    assert!(!ok);
+    assert!(err.contains("--confirm-laser-on"), "{err}");
+    let mut sure = ask.clone();
+    sure.push("--confirm-laser-on");
+    let (ok, out, err) = run(&sure);
+    assert!(ok, "{err}");
+    assert!(out.contains("laser is ON"), "{out}");
+    let text = written(&nc);
+    assert!(
+        text.contains("M3 S10\n") && text.contains("M5\nM2\n"),
+        "{text}"
+    );
+    for (pilot, limit) in [("6", "100"), ("3", "2")] {
+        let (ok, _, err) = run(&[
+            "frame",
+            &nc,
+            "--size",
+            "10,10",
+            "--pilot",
+            pilot,
+            "--confirm-laser-on",
+            "--max-power",
+            limit,
+        ]);
+        assert!(!ok, "{pilot} {limit}");
+        assert!(err.contains("power"), "{err}");
+    }
+}
+
+#[test]
+fn the_frame_takes_its_values_from_the_settings_file_and_the_bed_limits_it() {
+    let cfg = tmp("frame.cfg");
+    std::fs::write(
+        &cfg,
+        "[machine]\nbed_x_mm = 100\nbed_y_mm = 50\n[frame]\nfeed_mm_min = 1200\nlaps = 2\nmargin_mm = 2\n",
+    )
+    .unwrap();
+    let nc = tmp("frame-cfg.nc");
+    let (ok, out, err) = run(&[
+        "frame", &nc, "--size", "20,10", "--origin", "10,10", "--config", &cfg,
+    ]);
+    assert!(ok, "{err}");
+    assert!(
+        out.contains("2 lap(s)") && out.contains("24.0 x 14.0 mm"),
+        "{out}"
+    );
+    assert!(written(&nc).contains("F1200"));
+    // the same frame on a bed too small for it
+    let (ok, _, err) = run(&[
+        "frame", &nc, "--size", "20,10", "--origin", "90,10", "--config", &cfg,
+    ]);
+    assert!(!ok);
+    assert!(err.contains("outside of the bed"), "{err}");
+    // a pilot power in the file still asks for the confirmation on the command line
+    std::fs::write(&cfg, "[frame]\npilot_percent = 1\n").unwrap();
+    let (ok, _, err) = run(&["frame", &nc, "--size", "20,10", "--config", &cfg]);
+    assert!(!ok);
+    assert!(err.contains("--confirm-laser-on"), "{err}");
+}
+
+#[test]
+fn the_frame_needs_one_source_and_never_lands_on_what_it_is_made_from() {
+    let nc = tmp("frame-bad.nc");
+    for args in [
+        vec!["frame", nc.as_str()],
+        vec!["frame", nc.as_str(), "--size", "10"],
+        vec!["frame", nc.as_str(), "--size", "0,5"],
+        vec![
+            "frame",
+            nc.as_str(),
+            "--size",
+            "10,10",
+            "--gcode",
+            nc.as_str(),
+        ],
+        vec!["frame", nc.as_str(), "--size", "10,10", "--laps", "0"],
+        vec!["frame", nc.as_str(), "--size", "10,10", "--feed", "0"],
+    ] {
+        let (ok, _, err) = run(&args);
+        assert!(!ok, "{args:?}");
+        assert!(!err.is_empty());
+    }
+    let work = engraved("frame-same.nc");
+    let before = written(&work);
+    let (ok, _, err) = run(&["frame", &work, "--gcode", &work]);
+    assert!(!ok);
+    assert!(err.contains("written over"), "{err}");
+    assert_eq!(written(&work), before);
+}
