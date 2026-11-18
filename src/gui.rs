@@ -163,6 +163,7 @@ impl App {
                             self.material_group(ui);
                         }
                         Mode::Calibrate => self.calibration_group(ui),
+                        Mode::Focus => self.focus_group(ui),
                         Mode::Cut => {
                             self.vector_group(ui);
                             self.material_group(ui);
@@ -252,6 +253,7 @@ impl App {
                     Mode::Engrave => Msg::ModeEngrave,
                     Mode::Calibrate => Msg::ModeCalibrate,
                     Mode::Cut => Msg::ModeCut,
+                    Mode::Focus => Msg::ModeFocus,
                 };
                 egui::ComboBox::from_id_salt("mode")
                     .selected_text(shown.tr(lang))
@@ -263,6 +265,7 @@ impl App {
                             Msg::ModeCalibrate.tr(lang),
                         );
                         ui.selectable_value(&mut mode, Mode::Cut, Msg::ModeCut.tr(lang));
+                        ui.selectable_value(&mut mode, Mode::Focus, Msg::ModeFocus.tr(lang));
                     });
                 if mode != self.win.mode {
                     self.win.set_mode(mode);
@@ -356,6 +359,24 @@ impl App {
                 for key in [Key::SMax, Key::MaxPower, Key::MaxSpeed] {
                     self.field_for(ui, key);
                 }
+            });
+    }
+
+    /// The focus test: the lines, the heights and the power and speed they are burnt with. The step of the height has no default, and the test moves Z, which the person is told.
+    fn focus_group(&mut self, ui: &mut egui::Ui) {
+        let lang = self.win.lang;
+        egui::CollapsingHeader::new(self.heading(Msg::ModeFocus))
+            .default_open(true)
+            .show(ui, |ui| {
+                self.fields_of(ui, Section::Focus);
+                for key in [Key::SMax, Key::MaxPower, Key::MaxSpeed] {
+                    self.field_for(ui, key);
+                }
+                ui.label(
+                    egui::RichText::new(Msg::FocusWarning.tr(lang))
+                        .color(DANGER)
+                        .small(),
+                );
             });
     }
 

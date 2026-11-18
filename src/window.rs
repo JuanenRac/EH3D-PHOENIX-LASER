@@ -2,7 +2,7 @@
 //! file to write and the status line. The window (`gui`) only draws this and passes on what the person does, so everything that can be decided is decided here, in code that is tested.
 //! The engraving is made with the same functions as the command line (`dither`, `engrave`, `grid`) and written with the same header.
 
-use crate::calibrate::{grid, Grid};
+use crate::calibrate::{focus_test, grid, Grid};
 use crate::cut::{layers as layer_list, plan as plan_cut};
 use crate::dither::{dither, Method};
 use crate::dxf::read_dxf;
@@ -14,7 +14,7 @@ use crate::raster::{engrave, overscan_for, Params};
 use crate::safety;
 use crate::svg::read_svg;
 use crate::tone::Tone;
-use crate::vconfig::{self, KerfSide, LayerMode, LayerParams, Settings};
+use crate::vconfig::{self, FocusSettings, KerfSide, LayerMode, LayerParams, Settings};
 use crate::vector::{Drawing, ReadOptions};
 use crate::viewport::Viewport;
 use std::path::{Path, PathBuf};
@@ -68,6 +68,8 @@ pub enum Mode {
     Engrave,
     Calibrate,
     Cut,
+    /// The focus test: short lines side by side, each burnt with the head at another height.
+    Focus,
 }
 
 /// How a grey picture becomes dots.
@@ -130,6 +132,13 @@ pub enum Key {
     Brightness,
     MaxPower,
     MaxSpeed,
+    ZStart,
+    ZStep,
+    FocusLines,
+    FocusLength,
+    FocusSpacing,
+    FocusFeed,
+    FocusPower,
 }
 
 /// The group of the side panel a setting belongs to.
@@ -139,6 +148,7 @@ pub enum Section {
     Laser,
     Calibration,
     Vector,
+    Focus,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -186,6 +196,13 @@ fn default_fields() -> Vec<Field> {
         ),
         f(Key::Dpi, Msg::Dpi, Section::Vector, "96"),
         f(Key::Tolerance, Msg::Tolerance, Section::Vector, "0.01"),
+        f(Key::ZStart, Msg::ZStart, Section::Focus, "0"),
+        f(Key::ZStep, Msg::ZStep, Section::Focus, "0"),
+        f(Key::FocusLines, Msg::FocusLines, Section::Focus, "9"),
+        f(Key::FocusLength, Msg::FocusLength, Section::Focus, "10"),
+        f(Key::FocusSpacing, Msg::FocusSpacing, Section::Focus, "2"),
+        f(Key::FocusFeed, Msg::Feed, Section::Focus, "1000"),
+        f(Key::FocusPower, Msg::Power, Section::Focus, "30"),
     ]
 }
 
@@ -463,6 +480,10 @@ pub enum Summary {
     Calibrated {
         squares: usize,
     },
+    Focused {
+        lines: u32,
+        length_mm: f64,
+    },
     Cut {
         layers: usize,
         paths: usize,
@@ -587,6 +608,10 @@ impl Status {
                     &format!("{seconds:.0}"),
                 ],
             ),
+            Status::Done(Summary::Focused { lines, length_mm }) => fill(
+                Msg::FocusMade.tr(lang),
+                &[&lines.to_string(), &format!("{length_mm}")],
+            ),
             Status::Written(name) => fill(Msg::Written.tr(lang), &[name]),
             Status::NeedImage => Msg::NeedImage.tr(lang).to_string(),
             Status::NeedVector => Msg::NeedVector.tr(lang).to_string(),
@@ -675,7 +700,7 @@ impl Window {
     /// Whether the G-code can be worked out now.
     pub fn can_compute(&self) -> bool {
         match self.mode {
-            Mode::Calibrate => true,
+            Mode::Calibrate | Mode::Focus => true,
             Mode::Engrave => self.picture.is_some(),
             Mode::Cut => self.vector.is_some(),
         }
@@ -870,6 +895,7 @@ impl Window {
                 let stem = p.path.file_stem()?.to_string_lossy().into_owned();
                 Some(p.path.with_file_name(format!("{stem}.nc")))
             }
+            (_, Mode::Focus) => Some(PathBuf::from("focus.nc")),
             _ => Some(PathBuf::from("calibration.nc")),
         }
     }
@@ -1055,6 +1081,13 @@ impl Window {
                 self.put(Key::Overscan, t(s.machine.overscan_mm));
                 self.put(Key::OriginX, t(s.machine.origin.0));
                 self.put(Key::OriginY, t(s.machine.origin.1));
+                self.put(Key::ZStart, t(s.focus.z_start_mm));
+                self.put(Key::ZStep, t(s.focus.z_step_mm));
+                self.put(Key::FocusLines, s.focus.steps.to_string());
+                self.put(Key::FocusLength, t(s.focus.length_mm));
+                self.put(Key::FocusSpacing, t(s.focus.spacing_mm));
+                self.put(Key::FocusFeed, t(s.focus.feed_mm_min));
+                self.put(Key::FocusPower, t(s.focus.power_percent));
                 self.put(Key::MaxPower, t(s.machine.max_power_percent));
                 self.put(Key::MaxSpeed, t(s.machine.max_speed_mm_min));
                 self.put(Key::Gamma, t(s.tone.gamma));
@@ -1218,11 +1251,16 @@ impl Window {
             Mode::Engrave => self.engrave_job(),
             Mode::Calibrate => self.calibrate_job(),
             Mode::Cut => self.cut_job(),
+            Mode::Focus => self.focus_job(),
         };
         match made {
             Ok(done) => {
                 self.warnings = done.notes.clone();
-                let (segs, cut) = passes_of(&done.gcode, done.s_max, self.mode == Mode::Cut);
+                let (segs, cut) = passes_of(
+                    &done.gcode,
+                    done.s_max,
+                    matches!(self.mode, Mode::Cut | Mode::Focus),
+                );
                 self.segs = segs;
                 self.truncated = cut;
                 self.status = Status::Done(done.summary);
@@ -1295,6 +1333,36 @@ impl Window {
                 seconds: plan.stats.seconds,
             },
             notes: plan.warnings,
+        })
+    }
+
+    /// The focus test of the boxes of its group, worked out like `phoenix-laser focus`: its power and its speed obey the limits, and the step of the height has no default.
+    fn focus_job(&self) -> Result<Done, Status> {
+        let f = FocusSettings {
+            z_start_mm: self.number(Key::ZStart)?,
+            z_step_mm: self.number(Key::ZStep)?,
+            steps: self.whole(Key::FocusLines, 0.0, 1000.0)?,
+            length_mm: self.number(Key::FocusLength)?,
+            spacing_mm: self.number(Key::FocusSpacing)?,
+            feed_mm_min: self.number(Key::FocusFeed)?,
+            power_percent: self.number(Key::FocusPower)?,
+        };
+        let s_max = self.whole(Key::SMax, 1.0, 100_000.0)?;
+        let (max_power, max_speed) = self.limits()?;
+        safety::check_speed("the speed of the focus test", f.feed_mm_min, max_speed)
+            .map_err(Status::Failed)?;
+        let gcode = focus_test(&f, s_max, max_power).map_err(Status::Failed)?;
+        Ok(Done {
+            gcode,
+            source: None,
+            tools: format!("laser, S 0-{s_max}, focus test (the head moves in Z)"),
+            s_max,
+            line_mm: 0.1,
+            summary: Summary::Focused {
+                lines: f.steps,
+                length_mm: f.length_mm,
+            },
+            notes: vec![Msg::FocusWarning.tr(self.lang).to_string()],
         })
     }
 
@@ -2472,6 +2540,131 @@ mod tests {
         assert_eq!(
             Status::MaterialsLoaded("a.cfg".into(), 3).text(Lang::Es),
             "a.cfg: 3 material(es) cargado(s)"
+        );
+    }
+
+    #[test]
+    fn the_focus_test_needs_the_step_of_the_height_and_is_the_one_of_the_command_line() {
+        let mut w = Window::new(Lang::En);
+        w.set_mode(Mode::Focus);
+        assert!(w.can_compute());
+        // which way is down depends on the machine: there is no default
+        assert!(!w.compute());
+        assert!(
+            matches!(&w.status, Status::Failed(e) if e.contains("focus step")),
+            "{:?}",
+            w.status
+        );
+        set(&mut w, Key::ZStep, "0.5");
+        assert!(w.compute());
+        let f = FocusSettings {
+            z_step_mm: 0.5,
+            ..FocusSettings::default()
+        };
+        let done = w.done.as_ref().unwrap();
+        assert_eq!(done.gcode, focus_test(&f, 1000, 100.0).unwrap());
+        assert_eq!(
+            done.summary,
+            Summary::Focused {
+                lines: 9,
+                length_mm: 10.0
+            }
+        );
+        assert_eq!(w.status.text(Lang::En), "Focus test: 9 lines of 10 mm");
+        assert_eq!(
+            w.status.text(Lang::Es),
+            "Prueba de enfoque: 9 líneas de 10 mm"
+        );
+        // the warning that the test moves Z is in the notes, in the language of the window
+        assert_eq!(w.warnings, vec![Msg::FocusWarning.tr(Lang::En).to_string()]);
+        // the lines are drawn: nine lines of 10 mm with the laser on
+        assert_eq!(w.segs.iter().filter(|s| s.burn).count(), 9);
+        assert!(w.bounds().is_some());
+        // it is written with the header of the command line
+        assert_eq!(
+            w.suggested_output_for(Job::ExportGcode),
+            Some(PathBuf::from("focus.nc"))
+        );
+        let s = Scratch::new("focus-export");
+        let out = s.0.join("focus.nc");
+        assert!(w.export(&out));
+        let text = fs::read_to_string(&out).unwrap();
+        assert!(text.contains("; tools: laser, S 0-1000, focus test (the head moves in Z)"));
+        assert!(text.ends_with("M2\n"));
+    }
+
+    #[test]
+    fn the_focus_test_obeys_the_limits_and_says_which_box_is_wrong() {
+        let mut w = Window::new(Lang::En);
+        w.set_mode(Mode::Focus);
+        set(&mut w, Key::ZStep, "0.5");
+        set(&mut w, Key::MaxPower, "20");
+        assert!(!w.compute());
+        assert!(matches!(&w.status, Status::Failed(e) if e.contains("max_power_percent")));
+        set(&mut w, Key::MaxPower, "100");
+        set(&mut w, Key::MaxSpeed, "500");
+        assert!(!w.compute());
+        assert!(matches!(&w.status, Status::Failed(e) if e.contains("max_speed_mm_min")));
+        set(&mut w, Key::MaxSpeed, "30000");
+        set(&mut w, Key::ZStep, "far");
+        assert!(!w.compute());
+        assert_eq!(w.status, Status::BadValue(Msg::ZStep));
+        set(&mut w, Key::ZStep, "0.5");
+        set(&mut w, Key::FocusLines, "1");
+        assert!(!w.compute());
+        assert!(matches!(&w.status, Status::Failed(e) if e.contains("steps")));
+        set(&mut w, Key::FocusLines, "2.5");
+        assert!(!w.compute());
+        assert_eq!(w.status, Status::BadValue(Msg::FocusLines));
+        set(&mut w, Key::FocusLines, "9");
+        set(&mut w, Key::FocusLength, "");
+        assert!(!w.compute());
+        assert_eq!(w.status, Status::BadValue(Msg::FocusLength));
+        // a step that would take the head too far is refused by the same check as the command line
+        set(&mut w, Key::FocusLength, "10");
+        set(&mut w, Key::ZStep, "9");
+        assert!(!w.compute());
+        assert!(matches!(&w.status, Status::Failed(e) if e.contains("50 mm")));
+    }
+
+    #[test]
+    fn a_file_of_settings_fills_the_boxes_of_the_focus_test() {
+        let s = Scratch::new("focus-config");
+        let cfg = s.write(
+            "f.cfg",
+            "[focus]\nz_start_mm = 2\nz_step_mm = -0.25\nsteps = 5\nlength_mm = 8\nspacing_mm = 3\nfeed_mm_min = 800\npower_percent = 12\n",
+        );
+        let mut w = Window::new(Lang::En);
+        assert!(w.load_config(&cfg));
+        for (key, text) in [
+            (Key::ZStart, "2"),
+            (Key::ZStep, "-0.25"),
+            (Key::FocusLines, "5"),
+            (Key::FocusLength, "8"),
+            (Key::FocusSpacing, "3"),
+            (Key::FocusFeed, "800"),
+            (Key::FocusPower, "12"),
+        ] {
+            assert_eq!(text_of(&w, key), text, "{key:?}");
+        }
+        w.set_mode(Mode::Focus);
+        assert!(w.compute());
+        assert!(matches!(
+            w.done.as_ref().unwrap().summary,
+            Summary::Focused { lines: 5, .. }
+        ));
+        // the boxes start as the defaults of the settings
+        let plain = Window::new(Lang::En);
+        let d = FocusSettings::default();
+        assert_eq!(text_of(&plain, Key::ZStep), format!("{}", d.z_step_mm));
+        assert_eq!(text_of(&plain, Key::FocusLines), d.steps.to_string());
+        assert_eq!(
+            text_of(&plain, Key::FocusFeed),
+            format!("{}", d.feed_mm_min)
+        );
+        assert_eq!(
+            text_of(&plain, Key::FocusPower),
+            format!("{}", d.power_percent)
         );
     }
 }
