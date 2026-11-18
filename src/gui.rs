@@ -117,6 +117,9 @@ impl App {
                 if ui.button(Msg::OpenSettings.tr(lang)).clicked() {
                     self.ask(Job::OpenConfig);
                 }
+                if ui.button(Msg::OpenGcode.tr(lang)).clicked() {
+                    self.ask(Job::OpenGcode);
+                }
                 let can = self.win.can_compute();
                 if ui
                     .add_enabled(can, egui::Button::new(Msg::Compute.tr(lang)))
@@ -130,7 +133,10 @@ impl App {
                     }
                 }
                 if ui
-                    .add_enabled(can, egui::Button::new(Msg::ExportGcode.tr(lang)))
+                    .add_enabled(
+                        self.win.can_export(),
+                        egui::Button::new(Msg::ExportGcode.tr(lang)),
+                    )
                     .clicked()
                 {
                     if self.win.needs_confirmation() {
@@ -176,11 +182,13 @@ impl App {
                         Mode::Calibrate => self.calibration_group(ui),
                         Mode::Focus => self.focus_group(ui),
                         Mode::Frame => self.frame_group(ui),
+                        Mode::Preview => self.program_group(ui),
                         Mode::Cut => {
                             self.vector_group(ui);
                             self.material_group(ui);
                         }
                     }
+                    self.preview_group(ui);
                     self.layers_group(ui);
                     self.notes_group(ui);
                 });
@@ -267,6 +275,7 @@ impl App {
                     Mode::Cut => Msg::ModeCut,
                     Mode::Focus => Msg::ModeFocus,
                     Mode::Frame => Msg::ModeFrame,
+                    Mode::Preview => Msg::ModePreview,
                 };
                 egui::ComboBox::from_id_salt("mode")
                     .selected_text(shown.tr(lang))
@@ -280,6 +289,7 @@ impl App {
                         ui.selectable_value(&mut mode, Mode::Cut, Msg::ModeCut.tr(lang));
                         ui.selectable_value(&mut mode, Mode::Focus, Msg::ModeFocus.tr(lang));
                         ui.selectable_value(&mut mode, Mode::Frame, Msg::ModeFrame.tr(lang));
+                        ui.selectable_value(&mut mode, Mode::Preview, Msg::ModePreview.tr(lang));
                     });
                 if mode != self.win.mode {
                     self.win.set_mode(mode);
@@ -392,6 +402,41 @@ impl App {
                             .color(DANGER)
                             .small(),
                     );
+                }
+            });
+    }
+
+    /// The program that was opened to be seen: the file, and the full power and the acceleration its time and its warnings are worked out with.
+    fn program_group(&mut self, ui: &mut egui::Ui) {
+        let lang = self.win.lang;
+        egui::CollapsingHeader::new(self.heading(Msg::ModePreview))
+            .default_open(true)
+            .show(ui, |ui| {
+                if ui.button(Msg::OpenGcode.tr(lang)).clicked() {
+                    self.ask(Job::OpenGcode);
+                }
+                for key in [Key::SMax, Key::Accel] {
+                    self.field_for(ui, key);
+                }
+            });
+    }
+
+    /// What the preview says about the G-code that was worked out or opened: what it does and what looks dangerous.
+    fn preview_group(&mut self, ui: &mut egui::Ui) {
+        let lines = self.win.preview_lines();
+        if lines.is_empty() {
+            return;
+        }
+        egui::CollapsingHeader::new(self.heading(Msg::SectionPreview))
+            .default_open(true)
+            .show(ui, |ui| {
+                for (k, line) in lines.iter().enumerate() {
+                    let text = egui::RichText::new(line.as_str());
+                    ui.label(if k == 0 {
+                        text
+                    } else {
+                        text.color(DANGER).small()
+                    });
                 }
             });
     }
@@ -799,6 +844,7 @@ impl App {
                                 self.win.compute();
                             }
                         }
+                        Job::OpenGcode => self.fit_pending = true,
                         Job::OpenMaterials | Job::ExportGcode => {}
                     }
                 } else {

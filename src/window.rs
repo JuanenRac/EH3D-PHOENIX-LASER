@@ -39,6 +39,8 @@ pub enum Job {
     ExportGcode,
     /// A library of materials.
     OpenMaterials,
+    /// A G-code program (this program's or another's) to see, count and check.
+    OpenGcode,
 }
 
 impl Job {
@@ -53,6 +55,7 @@ impl Job {
             Job::OpenConfig => &["cfg"],
             Job::ExportGcode => &["nc", "ngc", "gcode", "gc", "tap", "txt"],
             Job::OpenMaterials => &["cfg"],
+            Job::OpenGcode => &["nc", "ngc", "gcode", "gc", "tap", "txt"],
         }
     }
 
@@ -62,6 +65,7 @@ impl Job {
             Job::OpenConfig => Msg::TitleOpenSettings,
             Job::ExportGcode => Msg::TitleExport,
             Job::OpenMaterials => Msg::TitleOpenMaterials,
+            Job::OpenGcode => Msg::TitleOpenGcode,
         }
     }
 }
@@ -76,6 +80,8 @@ pub enum Mode {
     Focus,
     /// The frame of the work: the rectangle that holds it, traced with the laser off (or, only when the person confirms it, with a weak pilot power).
     Frame,
+    /// A G-code program that was opened to see: its path, its time and what looks dangerous. It is never written again.
+    Preview,
 }
 
 /// How a grey picture becomes dots.
@@ -373,6 +379,19 @@ pub fn passes_of(gcode: &str, smax: u32, rapid: bool) -> (Vec<Seg>, bool) {
     (segs, false)
 }
 
+/// The words that say what a program does: the moves, the burnt and travelled length and the time it takes.
+fn preview_line(lang: Lang, moves: usize, burn_mm: f64, travel_mm: f64, seconds: f64) -> String {
+    fill(
+        Msg::PreviewLine.tr(lang),
+        &[
+            &moves.to_string(),
+            &format!("{burn_mm:.0}"),
+            &format!("{travel_mm:.0}"),
+            &preview::clock(seconds),
+        ],
+    )
+}
+
 /// The colour of a burning pass between the lowest power (0) and the full power (1): dark red, red, orange, yellow.
 pub fn fire(t: f64) -> [u8; 3] {
     const STOPS: [[f64; 3]; 4] = [
@@ -459,6 +478,14 @@ fn name_of(path: &Path) -> String {
     )
 }
 
+/// The G-code program that is open to be seen.
+#[derive(Debug, Clone)]
+pub struct ProgramFile {
+    pub path: PathBuf,
+    pub name: String,
+    pub text: String,
+}
+
 /// The picture that is open.
 #[derive(Debug, Clone)]
 pub struct Picture {
@@ -498,6 +525,13 @@ pub enum Summary {
     Focused {
         lines: u32,
         length_mm: f64,
+    },
+    /// A program that was opened to be seen.
+    Previewed {
+        moves: usize,
+        burn_mm: f64,
+        travel_mm: f64,
+        seconds: f64,
     },
     /// The rectangle of the work; `pilot_percent` is 0 when the laser stays off.
     Framed {
@@ -552,6 +586,8 @@ pub enum Status {
     NeedVector,
     /// The work would turn the laser on and the person has not confirmed it.
     NeedConfirm,
+    /// A program that was opened to be seen is not written again.
+    NothingToWrite,
     BadValue(Msg),
     SameFile(String),
     /// A library of materials was read: its name and how many materials it holds.
@@ -568,6 +604,7 @@ impl Status {
             Status::NeedImage
                 | Status::NeedVector
                 | Status::NeedConfirm
+                | Status::NothingToWrite
                 | Status::BadValue(_)
                 | Status::SameFile(_)
                 | Status::Failed(_)
@@ -657,7 +694,14 @@ impl Status {
                     fill(Msg::FrameDone.tr(lang), &[&w, &h, &l])
                 }
             }
+            Status::Done(Summary::Previewed {
+                moves,
+                burn_mm,
+                travel_mm,
+                seconds,
+            }) => preview_line(lang, *moves, *burn_mm, *travel_mm, *seconds),
             Status::NeedConfirm => Msg::NeedConfirm.tr(lang).to_string(),
+            Status::NothingToWrite => Msg::NothingToWrite.tr(lang).to_string(),
             Status::Written(name) => fill(Msg::Written.tr(lang), &[name]),
             Status::NeedImage => Msg::NeedImage.tr(lang).to_string(),
             Status::NeedVector => Msg::NeedVector.tr(lang).to_string(),
@@ -688,6 +732,10 @@ pub struct Window {
     pub materials_path: Option<PathBuf>,
     /// The name of the material that was applied last.
     pub material: Option<String>,
+    /// The G-code program that is open to be seen, when there is one.
+    pub program: Option<ProgramFile>,
+    /// What the preview says about the G-code that was worked out or opened: the moves, the lengths, the time and what looks dangerous.
+    pub report: Option<preview::Report>,
     /// The work that the frame is made of: the picture or the drawing, whichever was opened or chosen last.
     pub work_mode: Mode,
     /// The person has confirmed that the frame may turn the laser on. Any change to the window takes the confirmation back, and so does writing the frame.
@@ -726,6 +774,8 @@ impl Window {
             materials: None,
             materials_path: None,
             material: None,
+            program: None,
+            report: None,
             work_mode: Mode::Engrave,
             pilot_confirmed: false,
             overscan_auto: false,
@@ -746,7 +796,15 @@ impl Window {
     }
 
     pub fn has_work(&self) -> bool {
-        self.picture.is_some() || self.vector.is_some() || self.done.is_some()
+        self.picture.is_some()
+            || self.vector.is_some()
+            || self.program.is_some()
+            || self.done.is_some()
+    }
+
+    /// Whether there is something to write: not a program that was opened to be seen.
+    pub fn can_export(&self) -> bool {
+        self.mode != Mode::Preview && self.can_compute()
     }
 
     /// Whether the G-code can be worked out now.
@@ -754,6 +812,7 @@ impl Window {
         match self.mode {
             Mode::Calibrate | Mode::Focus => true,
             Mode::Frame => self.framed_mode().is_some(),
+            Mode::Preview => self.program.is_some(),
             Mode::Engrave => self.picture.is_some(),
             Mode::Cut => self.vector.is_some(),
         }
@@ -924,6 +983,7 @@ impl Window {
     pub fn current_name(&self) -> Option<String> {
         match self.mode {
             Mode::Cut => self.vector.as_ref().map(|v| v.name.clone()),
+            Mode::Preview => self.program.as_ref().map(|p| p.name.clone()),
             _ => self.picture_name(),
         }
     }
@@ -932,6 +992,7 @@ impl Window {
     pub fn work_folder(&self) -> Option<PathBuf> {
         let path = match self.mode {
             Mode::Cut => self.vector.as_ref().map(|v| &v.path),
+            Mode::Preview => self.program.as_ref().map(|p| &p.path),
             _ => self.picture.as_ref().map(|p| &p.path),
         };
         path.and_then(|p| p.parent().map(Path::to_path_buf))
@@ -940,7 +1001,7 @@ impl Window {
 
     /// The name offered for the G-code to write.
     pub fn suggested_output_for(&self, job: Job) -> Option<PathBuf> {
-        if job != Job::ExportGcode {
+        if job != Job::ExportGcode || self.mode == Mode::Preview {
             return None;
         }
         match (&self.picture, self.mode) {
@@ -980,7 +1041,7 @@ impl Window {
                 });
                 // what was worked out from the old picture is not valid any more
                 self.work_mode = Mode::Engrave;
-                if matches!(self.mode, Mode::Engrave | Mode::Cut) {
+                if matches!(self.mode, Mode::Engrave | Mode::Cut | Mode::Preview) {
                     self.mode = Mode::Engrave;
                     self.warnings.clear();
                     self.done = None;
@@ -997,14 +1058,46 @@ impl Window {
         }
     }
 
+    /// Opens a G-code program (this program's or another's) to see: its path is drawn and the preview says its time and what looks dangerous. It is read as text and never run, and the
+    /// window never writes it again.
+    pub fn open_gcode(&mut self, path: &Path) -> bool {
+        let loaded = read_file(path).map(|bytes| ProgramFile {
+            path: path.to_path_buf(),
+            name: name_of(path),
+            text: String::from_utf8_lossy(&bytes).into_owned(),
+        });
+        let program = match loaded {
+            Ok(p) => p,
+            Err(e) => {
+                self.status = Status::Failed(e);
+                return false;
+            }
+        };
+        // the program is checked before it replaces what was open
+        let before = (self.program.take(), self.mode);
+        self.program = Some(program);
+        self.mode = Mode::Preview;
+        if self.compute() {
+            self.stale = false;
+            true
+        } else {
+            let failure = self.status.clone();
+            self.program = before.0;
+            self.mode = before.1;
+            self.status = failure;
+            false
+        }
+    }
+
     /// Opens a file chosen or dropped on the window: a drawing (SVG, DXF) or a picture (anything else, which the reader of pictures refuses when it is not one).
     pub fn open_dropped(&mut self, path: &Path) -> bool {
         match extension_of(path).as_str() {
             "svg" | "dxf" => self.open_vector(path),
             "png" | "pgm" => self.open_image(path),
+            "nc" | "ngc" | "gcode" | "gc" | "tap" => self.open_gcode(path),
             _ => {
                 self.status = Status::Failed(format!(
-                    "{}: not a file this program reads (PNG, PGM, SVG, DXF)",
+                    "{}: not a file this program reads (PNG, PGM, SVG, DXF, G-code)",
                     path.display()
                 ));
                 false
@@ -1319,14 +1412,23 @@ impl Window {
             Mode::Cut => self.cut_job(),
             Mode::Focus => self.focus_job(),
             Mode::Frame => self.frame_job(),
+            Mode::Preview => self.preview_job(),
         };
         match made {
             Ok(done) => {
                 self.warnings = done.notes.clone();
+                self.report = preview::analyse(
+                    &preview::read(&done.gcode),
+                    &self.preview_options(done.s_max),
+                )
+                .ok();
                 let (segs, cut) = passes_of(
                     &done.gcode,
                     done.s_max,
-                    matches!(self.mode, Mode::Cut | Mode::Focus | Mode::Frame),
+                    matches!(
+                        self.mode,
+                        Mode::Cut | Mode::Focus | Mode::Frame | Mode::Preview
+                    ),
                 );
                 self.segs = segs;
                 self.truncated = cut;
@@ -1400,6 +1502,66 @@ impl Window {
                 seconds: plan.stats.seconds,
             },
             notes: plan.warnings,
+        })
+    }
+
+    /// What the preview is told about the machine: the acceleration of the box, the speed of the moves with the laser off and the bed of the settings file.
+    fn preview_options(&self, s_max: u32) -> preview::Options {
+        let mut o = preview::Options {
+            rapid_mm_min: self.settings.machine.rapid_mm_min,
+            s_max: Some(s_max),
+            bed_mm: self.settings.machine.bed_mm,
+            ..preview::Options::default()
+        };
+        if let Ok(a) = self.number(Key::Accel) {
+            if (1.0..=100_000.0).contains(&a) {
+                o.accel_mm_s2 = a;
+            }
+        }
+        o
+    }
+
+    /// The lines of the preview of the G-code that was worked out or opened: what it does and the notes about what looks dangerous.
+    pub fn preview_lines(&self) -> Vec<String> {
+        let (Some(r), Some(_)) = (&self.report, &self.done) else {
+            return Vec::new();
+        };
+        let mut lines = vec![preview_line(
+            self.lang,
+            r.moves,
+            r.burn_mm,
+            r.travel_mm,
+            r.seconds,
+        )];
+        lines.extend(r.notes.iter().take(8).cloned());
+        lines
+    }
+
+    /// The G-code program that is open, counted and checked by the preview.
+    fn preview_job(&self) -> Result<Done, Status> {
+        let program = self.program.as_ref().ok_or(Status::NeedImage)?;
+        let s_max = self.whole(Key::SMax, 1.0, 100_000.0)?;
+        let r = preview::analyse(&preview::read(&program.text), &self.preview_options(s_max))
+            .map_err(Status::Failed)?;
+        if r.moves == 0 {
+            return Err(Status::Failed(format!(
+                "{}: the program has no move in the plane",
+                program.name
+            )));
+        }
+        Ok(Done {
+            gcode: program.text.clone(),
+            source: None,
+            tools: String::new(),
+            s_max,
+            line_mm: 0.1,
+            summary: Summary::Previewed {
+                moves: r.moves,
+                burn_mm: r.burn_mm,
+                travel_mm: r.travel_mm,
+                seconds: r.seconds,
+            },
+            notes: r.notes,
         })
     }
 
@@ -1568,6 +1730,11 @@ impl Window {
 
     /// Writes the G-code with the standard header (the G-code is worked out again first when a setting changed). It is never written over the picture.
     pub fn export(&mut self, path: &Path) -> bool {
+        // a program that was opened to be seen is not written again
+        if self.mode == Mode::Preview {
+            self.status = Status::NothingToWrite;
+            return false;
+        }
         if (self.done.is_none() || self.stale) && !self.compute() {
             return false;
         }
@@ -1614,6 +1781,7 @@ impl Window {
             Job::OpenImage => self.open_dropped(path),
             Job::OpenConfig => self.load_config(path),
             Job::OpenMaterials => self.load_materials(path),
+            Job::OpenGcode => self.open_gcode(path),
             Job::ExportGcode => self.export(path),
         }
     }
@@ -1658,6 +1826,9 @@ impl Window {
 
     /// The facts about the picture (what the `info` command prints).
     pub fn info_line(&self) -> Option<String> {
+        if self.mode == Mode::Preview {
+            return None;
+        }
         if self.mode == Mode::Cut {
             let v = self.vector.as_ref()?;
             let ((x0, y0), (x1, y1)) = v.drawing.bounds()?;
@@ -3049,5 +3220,184 @@ mod tests {
         w.set_mode(Mode::Cut);
         w.set_mode(Mode::Frame);
         assert_eq!(w.framed_mode(), Some(Mode::Cut));
+    }
+
+    #[test]
+    fn a_program_is_opened_to_be_seen_and_is_never_written_again() {
+        let (s, mut w) = ready("gcode-open");
+        let out = s.0.join("work.nc");
+        assert!(w.export(&out));
+        let text = fs::read_to_string(&out).unwrap();
+        let mut v = Window::new(Lang::En);
+        assert!(v.open_gcode(&out));
+        assert_eq!(v.mode, Mode::Preview);
+        assert_eq!(v.current_name().as_deref(), Some("work.nc"));
+        assert!(v.has_work() && v.can_compute() && !v.can_export());
+        let done = v.done.as_ref().unwrap();
+        assert_eq!(done.gcode, text);
+        let r = preview::analyse(
+            &preview::read(&text),
+            &preview::Options {
+                s_max: Some(1000),
+                ..preview::Options::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            done.summary,
+            Summary::Previewed {
+                moves: r.moves,
+                burn_mm: r.burn_mm,
+                travel_mm: r.travel_mm,
+                seconds: r.seconds
+            }
+        );
+        // the path is drawn, with the burning passes in it
+        assert!(v.segs.iter().any(|s| s.burn));
+        assert!(v.bounds().is_some());
+        // the lines of the preview: what the program does
+        let lines = v.preview_lines();
+        assert_eq!(lines.len(), 1 + r.notes.len());
+        assert!(
+            lines[0].starts_with(&format!("{} moves, ", r.moves)),
+            "{lines:?}"
+        );
+        assert!(lines[0].contains(&preview::clock(r.seconds)));
+        assert_eq!(v.status.text(Lang::En), lines[0]);
+        // it is not written again, and no name is offered
+        let copy = s.0.join("copy.nc");
+        assert!(!v.export(&copy));
+        assert_eq!(v.status, Status::NothingToWrite);
+        assert!(!copy.exists());
+        assert_eq!(v.suggested_output_for(Job::ExportGcode), None);
+        // the folder of the program is where the window of files starts
+        assert_eq!(v.work_folder().as_deref(), Some(s.0.as_path()));
+        // opened by dropping it, by the extension
+        let mut d = Window::new(Lang::En);
+        assert!(d.open_dropped(&out));
+        assert_eq!(d.mode, Mode::Preview);
+        // a picture opened after it takes the window back to engraving
+        let pic = s.0.join("pic.pgm");
+        assert!(d.open_dropped(&pic));
+        assert_eq!(d.mode, Mode::Engrave);
+        // the program stays open for when the person comes back to it
+        assert!(d.program.is_some());
+    }
+
+    #[test]
+    fn a_program_that_looks_dangerous_is_opened_with_its_notes() {
+        let s = Scratch::new("gcode-danger");
+        let p = s.write(
+            "bad.nc",
+            "G21\nG90\nG0 X0 Y0\nM3 S500\nG0 X10 Y0\nG1 X20 Y0\nG1 X30 Y0 F100 S2000\nM2\n",
+        );
+        let mut w = Window::new(Lang::En);
+        assert!(w.open_gcode(&p));
+        assert!(
+            w.warnings.iter().any(|n| n.contains("rapid move")),
+            "{:?}",
+            w.warnings
+        );
+        assert!(w.warnings.iter().any(|n| n.contains("no feed")));
+        assert!(w
+            .warnings
+            .iter()
+            .any(|n| n.contains("above the full power")));
+        let lines = w.preview_lines();
+        assert_eq!(lines.len(), 1 + w.warnings.len());
+        // the full power of the box decides what is above it
+        set(&mut w, Key::SMax, "5000");
+        assert!(w.compute());
+        assert!(!w
+            .warnings
+            .iter()
+            .any(|n| n.contains("above the full power")));
+    }
+
+    #[test]
+    fn a_file_that_is_not_a_program_is_refused_and_what_was_open_stays() {
+        let s = Scratch::new("gcode-junk");
+        let good = s.write(
+            "good.nc",
+            "G21\nG90\nF1000\nG0 X0 Y0\nM3 S100\nG1 X10 Y0\nM5\nM2\n",
+        );
+        let junk = s.write("junk.nc", "this is not a program\n");
+        let mut w = Window::new(Lang::En);
+        // nothing open: the window stays as it was
+        assert!(!w.open_gcode(&junk));
+        assert!(matches!(&w.status, Status::Failed(e) if e.contains("no move")));
+        assert_eq!(w.mode, Mode::Engrave);
+        assert!(w.program.is_none());
+        assert!(!w.open_gcode(Path::new("/no/such/folder/a.nc")));
+        // a program open: it stays
+        assert!(w.open_gcode(&good));
+        assert!(!w.open_gcode(&junk));
+        assert_eq!(w.mode, Mode::Preview);
+        assert_eq!(w.program.as_ref().unwrap().name, "good.nc");
+        assert!(w.done.is_some() && !w.segs.is_empty());
+        // a picture is open, then a program fails: the window goes back to the picture
+        let (_s2, mut v) = ready("gcode-junk-pic");
+        assert!(!v.open_gcode(&junk));
+        assert_eq!(v.mode, Mode::Engrave);
+        assert!(v.compute());
+    }
+
+    #[test]
+    fn the_preview_of_the_work_counts_it_and_warns_when_it_goes_outside_the_bed() {
+        let (s, mut w) = ready("preview-work");
+        assert!(w.preview_lines().is_empty());
+        assert!(w.compute());
+        let lines = w.preview_lines();
+        assert!(
+            lines[0].contains(" moves, ") && lines[0].contains("burnt"),
+            "{lines:?}"
+        );
+        assert_eq!(lines.len(), 1);
+        // the time counts the corners: a lower acceleration takes longer
+        let quick = w.report.as_ref().unwrap().seconds;
+        set(&mut w, Key::Accel, "10");
+        assert!(w.compute());
+        assert!(w.report.as_ref().unwrap().seconds > quick);
+        // a bed that is smaller than the work
+        let cfg = s.write("bed.cfg", "[machine]\nbed_x_mm = 1\nbed_y_mm = 1\n");
+        assert!(w.load_config(&cfg));
+        set(&mut w, Key::WidthMm, "5");
+        assert!(w.compute());
+        assert!(
+            w.preview_lines()
+                .iter()
+                .any(|n| n.contains("outside of the bed")),
+            "{:?}",
+            w.preview_lines()
+        );
+        // without a result there is nothing to say
+        let fresh = Window::new(Lang::En);
+        assert!(fresh.preview_lines().is_empty());
+    }
+
+    #[test]
+    fn the_words_of_the_preview_speak_every_language() {
+        let done = Status::Done(Summary::Previewed {
+            moves: 12,
+            burn_mm: 34.4,
+            travel_mm: 5.0,
+            seconds: 65.0,
+        });
+        assert_eq!(
+            done.text(Lang::En),
+            "12 moves, 34 mm burnt, 5 mm of travel, about 1 min 05 s"
+        );
+        assert_eq!(
+            done.text(Lang::De),
+            "12 Bewegungen, 34 mm gebrannt, 5 mm Leerfahrt, etwa 1 min 05 s"
+        );
+        for l in Lang::ALL {
+            assert!(done.text(l).contains("12") && done.text(l).contains("1 min 05 s"));
+            assert!(!Status::NothingToWrite.text(l).is_empty());
+            assert!(!Job::OpenGcode.title().tr(l).is_empty());
+            assert!(Status::NothingToWrite.is_problem());
+        }
+        assert!(Job::OpenGcode.extensions().contains(&"nc"));
+        assert!(!Job::OpenGcode.is_export());
     }
 }
