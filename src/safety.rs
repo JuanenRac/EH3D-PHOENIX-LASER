@@ -7,8 +7,19 @@
 /// The limit of power when nothing says another: no limit below full power.
 pub const DEFAULT_MAX_POWER_PERCENT: f64 = 100.0;
 
-/// The most that a power to show the frame may be, whatever the limit of the machine is: a percent of full power.
-pub const MAX_PILOT_PERCENT: f64 = 5.0;
+/// The most that a power to show the frame may be when nothing says another (`max_pilot_percent` in `[frame]`): a percent of full power. The limit of power of the machine still holds over it.
+pub const DEFAULT_MAX_PILOT_PERCENT: f64 = 5.0;
+
+/// The cap of the pilot power must be from 0 (no pilot power at all) to 100 percent.
+pub fn validate_max_pilot(max_pilot_percent: f64) -> Result<(), String> {
+    if max_pilot_percent.is_finite() && (0.0..=100.0).contains(&max_pilot_percent) {
+        Ok(())
+    } else {
+        Err(format!(
+            "max_pilot_percent is {max_pilot_percent}: it must be from 0 to 100"
+        ))
+    }
+}
 
 /// A limit of power must be from 0.1 to 100 percent.
 pub fn validate_max(max_percent: f64) -> Result<(), String> {
@@ -33,9 +44,15 @@ pub fn check_power(what: &str, percent: f64, max_percent: f64) -> Result<(), Str
     }
 }
 
-/// The power to show the frame with, as a percent of full power: 0 (the laser stays off) unless the person said `confirmed`, and then at most [`MAX_PILOT_PERCENT`] and at most the limit of
-/// power of the machine.
-pub fn pilot_percent(requested: f64, confirmed: bool, max_percent: f64) -> Result<f64, String> {
+/// The power to show the frame with, as a percent of full power: 0 (the laser stays off) unless the person said `confirmed`, and then at most `max_pilot_percent` (see
+/// [`DEFAULT_MAX_PILOT_PERCENT`]) and at most the limit of power of the machine.
+pub fn pilot_percent(
+    requested: f64,
+    confirmed: bool,
+    max_percent: f64,
+    max_pilot_percent: f64,
+) -> Result<f64, String> {
+    validate_max_pilot(max_pilot_percent)?;
     if !requested.is_finite() || requested < 0.0 {
         return Err(format!(
             "the power of the frame is {requested}: it must be 0 or more"
@@ -50,9 +67,9 @@ pub fn pilot_percent(requested: f64, confirmed: bool, max_percent: f64) -> Resul
                 .to_string(),
         );
     }
-    if requested > MAX_PILOT_PERCENT {
+    if requested > max_pilot_percent {
         return Err(format!(
-            "the power of the frame is {requested} %: it must be {MAX_PILOT_PERCENT} % or less"
+            "the power of the frame is {requested} %: it must be {max_pilot_percent} % or less (max_pilot_percent of [frame])"
         ));
     }
     check_power("the power of the frame", requested, max_percent)?;
@@ -87,21 +104,48 @@ mod tests {
 
     #[test]
     fn the_frame_is_shown_with_the_laser_off_unless_it_is_confirmed() {
-        assert_eq!(pilot_percent(0.0, false, 100.0).unwrap(), 0.0);
-        assert_eq!(pilot_percent(0.0, true, 100.0).unwrap(), 0.0);
-        let e = pilot_percent(1.0, false, 100.0).unwrap_err();
+        let cap = DEFAULT_MAX_PILOT_PERCENT;
+        assert_eq!(pilot_percent(0.0, false, 100.0, cap).unwrap(), 0.0);
+        assert_eq!(pilot_percent(0.0, true, 100.0, cap).unwrap(), 0.0);
+        let e = pilot_percent(1.0, false, 100.0, cap).unwrap_err();
         assert!(e.contains("--confirm-laser-on"), "{e}");
-        assert_eq!(pilot_percent(1.0, true, 100.0).unwrap(), 1.0);
-        assert_eq!(pilot_percent(5.0, true, 100.0).unwrap(), 5.0);
+        assert_eq!(pilot_percent(1.0, true, 100.0, cap).unwrap(), 1.0);
+        assert_eq!(pilot_percent(5.0, true, 100.0, cap).unwrap(), 5.0);
     }
 
     #[test]
     fn the_power_of_the_frame_has_a_small_limit_and_obeys_the_limit_of_the_machine() {
-        assert!(pilot_percent(5.1, true, 100.0).is_err());
-        assert!(pilot_percent(-1.0, true, 100.0).is_err());
-        assert!(pilot_percent(f64::NAN, true, 100.0).is_err());
+        let cap = DEFAULT_MAX_PILOT_PERCENT;
+        assert!(pilot_percent(5.1, true, 100.0, cap).is_err());
+        assert!(pilot_percent(-1.0, true, 100.0, cap).is_err());
+        assert!(pilot_percent(f64::NAN, true, 100.0, cap).is_err());
         // the machine allows less than the frame does
-        assert!(pilot_percent(3.0, true, 2.0).is_err());
-        assert_eq!(pilot_percent(2.0, true, 2.0).unwrap(), 2.0);
+        assert!(pilot_percent(3.0, true, 2.0, cap).is_err());
+        assert_eq!(pilot_percent(2.0, true, 2.0, cap).unwrap(), 2.0);
+    }
+
+    #[test]
+    fn the_cap_of_the_pilot_power_is_a_setting_that_the_limit_of_the_machine_still_holds_down() {
+        // a higher cap lets a higher pilot power through...
+        assert_eq!(pilot_percent(8.0, true, 100.0, 10.0).unwrap(), 8.0);
+        // ...but never over the limit of power of the machine
+        assert!(pilot_percent(8.0, true, 6.0, 10.0).is_err());
+        // a lower cap refuses what the default would allow, and a cap of 0 allows no pilot power
+        let e = pilot_percent(3.0, true, 100.0, 2.0).unwrap_err();
+        assert!(e.contains("max_pilot_percent"), "{e}");
+        assert!(pilot_percent(0.5, true, 100.0, 0.0).is_err());
+        assert_eq!(pilot_percent(0.0, true, 100.0, 0.0).unwrap(), 0.0);
+        // a cap that is not a number is an error, whatever is asked
+        assert!(pilot_percent(0.0, false, 100.0, f64::NAN).is_err());
+        assert!(pilot_percent(1.0, true, 100.0, 100.1).is_err());
+    }
+
+    #[test]
+    fn the_cap_of_the_pilot_power_must_be_from_0_to_100() {
+        assert!(validate_max_pilot(0.0).is_ok());
+        assert!(validate_max_pilot(100.0).is_ok());
+        for bad in [-0.1, 100.1, f64::NAN, f64::INFINITY] {
+            assert!(validate_max_pilot(bad).is_err(), "{bad}");
+        }
     }
 }

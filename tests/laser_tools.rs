@@ -643,6 +643,57 @@ fn the_frame_takes_its_values_from_the_settings_file_and_the_bed_limits_it() {
 }
 
 #[test]
+fn the_cap_of_the_pilot_power_is_in_the_settings_file_and_the_limit_of_power_still_holds() {
+    let cfg = tmp("frame-cap.cfg");
+    let nc = tmp("frame-cap.nc");
+    let ask = |pilot: &str, cfg: &str| {
+        run(&[
+            "frame",
+            &nc,
+            "--size",
+            "10,10",
+            "--pilot",
+            pilot,
+            "--confirm-laser-on",
+            "--config",
+            cfg,
+        ])
+    };
+    // the default cap is 5 %
+    std::fs::write(&cfg, "[frame]\nfeed_mm_min = 3000\n").unwrap();
+    assert!(!ask("8", &cfg).0);
+    // a higher cap in the file lets 8 % through, still with the confirmation
+    std::fs::write(&cfg, "[frame]\nmax_pilot_percent = 10\n").unwrap();
+    let (ok, out, err) = ask("8", &cfg);
+    assert!(ok, "{err}");
+    assert!(out.contains("pilot power S80"), "{out}");
+    // the limit of power of the machine is still over the cap
+    std::fs::write(
+        &cfg,
+        "[machine]\nmax_power_percent = 6\n[frame]\nmax_pilot_percent = 10\n",
+    )
+    .unwrap();
+    let (ok, _, err) = ask("8", &cfg);
+    assert!(!ok);
+    assert!(err.contains("max_power_percent"), "{err}");
+    // a cap of 0 allows no pilot power
+    std::fs::write(&cfg, "[frame]\nmax_pilot_percent = 0\n").unwrap();
+    let (ok, _, err) = ask("1", &cfg);
+    assert!(!ok);
+    assert!(err.contains("max_pilot_percent"), "{err}");
+    // a pilot power in the file above the cap of the file is an error of the file
+    std::fs::write(&cfg, "[frame]\npilot_percent = 4\nmax_pilot_percent = 2\n").unwrap();
+    let (ok, _, err) = run(&["frame", &nc, "--size", "10,10", "--config", &cfg]);
+    assert!(!ok);
+    assert!(err.contains("pilot_percent"), "{err}");
+    // a cap out of range is an error
+    std::fs::write(&cfg, "[frame]\nmax_pilot_percent = 101\n").unwrap();
+    let (ok, _, err) = run(&["frame", &nc, "--size", "10,10", "--config", &cfg]);
+    assert!(!ok);
+    assert!(err.contains("max_pilot_percent"), "{err}");
+}
+
+#[test]
 fn the_frame_needs_one_source_and_never_lands_on_what_it_is_made_from() {
     let nc = tmp("frame-bad.nc");
     for args in [

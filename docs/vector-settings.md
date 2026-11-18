@@ -147,9 +147,10 @@ The frame of the work (`phoenix-laser frame`): the rectangle the head traces to 
 | `feed_mm_min` | 3000 | the speed of the trace, from 1 to 30000 |
 | `laps` | 1 | how many times the rectangle is traced, from 1 to 20 |
 | `margin_mm` | 0 | how far outside of the work the rectangle goes, from 0 to 100 |
-| `pilot_percent` | 0 | a weak power to make the frame visible, from 0 to 5 percent of full power and no more than `max_power_percent`; 0 keeps the laser off |
+| `pilot_percent` | 0 | a weak power to make the frame visible, from 0 to `max_pilot_percent` and no more than `max_power_percent`; 0 keeps the laser off |
+| `max_pilot_percent` | 5 | the cap of `pilot_percent`, from 0 to 100 percent of full power; 0 allows no pilot power at all. The limit of power of the machine still holds over it, and `--confirm-laser-on` is still needed on every run |
 
-The keys of `[frame]` are `feed_mm_min`, `laps`, `margin_mm` and `pilot_percent`.
+The keys of `[frame]` are `feed_mm_min`, `laps`, `margin_mm`, `pilot_percent` and `max_pilot_percent`.
 
 ### `[focus]`
 

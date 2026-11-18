@@ -204,6 +204,8 @@ pub struct FrameSettings {
     pub margin_mm: f64,
     /// A small power to make the frame visible; 0 keeps the laser off.
     pub pilot_percent: f64,
+    /// The most that `pilot_percent` may be (a percent of full power); the limit of power of the machine still holds over it.
+    pub max_pilot_percent: f64,
 }
 
 impl Default for FrameSettings {
@@ -213,6 +215,7 @@ impl Default for FrameSettings {
             laps: 1,
             margin_mm: 0.0,
             pilot_percent: 0.0,
+            max_pilot_percent: crate::safety::DEFAULT_MAX_PILOT_PERCENT,
         }
     }
 }
@@ -228,11 +231,12 @@ impl FrameSettings {
         };
         range("frame feed_mm_min", self.feed_mm_min, 1.0, 30_000.0)?;
         range("frame margin_mm", self.margin_mm, 0.0, 100.0)?;
+        crate::safety::validate_max_pilot(self.max_pilot_percent)?;
         range(
             "frame pilot_percent",
             self.pilot_percent,
             0.0,
-            crate::safety::MAX_PILOT_PERCENT,
+            self.max_pilot_percent,
         )?;
         if self.laps == 0 || self.laps > 20 {
             return Err(format!(
@@ -576,6 +580,7 @@ fn set_global(s: &mut Settings, section: &str, key: &str, value: &str) -> Result
         }
         ("frame", "margin_mm") => s.frame.margin_mm = number(value)?,
         ("frame", "pilot_percent") => s.frame.pilot_percent = number(value)?,
+        ("frame", "max_pilot_percent") => s.frame.max_pilot_percent = number(value)?,
         ("machine", "max_power_percent") => s.machine.max_power_percent = number(value)?,
         ("machine", "max_passes") => {
             s.machine.max_passes =
@@ -917,7 +922,8 @@ mod tests {
                 feed_mm_min: 1200.0,
                 laps: 2,
                 margin_mm: 1.5,
-                pilot_percent: 2.0
+                pilot_percent: 2.0,
+                max_pilot_percent: 5.0,
             }
         );
     }
@@ -932,6 +938,9 @@ mod tests {
             "[frame]\nmargin_mm = -1\n",
             "[frame]\nmargin_mm = 101\n",
             "[frame]\npilot_percent = 5.1\n",
+            "[frame]\nmax_pilot_percent = 101\n",
+            "[frame]\nmax_pilot_percent = -1\n",
+            "[frame]\npilot_percent = 3\nmax_pilot_percent = 2\n",
             "[frame]\npilot_percent = -1\n",
             "[frame]\nlaps = 1.5\n",
             "[frame]\nspeed = 5\n",

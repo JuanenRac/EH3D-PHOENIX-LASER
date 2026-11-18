@@ -4,6 +4,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+- **The cap of the pilot power of the frame is a setting:** `max_pilot_percent` in `[frame]` (5 by default, from 0 to 100; 0 allows no pilot power at all) replaces the fixed 5 %. The limit of power of the machine (`max_power_percent`) still holds over it, a `pilot_percent` above the cap is an error of the file, and `--confirm-laser-on` is still needed on every run.
+
 ## [0.0.7] - A tone curve, ordered dithering, a limit of power, a library of materials, a preview of the program, a frame with the laser off and a focus test
 
 - **Focus test:** `phoenix-laser focus OUT.nc --z-step MM` writes a ladder of short lines side by side, each burnt with the head at another height, so that the sharpest and thinnest line shows where the beam is in focus; it goes back to the first height at the end. The step of the height has no default, because which way is down depends on the machine and a head sent the wrong way can hit the material; the power of the test obeys the limit of power. The usual values (first height, step, number of lines, length, spacing, feed, power) live in the new `[focus]` section of the settings file, and the output is never written over that file.

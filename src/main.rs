@@ -58,7 +58,7 @@ own settings in the file of --config (see the documentation); an option of the c
 layers lists the layers of a drawing with what would be done with each.
 materials FILE lists the materials of a library: a plain text file with a [material NAME] section for each material and way of working (see the documentation). --material NAME takes the power, the speed, the passes and the rest that the library says for it, before the other options, which win; the library is --materials FILE or the file named by PHOENIX_LASER_MATERIALS.
 focus writes a focus test: short lines side by side, each burnt with the head at another height (Z); the sharpest and thinnest line shows where the beam is in focus. --z-step has no default because which way is down depends on the machine: check it before running the program, which moves Z. The usual values live in the [focus] section of --config.
-frame writes a program that traces the rectangle of the work with the laser OFF, to see where it will land: --size W,H from the corner --origin, or the box of what burns in --gcode PROGRAM.nc (its real place). --margin widens it. A --pilot power (a percent, at most 5 and at most the limit of power) turns the laser on weakly and only with --confirm-laser-on; the [frame] section of --config holds the usual values.
+frame writes a program that traces the rectangle of the work with the laser OFF, to see where it will land: --size W,H from the corner --origin, or the box of what burns in --gcode PROGRAM.nc (its real place). --margin widens it. A --pilot power (a percent, at most max_pilot_percent of [frame], 5 unless the file says another, and at most the limit of power) turns the laser on weakly and only with --confirm-laser-on; the [frame] section of --config holds the usual values.
 preview reads a G-code program (this program's or another's) and says what it would do: moves, burnt and travelled length, the box, the powers, a time that counts the corners (--accel in mm/s2) and what looks dangerous (the laser on during a rapid move, a burning move with no feed, S above --smax, work outside --bed, no end); with OUT.svg it also draws the path. It only reads text.
 --max-power is the limit of power, a percent of full power (100 when nothing says another): a program whose power is more than the limit is refused, never lowered. engrave and calibrate also read the limit and --smax from the [machine] section of the file of --config.";
 
@@ -658,8 +658,12 @@ fn run(mut args: Vec<String>) -> Result<(), String> {
             finish(&args, 1)?;
             let out = args.first().ok_or("frame needs an output file")?;
             safety::validate_max(machine.max_power_percent)?;
-            let pilot =
-                safety::pilot_percent(fr.pilot_percent, confirmed, machine.max_power_percent)?;
+            let pilot = safety::pilot_percent(
+                fr.pilot_percent,
+                confirmed,
+                machine.max_power_percent,
+                fr.max_pilot_percent,
+            )?;
             let (lo, hi) = match (&size, &source) {
                 (Some(v), None) => {
                     let wh = list(v, "--size")?;
