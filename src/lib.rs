@@ -19,6 +19,7 @@ pub mod lang;
 pub mod materials;
 pub mod offset;
 pub mod order;
+pub mod preview;
 pub mod raster;
 pub mod safety;
 pub mod shot;

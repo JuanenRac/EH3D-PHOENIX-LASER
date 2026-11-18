@@ -106,6 +106,19 @@
           }
         },
         {
+          "name": "preview.rs",
+          "desc": {
+            "en": "the preview of a G-code program: its moves, time, dangers and an SVG of the path",
+            "es": "la vista previa de un G-code: movimientos, tiempo, peligros y un SVG del recorrido",
+            "de": "die Vorschau eines G-Codes: Bewegungen, Zeit, Gefahren und ein SVG des Weges",
+            "fr": "l'aperçu d'un G-code : mouvements, temps, dangers et un SVG du parcours",
+            "it": "l'anteprima di un G-code: movimenti, tempo, pericoli e un SVG del percorso",
+            "ja": "G-code のプレビュー：移動、時間、危険、経路の SVG",
+            "zh": "G-code 预览：移动、时间、风险和路径 SVG",
+            "pt": "a pré-visualização de um G-code: movimentos, tempo, perigos e um SVG do percurso"
+          }
+        },
+        {
           "name": "tone.rs",
           "desc": {
             "en": "the tone curve of a picture: levels, contrast, brightness, gamma and inversion before the dots",

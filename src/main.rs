@@ -13,6 +13,7 @@ use eh3d_phoenix_laser::energy::describe;
 use eh3d_phoenix_laser::gcode_out::{header, sha256_hex, Header};
 use eh3d_phoenix_laser::image::from_bytes;
 use eh3d_phoenix_laser::materials::{self, Material};
+use eh3d_phoenix_laser::preview;
 use eh3d_phoenix_laser::raster::{engrave, overscan_for, Params};
 use eh3d_phoenix_laser::safety;
 use eh3d_phoenix_laser::svg::read_svg;
@@ -24,6 +25,9 @@ use std::env;
 use std::fs;
 use std::path::Path;
 use std::process::ExitCode;
+
+/// A program larger than this is not read by `preview`.
+const MAX_PROGRAM_BYTES: u64 = 256 << 20;
 
 const HELP: &str = "phoenix-laser: laser engraving from an image
 
@@ -38,6 +42,7 @@ const HELP: &str = "phoenix-laser: laser engraving from an image
   phoenix-laser vector DRAWING OUT.nc [the options of cut] [--angle DEG] [--spacing MM]
   phoenix-laser layers DRAWING [--config FILE] [--dpi N]
   phoenix-laser materials FILE
+  phoenix-laser preview PROGRAM.nc [OUT.svg] [--accel 1000] [--rapid 6000] [--smax N] [--bed X,Y] [--width-px 900] [--config FILE]
   phoenix-laser [gui] [FILE]                     the window (a build with --features gui): with no arguments, with a file or with gui it opens; the commands above never open it
   phoenix-laser gui [FILE] --shot OUT.png [--size WxH] [--theme forge|dark|light] [--wait N] [--lang CODE] [--replace]   a picture of the window (a build with --features gui)
 
@@ -48,6 +53,7 @@ DRAWING is an SVG or a DXF file. cut follows the contours (the ones inside first
 own settings in the file of --config (see the documentation); an option of the command line changes them for all the layers. Without --config, cut cuts everything and vector engraves everything.
 layers lists the layers of a drawing with what would be done with each.
 materials FILE lists the materials of a library: a plain text file with a [material NAME] section for each material and way of working (see the documentation). --material NAME takes the power, the speed, the passes and the rest that the library says for it, before the other options, which win; the library is --materials FILE or the file named by PHOENIX_LASER_MATERIALS.
+preview reads a G-code program (this program's or another's) and says what it would do: moves, burnt and travelled length, the box, the powers, a time that counts the corners (--accel in mm/s2) and what looks dangerous (the laser on during a rapid move, a burning move with no feed, S above --smax, work outside --bed, no end); with OUT.svg it also draws the path. It only reads text.
 --max-power is the limit of power, a percent of full power (100 when nothing says another): a program whose power is more than the limit is refused, never lowered. engrave and calibrate also read the limit and --smax from the [machine] section of the file of --config.";
 
 /// The tone options of the command line over `base`: the curve that is applied to the grey levels before the dots are made.
@@ -528,6 +534,93 @@ fn run(mut args: Vec<String>) -> Result<(), String> {
         "cut" => drawing_job(args, LayerMode::Cut),
         "vector" => drawing_job(args, LayerMode::Engrave),
         "layers" => layers_job(args),
+        "preview" => {
+            let mut o = preview::Options::default();
+            let config = flag(&mut args, "--config")?;
+            if let Some(path) = &config {
+                let s = vconfig::load(Path::new(path))?;
+                o.rapid_mm_min = s.machine.rapid_mm_min;
+                o.bed_mm = s.machine.bed_mm;
+                o.s_max = Some(s.machine.s_max);
+            }
+            if let Some(v) = flag(&mut args, "--accel")? {
+                o.accel_mm_s2 = num(&v, "--accel")?;
+            }
+            if let Some(v) = flag(&mut args, "--rapid")? {
+                o.rapid_mm_min = num(&v, "--rapid")?;
+            }
+            if let Some(v) = flag(&mut args, "--smax")? {
+                o.s_max = Some(whole(&v, "--smax")?);
+            }
+            if let Some(v) = flag(&mut args, "--bed")? {
+                let b = list(&v, "--bed")?;
+                if b.len() != 2 {
+                    return Err("--bed needs X,Y".into());
+                }
+                o.bed_mm = Some((b[0], b[1]));
+            }
+            let width_px = flag(&mut args, "--width-px")?
+                .map(|v| num(&v, "--width-px"))
+                .transpose()?
+                .unwrap_or(900.0);
+            finish(&args, 2)?;
+            let input = args.first().ok_or("preview needs a G-code file")?;
+            let meta = fs::metadata(input).map_err(|e| format!("{input}: {e}"))?;
+            if meta.len() > MAX_PROGRAM_BYTES {
+                return Err(format!(
+                    "{input}: the program is larger than {MAX_PROGRAM_BYTES} bytes"
+                ));
+            }
+            let bytes = fs::read(input).map_err(|e| format!("{input}: {e}"))?;
+            let program = preview::read(&String::from_utf8_lossy(&bytes));
+            let r = preview::analyse(&program, &o)?;
+            if r.moves == 0 {
+                return Err(format!("{input}: the program has no move in the plane"));
+            }
+            if let Some(out) = args.get(1) {
+                let out_path = Path::new(out);
+                if same_file(Path::new(input), out_path)
+                    || config
+                        .as_deref()
+                        .is_some_and(|c| same_file(Path::new(c), out_path))
+                {
+                    return Err(format!(
+                        "{out}: the picture would be written over a file it is made from"
+                    ));
+                }
+                let name = Path::new(input)
+                    .file_name()
+                    .map_or(input.clone(), |n| n.to_string_lossy().into_owned());
+                write_atomic(out_path, &preview::svg(&program, &r, &o, &name, width_px)?)?;
+                println!("picture written to {out}");
+            }
+            for n in &r.notes {
+                eprintln!("note: {n}");
+            }
+            let boxed = |b: Option<((f64, f64), (f64, f64))>| {
+                b.map_or("none".to_string(), |(lo, hi)| {
+                    format!(
+                        "{:.1} x {:.1} mm at {:.1},{:.1}",
+                        hi.0 - lo.0,
+                        hi.1 - lo.1,
+                        lo.0,
+                        lo.1
+                    )
+                })
+            };
+            println!(
+                "{} moves, {:.0} mm burned, {:.0} mm of travel, power S{} to S{}, burns in {}, work in {}, about {}",
+                r.moves,
+                r.burn_mm,
+                r.travel_mm,
+                r.min_power,
+                r.max_power,
+                boxed(r.burn_bounds),
+                boxed(r.bounds),
+                preview::clock(r.seconds)
+            );
+            Ok(())
+        }
         "materials" => {
             finish(&args, 1)?;
             let path = args.first().ok_or("materials needs a library file")?;

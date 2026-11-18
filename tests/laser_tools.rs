@@ -447,3 +447,95 @@ fn a_broken_library_is_an_error_that_names_the_line_and_the_output_never_lands_o
         .unwrap()
         .starts_with("[material a]"));
 }
+
+/// Writes an engraving of the gradient and gives its path.
+fn engraved(name: &str) -> String {
+    let out = tmp(name);
+    let (ok, _, err) = run(&[
+        "engrave",
+        GRADIENT,
+        &out,
+        "--width-mm",
+        "16",
+        "--dot-mm",
+        "0.5",
+    ]);
+    assert!(ok, "{err}");
+    out
+}
+
+#[test]
+fn the_preview_of_an_engraving_counts_what_the_engraving_counted() {
+    let nc = engraved("preview.nc");
+    let (ok, dry, err) = run(&[
+        "engrave",
+        GRADIENT,
+        "--width-mm",
+        "16",
+        "--dot-mm",
+        "0.5",
+        "--dry-run",
+    ]);
+    assert!(ok, "{err}");
+    let (ok, out, err) = run(&["preview", &nc]);
+    assert!(ok, "{err}");
+    // "... , N mm burned, about T s" in the engraving; the same burnt length in the preview
+    let burned = |text: &str| -> String {
+        let end = text.find(" mm burned").unwrap();
+        text[..end].rsplit(' ').next().unwrap().to_string()
+    };
+    assert_eq!(burned(&dry), burned(&out), "{dry} / {out}");
+    assert!(err.is_empty(), "{err}");
+}
+
+#[test]
+fn the_preview_draws_the_path_as_an_svg_and_never_over_its_program() {
+    let nc = engraved("draw.nc");
+    let svg = tmp("draw.svg");
+    let (ok, out, err) = run(&["preview", &nc, &svg, "--bed", "40,40"]);
+    assert!(ok, "{err}");
+    assert!(out.contains("picture written"), "{out}");
+    let text = std::fs::read_to_string(&svg).unwrap();
+    assert!(text.starts_with("<svg ") && text.trim_end().ends_with("</svg>"));
+    assert!(text.contains("<path"), "{text}");
+    let before = std::fs::read_to_string(&nc).unwrap();
+    let (ok, _, err) = run(&["preview", &nc, &nc]);
+    assert!(!ok);
+    assert!(err.contains("written over"), "{err}");
+    assert_eq!(std::fs::read_to_string(&nc).unwrap(), before);
+}
+
+#[test]
+fn the_preview_tells_what_looks_dangerous() {
+    let nc = tmp("danger.nc");
+    std::fs::write(&nc, "G21\nG90\nM4 S1500\nG0 X10 Y10\nG1 X300 Y10\n").unwrap();
+    let (ok, _, err) = run(&["preview", &nc, "--smax", "1000", "--bed", "100,100"]);
+    assert!(ok, "{err}");
+    for word in [
+        "rapid move",
+        "no feed",
+        "above the full power",
+        "outside of the bed",
+        "does not end",
+    ] {
+        assert!(err.contains(word), "{word} in {err}");
+    }
+}
+
+#[test]
+fn a_program_without_a_move_and_rubbish_are_errors_not_pictures() {
+    let nc = tmp("empty.nc");
+    std::fs::write(&nc, "G21\nM5\nM2\n").unwrap();
+    let (ok, _, err) = run(&["preview", &nc]);
+    assert!(!ok);
+    assert!(err.contains("no move"), "{err}");
+    let (ok, _, err) = run(&["preview", &tmp("missing.nc")]);
+    assert!(!ok);
+    assert!(!err.is_empty());
+    let (ok, _, err) = run(&["preview", &nc, "--accel", "0"]);
+    assert!(!ok);
+    assert!(err.contains("accel"), "{err}");
+    let (ok, _, err) = run(&["preview", &nc, "--bed", "5"]);
+    assert!(!ok);
+    assert!(err.contains("--bed needs X,Y"), "{err}");
+}
