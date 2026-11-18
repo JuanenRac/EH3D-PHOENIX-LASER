@@ -17,7 +17,7 @@
 
 ---
 
-**Vérification d'honnêteté - ce qui fonctionne aujourd'hui :** une bibliothèque Rust et un programme en ligne de commande (`phoenix-laser`) avec 348 tests qui s'exécutent sur un ordinateur : il transforme une image en points par tramage et écrit le G-code d'un laser qui brûle ligne par ligne avec une puissance dynamique et un dépassement, lit des dessins SVG et DXF et écrit le G-code qui découpe leurs contours (ceux de l'intérieur d'abord, avec la largeur du faisceau, des ponts et plusieurs passes) et grave leurs formes avec des lignes, avec les réglages de chaque calque dans un fichier, et une grille d'essai puissance contre avance. Il a une fenêtre (compilée avec `--features gui`) qui ouvre une image ou un dessin, montre le trajet du laser, permet de changer les réglages et exporte le G-code, mais la fenêtre n'a pas encore été vue sur un écran ; il n'a pas été essayé sur une machine et n'a pas été comparé à une collection de fichiers réels.
+**Vérification d'honnêteté - ce qui fonctionne aujourd'hui :** une bibliothèque Rust et un programme en ligne de commande (`phoenix-laser`) avec 364 tests qui s'exécutent sur un ordinateur : il transforme une image en points par tramage et écrit le G-code d'un laser qui brûle ligne par ligne avec une puissance dynamique et un dépassement, lit des dessins SVG et DXF et écrit le G-code qui découpe leurs contours (ceux de l'intérieur d'abord, avec la largeur du faisceau, des ponts et plusieurs passes) et grave leurs formes avec des lignes, avec les réglages de chaque calque dans un fichier, et une grille d'essai puissance contre avance. Il a une fenêtre (compilée avec `--features gui`) qui ouvre une image ou un dessin, montre le trajet du laser, permet de changer les réglages et exporte le G-code, mais la fenêtre n'a pas encore été vue sur un écran ; il n'a pas été essayé sur une machine et n'a pas été comparé à une collection de fichiers réels.
 
 ---
 
@@ -30,7 +30,7 @@
 |---|---|
 | Version | `0.0.6` |
 | Maturité | Fonctionnel |
-| Tests | 348 |
+| Tests | 364 |
 | Pile technique | Rust |
 | Sur du matériel réel | Non essayé : rien ici n'a fonctionné sur une machine |
 
@@ -46,7 +46,7 @@ Chaque ligne est une partie de ce dépôt et le feu dit où elle en est aujourd'
 |---|---|---|
 | Cœur | 🟡 | transforme une image en points par tramage et écrit le G-code d'un laser qui brûle ligne par ligne avec une puissance dynamique et un dépassement, lit des dessins SVG et DXF et les découpe ou les grave par calque (contours ordonnés, largeur du faisceau, ponts, passes, hachures), et une grille d'essai puissance contre avance ; testé sur un ordinateur avec des entrées normales et abîmées, pas avec une collection de fichiers réels. |
 | Ligne de commande | 🟡 | `phoenix-laser` (`engrave`, `calibrate`, `info`, `cut`, `vector`, `layers`) exécute les mêmes fonctions que la bibliothèque et affiche le résultat ; chaque erreur revient sous forme de message et d'un code de sortie non nul. |
-| Tests | 🟡 | 348 tests passent (`cargo test`), avec des cas normaux, des cas limites et des entrées abîmées. |
+| Tests | 🟡 | 364 tests passent (`cargo test`), avec des cas normaux, des cas limites et des entrées abîmées. |
 | Sécurité | 🟡 | Rust sûr et simple (`forbid(unsafe_code)`) : rien ne panique sur les fichiers reçus et une mauvaise valeur est une erreur avec sa raison ; pas de revue indépendante. |
 | Fenêtre | 🟠 | Écrite (egui, `--features gui`) : ouvrir ou déposer une image ou un dessin SVG ou DXF, voir le trajet du laser (la découpe d'une couleur, le déplacement atténué), modifier le tableau des calques, une grille d'étalonnage, zoom et déplacement, estimer la durée, exporter ; sa logique est testée, mais elle n'a pas encore été compilée ni vue sur un écran. |
 | Matériel réel | 🔴 | Non essayé : rien ici n'a été exécuté sur une machine. |
@@ -62,6 +62,7 @@ Chaque ligne est une partie de ce dépôt et le feu dit où elle en est aujourd'
 * **Les dessins** (`src/svg.rs`, `src/dxf.rs`, `src/flatten.rs`, `src/vector.rs`) : un sous-ensemble sûr de SVG (tracés avec toutes leurs commandes, formes, transformations, groupes, unités) et les entités d'un DXF (lignes, polylignes avec arcs, arcs, cercles, splines, unités) deviennent des formes en millimètres ; les scripts, les images, `use`, les entités déclarées et tout ce qui est inconnu sont ignorés ou refusés, la taille, la profondeur et le nombre d'éléments et de points sont limités par les réglages, et les courbes deviennent des segments droits dans une tolérance.
 * **Découpe et gravure** (`src/order.rs`, `src/offset.rs`, `src/cut.rs`) : les formes sont groupées par calque (DXF) ou par couleur (SVG) ; chaque groupe est découpé (lignes libres jointes, les contours à l'intérieur d'un autre d'abord, le plus court déplacement, la largeur du faisceau retirée du bon côté, ponts laissés, plusieurs passes avec la mise au point qui avance) ou gravé (formes fermées remplies de lignes selon un angle, par la règle pair-impair) avec ses propres réglages.
 * **Le fichier de réglages** (`src/vconfig.rs`, `docs/vector-settings.md`) : toute valeur ajustée (les limites des lecteurs, la machine, les réglages de chaque calque) est dans un fichier texte simple vérifié ligne par ligne ; rien de cela n'est dans le code.
+* **La bibliothèque de matériaux** (`src/materials.rs`, `examples/materials.cfg`) : ce qui convient à chaque matériau et manière de travailler s'écrit une fois dans un fichier texte (`[material NOM]` : puissance, vitesse, passes, pas de mise au point, largeur du faisceau, hachures, taille du point, tramage et courbe de tons) et se choisit avec `--material NOM --materials FICHIER` ; les options de la ligne de commande l'emportent et la limite de puissance vaut sur les deux. `phoenix-laser materials FICHIER` liste la bibliothèque.
 * **La limite de puissance** (`src/safety.rs`, `max_power_percent` dans `[machine]`, `--max-power`) : un programme dont la puissance dépasse la limite est refusé avec une erreur qui nomme le calque ou l'option, jamais abaissé sans le dire ; la limite est de 100 % tant qu'un fichier ou une option n'en dit pas moins.
 * **Tramage ordonné** (`src/dither.rs`) : `--dither bayer` (aussi dans la fenêtre) décide chaque point selon sa place et son gris avec une matrice de Bayer 8 x 8, donc le motif est régulier et le même gris brûle toujours les mêmes points ; les tests vérifient que chaque niveau de la matrice apparaît une fois et que le noircissement d'un gris est conservé.
 * **La courbe de tons** (`src/tone.rs`) : avant de fabriquer les points, les niveaux de gris peuvent être étirés sur toute la plage (`--auto-level`), recevoir plus ou moins de contraste et de luminosité, être courbés par un gamma ou inversés, avec une seule table de 256 entrées ; avec les valeurs par défaut l'image n'est pas modifiée du tout.
@@ -98,6 +99,7 @@ Comment les parties de ce dépôt s'articulent : qui l'utilise, ce qu'il contien
 | Un dessin hostile (scripts, entités déclarées, imbrication profonde, millions de points, nombres énormes) | les scripts, les images et les liens ne sont jamais exécutés ni téléchargés ; une entité déclarée est une erreur ; la taille, la profondeur, les éléments, les formes, les points et les morceaux d'une courbe sont limités ; une forme avec un point hors limites est laissée de côté |
 | Un programme qui pourrait allumer le laser sans vitesse ou au-dessus de la pleine puissance | chaque programme est vérifié ligne par ligne avant d'être livré, et celui qui échoue n'est pas écrit |
 | Une puissance supérieure à ce que la machine ou le matériau doit recevoir | la limite de puissance (`max_power_percent`, `--max-power`) refuse un programme qui la dépasse avec une erreur qui nomme le calque ou l'option ; elle n'est jamais abaissée sans le dire |
+| Une bibliothèque de matériaux cassée ou énorme | le fichier est limité en taille et en nombre de matériaux ; une valeur hors plage, une clé inconnue ou un nom répété est une erreur qui nomme la ligne ; la sortie n'est jamais écrite par-dessus |
 | Le fichier de sortie choisi sur le dessin ou sur les réglages dont il provient | refusé, dans la fenêtre et dans les commandes |
 
 **Ce qui n'est pas défendu :** un résultat produit sans erreur n'est pas un résultat vérifié. Rien ici ne connaît les limites d'une machine et le programme n'a pas eu de revue indépendante. Signalez une vulnérabilité en privé (voir [SECURITY.md](SECURITY.md)).
@@ -110,12 +112,14 @@ La bibliothèque est `eh3d_phoenix_laser` (`use eh3d_phoenix_laser::...`) ; la l
 phoenix-laser engrave IMAGE OUT.nc --width-mm 50 [--dot-mm 0.1] [--feed 3000] [--power 50] [--smax 1000]
               [--dither fs|atkinson|threshold|bayer] [--threshold 128] [--overscan MM|auto] [--accel 1000] [--origin X,Y] [--dry-run]
               [--gamma 1] [--contrast 0] [--brightness 0] [--invert] [--auto-level] [--max-power 100] [--config FILE]
+              [--material NAME --materials FILE]
 phoenix-laser calibrate OUT.nc --powers 20,40,60,80 --feeds 1000,2000,3000 [--smax 1000] [--max-power 100] [--config FILE]
 phoenix-laser info IMAGE
 phoenix-laser cut DRAWING OUT.nc [--config FILE] [--power P] [--speed MM/MIN] [--passes N] [--focus-step MM] [--kerf MM] [--kerf-side none|auto|inside|outside]
-              [--tabs N] [--tab-width MM] [--smax N] [--overscan MM] [--origin X,Y] [--bed X,Y] [--max-power P] [--dpi N] [--tolerance MM] [--dry-run]
+              [--tabs N] [--tab-width MM] [--smax N] [--overscan MM] [--origin X,Y] [--bed X,Y] [--max-power P] [--material NAME --materials FILE] [--dpi N] [--tolerance MM] [--dry-run]
 phoenix-laser vector DRAWING OUT.nc [the options of cut] [--angle DEG] [--spacing MM]
 phoenix-laser layers DRAWING [--config FILE] [--dpi N]
+phoenix-laser materials FILE
 phoenix-laser [gui] [FILE]                       the window (a build with --features gui); with no arguments it opens
 ```
 
@@ -142,7 +146,7 @@ Pour prendre une capture de la fenêtre sans l'ouvrir à la main, lancez-la avec
 
 ## 🧪 Tests
 
-La suite compte 348 tests (`cargo test`, exécutés sous Windows et Linux dans le CI). Ils vérifient les cas normaux, les cas limites et les entrées abîmées : fichiers vides, bruit et fichiers coupés ne font jamais paniquer. Le CI exécute aussi `cargo fmt --check`, `cargo clippy` avec les avertissements comme erreurs et `python -I tools/ci_validate.py`.
+La suite compte 364 tests (`cargo test`, exécutés sous Windows et Linux dans le CI). Ils vérifient les cas normaux, les cas limites et les entrées abîmées : fichiers vides, bruit et fichiers coupés ne font jamais paniquer. Le CI exécute aussi `cargo fmt --check`, `cargo clippy` avec les avertissements comme erreurs et `python -I tools/ci_validate.py`.
 
 ## 🏗️ Compilation et publication
 
@@ -169,6 +173,7 @@ EH3D-PHOENIX-LASER/
 │   ├── calibrate.rs                             une partie de la logique
 │   ├── cli_args.rs                              les arguments de la ligne de commande, le même fichier dans chaque petit utilitaire
 │   ├── dither.rs                                une partie de la logique
+│   ├── materials.rs                             la bibliothèque de matériaux : puissance, vitesse, passes, tons
 │   ├── tone.rs                                  la courbe de tons d'une image : niveaux, contraste, luminosité, gamma et inversion avant les points
 │   ├── gcode_out.rs                             la seule façon d'écrire un nombre de G-code et l'en-tête standard
 │   ├── raster.rs                                une partie de la logique
@@ -201,11 +206,13 @@ EH3D-PHOENIX-LASER/
 │   ├── gradient.pgm                             un exemple pour essayer le programme
 │   ├── plate.svg                                une plaque avec un trou et un panneau à graver (SVG)
 │   ├── plate.dxf                                la même plaque en DXF
-│   └── plate.cfg                                les réglages de ses calques : puissance, vitesse, passes, largeur du faisceau, ponts et hachures
+│   ├── plate.cfg                                les réglages de ses calques : puissance, vitesse, passes, largeur du faisceau, ponts et hachures
+│   └── materials.cfg                            une bibliothèque de matériaux : bouleau et ardoise, découpe, gravure et photographies
 ├── docs/
 │   ├── architecture.json                        données de l'image d'Architecture
 │   ├── structure.json                           données de l'image de Structure
-│   └── vector-settings.md                       le fichier de réglages du travail vectoriel, clé par clé
+│   ├── vector-settings.md                       le fichier de réglages du travail vectoriel, clé par clé
+│   └── materials.md                             la bibliothèque de matériaux, clé par clé
 ├── tools/                                       contrôle de la CI et du README et outils d'images
 ├── images/                                      bannière et images d'Architecture et de Structure du dépôt
 ├── .github/                                     workflows de CI et de publication, modèles d'issues et de pull requests
@@ -251,6 +258,7 @@ Le README et les textes existent en anglais, espagnol, français, italien, allem
 * [Journal des modifications](CHANGELOG.md)
 * [Données d'architecture et de structure](docs/architecture.json) : les données qui servent à dessiner les deux images.
 * [Réglages du travail vectoriel](docs/vector-settings.md) : chaque clé du fichier de réglages avec sa valeur par défaut et sa plage.
+* [La bibliothèque de matériaux](docs/materials.md) : chaque clé d'un matériau et la façon de l'appliquer
 
 ## 🤝 Contribuer et communauté
 

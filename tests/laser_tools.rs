@@ -272,3 +272,178 @@ fn the_output_is_never_written_over_the_settings_file() {
         "[machine]\ns_max = 1000\n"
     );
 }
+
+const MATERIALS: &str = "examples/materials.cfg";
+
+#[test]
+fn the_library_of_the_examples_is_listed() {
+    let (ok, out, err) = run(&["materials", MATERIALS]);
+    assert!(ok, "{err}");
+    for name in [
+        "birch 3 mm cut",
+        "birch 3 mm engrave",
+        "birch photo",
+        "slate photo",
+    ] {
+        assert!(out.contains(name), "{out}");
+    }
+    assert!(out.contains("4 material(s)"), "{out}");
+}
+
+#[test]
+fn a_material_gives_the_same_engraving_as_its_values_typed_in() {
+    let (ok, with_material, err) = run(&[
+        "engrave",
+        GRADIENT,
+        "--width-mm",
+        "16",
+        "--dry-run",
+        "--materials",
+        MATERIALS,
+        "--material",
+        "Birch Photo",
+    ]);
+    assert!(ok, "{err}");
+    let (ok, typed, err) = run(&[
+        "engrave",
+        GRADIENT,
+        "--width-mm",
+        "16",
+        "--dry-run",
+        "--power",
+        "30",
+        "--feed",
+        "3000",
+        "--dot-mm",
+        "0.1",
+        "--overscan",
+        "2",
+        "--dither",
+        "atkinson",
+        "--gamma",
+        "1.4",
+        "--contrast",
+        "10",
+        "--auto-level",
+    ]);
+    assert!(ok, "{err}");
+    assert_eq!(with_material, typed);
+}
+
+#[test]
+fn an_option_of_the_command_line_wins_over_the_material() {
+    let (ok, from_option, err) = run(&[
+        "engrave",
+        GRADIENT,
+        "--width-mm",
+        "16",
+        "--dry-run",
+        "--materials",
+        MATERIALS,
+        "--material",
+        "slate photo",
+        "--dither",
+        "fs",
+        "--dot-mm",
+        "0.5",
+    ]);
+    assert!(ok, "{err}");
+    let (ok, plain, err) = run(&[
+        "engrave",
+        GRADIENT,
+        "--width-mm",
+        "16",
+        "--dry-run",
+        "--power",
+        "45",
+        "--feed",
+        "2000",
+        "--dot-mm",
+        "0.5",
+        "--brightness",
+        "5",
+    ]);
+    assert!(ok, "{err}");
+    assert_eq!(from_option, plain);
+}
+
+#[test]
+fn a_material_sets_the_layers_of_a_drawing_and_the_limit_of_power_holds_over_it() {
+    let out = tmp("material-cut.nc");
+    let (ok, _, err) = run(&[
+        "cut",
+        "examples/plate.svg",
+        &out,
+        "--materials",
+        MATERIALS,
+        "--material",
+        "birch 3 mm cut",
+    ]);
+    assert!(ok, "{err}");
+    // 90 % of 1000
+    assert!(std::fs::read_to_string(&out).unwrap().contains("S900"));
+    let (ok, _, err) = run(&[
+        "cut",
+        "examples/plate.svg",
+        "--dry-run",
+        "--materials",
+        MATERIALS,
+        "--material",
+        "birch 3 mm cut",
+        "--max-power",
+        "50",
+    ]);
+    assert!(!ok);
+    assert!(err.contains("max_power_percent"), "{err}");
+}
+
+#[test]
+fn a_material_that_does_not_exist_names_the_ones_that_do() {
+    let (ok, _, err) = run(&[
+        "layers",
+        "examples/plate.svg",
+        "--materials",
+        MATERIALS,
+        "--material",
+        "granite",
+    ]);
+    assert!(!ok);
+    assert!(
+        err.contains("granite") && err.contains("birch photo"),
+        "{err}"
+    );
+}
+
+#[test]
+fn a_material_needs_its_library_and_a_library_needs_its_material() {
+    let (ok, _, err) = run(&["layers", "examples/plate.svg", "--materials", MATERIALS]);
+    assert!(!ok);
+    assert!(err.contains("--material NAME"), "{err}");
+    let (ok, _, err) = run(&["layers", "examples/plate.svg", "--material", "birch photo"]);
+    assert!(!ok);
+    assert!(err.contains("--materials"), "{err}");
+}
+
+#[test]
+fn a_broken_library_is_an_error_that_names_the_line_and_the_output_never_lands_on_it() {
+    let lib = tmp("broken.cfg");
+    std::fs::write(&lib, "[material a]\npower = 500\n").unwrap();
+    let (ok, _, err) = run(&["materials", &lib]);
+    assert!(!ok);
+    assert!(err.contains("line 2") && err.contains("power"), "{err}");
+    std::fs::write(&lib, "[material a]\npower = 20\nspeed = 1000\n").unwrap();
+    let (ok, _, err) = run(&[
+        "cut",
+        "examples/plate.svg",
+        &lib,
+        "--materials",
+        &lib,
+        "--material",
+        "a",
+    ]);
+    assert!(!ok);
+    assert!(err.contains("written over"), "{err}");
+    assert!(std::fs::read_to_string(&lib)
+        .unwrap()
+        .starts_with("[material a]"));
+}

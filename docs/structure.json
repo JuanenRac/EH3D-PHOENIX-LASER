@@ -93,6 +93,19 @@
           }
         },
         {
+          "name": "materials.rs",
+          "desc": {
+            "en": "the library of materials: power, speed, passes, dots and tone",
+            "es": "la biblioteca de materiales: potencia, velocidad, pasadas y tonos",
+            "de": "die Materialbibliothek: Leistung, Geschwindigkeit, Durchgänge, Töne",
+            "fr": "la bibliothèque de matériaux : puissance, vitesse, passes, tons",
+            "it": "la libreria dei materiali: potenza, velocità, passate, toni",
+            "ja": "素材ライブラリ：出力、速度、パス、ドット、トーン",
+            "zh": "材料库：功率、速度、遍数、点阵和色调",
+            "pt": "a biblioteca de materiais: potência, velocidade, passagens, tons"
+          }
+        },
+        {
           "name": "tone.rs",
           "desc": {
             "en": "the tone curve of a picture: levels, contrast, brightness, gamma and inversion before the dots",
@@ -508,6 +521,19 @@
             "zh": "各图层的设置：功率、速度、遍数、光束宽度、连接桥和填充",
             "pt": "as definições das suas camadas: potência, velocidade, passagens, largura do feixe, pontes e hachura"
           }
+        },
+        {
+          "name": "materials.cfg",
+          "desc": {
+            "en": "a library of materials: birch and slate, cutting, engraving and photographs",
+            "es": "una biblioteca de materiales: abedul y pizarra, corte, grabado y fotografías",
+            "de": "eine Materialbibliothek: Birke und Schiefer, Schneiden, Gravieren und Fotos",
+            "fr": "une bibliothèque de matériaux : bouleau et ardoise, découpe, gravure et photographies",
+            "it": "una libreria di materiali: betulla e ardesia, taglio, incisione e fotografie",
+            "ja": "素材ライブラリ：白樺とスレート、切断、彫刻、写真",
+            "zh": "材料库：桦木和板岩，切割、雕刻和照片",
+            "pt": "uma biblioteca de materiais: vidoeiro e ardósia, corte, gravação e fotografias"
+          }
         }
       ]
     },
@@ -553,6 +579,19 @@
             "ja": "ベクター作業の設定ファイルをキーごとに説明",
             "zh": "矢量作业设置文件，逐项说明",
             "pt": "o ficheiro de definições do trabalho vetorial, chave a chave"
+          }
+        },
+        {
+          "name": "materials.md",
+          "desc": {
+            "en": "the library of materials, key by key",
+            "es": "la biblioteca de materiales, clave por clave",
+            "de": "die Materialbibliothek, Schlüssel für Schlüssel",
+            "fr": "la bibliothèque de matériaux, clé par clé",
+            "it": "la libreria dei materiali, chiave per chiave",
+            "ja": "素材ライブラリをキーごとに説明",
+            "zh": "材料库，逐项说明",
+            "pt": "a biblioteca de materiais, chave a chave"
           }
         }
       ]

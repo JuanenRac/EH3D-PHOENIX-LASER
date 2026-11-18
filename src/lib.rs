@@ -16,6 +16,7 @@ pub mod gcode_out;
 #[cfg(feature = "gui")]
 pub mod gui;
 pub mod lang;
+pub mod materials;
 pub mod offset;
 pub mod order;
 pub mod raster;

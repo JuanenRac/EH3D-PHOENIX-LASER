@@ -12,6 +12,7 @@ use eh3d_phoenix_laser::dxf::read_dxf;
 use eh3d_phoenix_laser::energy::describe;
 use eh3d_phoenix_laser::gcode_out::{header, sha256_hex, Header};
 use eh3d_phoenix_laser::image::from_bytes;
+use eh3d_phoenix_laser::materials::{self, Material};
 use eh3d_phoenix_laser::raster::{engrave, overscan_for, Params};
 use eh3d_phoenix_laser::safety;
 use eh3d_phoenix_laser::svg::read_svg;
@@ -29,12 +30,14 @@ const HELP: &str = "phoenix-laser: laser engraving from an image
   phoenix-laser engrave IMAGE OUT.nc --width-mm 50 [--dot-mm 0.1] [--feed 3000] [--power 50] [--smax 1000]
                 [--dither fs|atkinson|threshold|bayer] [--threshold 128] [--overscan MM|auto] [--accel 1000] [--origin X,Y] [--dry-run]
                 [--gamma 1] [--contrast 0] [--brightness 0] [--invert] [--auto-level] [--max-power 100] [--config FILE]
+                [--material NAME --materials FILE]
   phoenix-laser calibrate OUT.nc --powers 20,40,60,80 --feeds 1000,2000,3000 [--smax 1000] [--max-power 100] [--config FILE]
   phoenix-laser info IMAGE
   phoenix-laser cut DRAWING OUT.nc [--config FILE] [--power P] [--speed MM/MIN] [--passes N] [--focus-step MM] [--kerf MM] [--kerf-side none|auto|inside|outside]
-                [--tabs N] [--tab-width MM] [--smax N] [--overscan MM] [--origin X,Y] [--bed X,Y] [--max-power P] [--dpi N] [--tolerance MM] [--dry-run]
+                [--tabs N] [--tab-width MM] [--smax N] [--overscan MM] [--origin X,Y] [--bed X,Y] [--max-power P] [--material NAME --materials FILE] [--dpi N] [--tolerance MM] [--dry-run]
   phoenix-laser vector DRAWING OUT.nc [the options of cut] [--angle DEG] [--spacing MM]
   phoenix-laser layers DRAWING [--config FILE] [--dpi N]
+  phoenix-laser materials FILE
   phoenix-laser [gui] [FILE]                     the window (a build with --features gui): with no arguments, with a file or with gui it opens; the commands above never open it
   phoenix-laser gui [FILE] --shot OUT.png [--size WxH] [--theme forge|dark|light] [--wait N] [--lang CODE] [--replace]   a picture of the window (a build with --features gui)
 
@@ -44,6 +47,7 @@ The tone options change the grey levels before the dots are made: --gamma (0.1 t
 DRAWING is an SVG or a DXF file. cut follows the contours (the ones inside first), vector fills the closed shapes with lines and follows the open ones. Every layer (or colour, for an SVG) has its
 own settings in the file of --config (see the documentation); an option of the command line changes them for all the layers. Without --config, cut cuts everything and vector engraves everything.
 layers lists the layers of a drawing with what would be done with each.
+materials FILE lists the materials of a library: a plain text file with a [material NAME] section for each material and way of working (see the documentation). --material NAME takes the power, the speed, the passes and the rest that the library says for it, before the other options, which win; the library is --materials FILE or the file named by PHOENIX_LASER_MATERIALS.
 --max-power is the limit of power, a percent of full power (100 when nothing says another): a program whose power is more than the limit is refused, never lowered. engrave and calibrate also read the limit and --smax from the [machine] section of the file of --config.";
 
 /// The tone options of the command line over `base`: the curve that is applied to the grey levels before the dots are made.
@@ -83,6 +87,32 @@ fn machine_limits(args: &mut Vec<String>) -> Result<(f64, Option<u32>, Option<St
     }
     safety::validate_max(max)?;
     Ok((max, s_max, config))
+}
+
+/// The material that `--material` names, taken from the library of `--materials` (or of the file named by `PHOENIX_LASER_MATERIALS`), with the file it comes from.
+fn take_material(args: &mut Vec<String>) -> Result<Option<(Material, String)>, String> {
+    let name = flag(args, "--material")?;
+    let given = flag(args, "--materials")?;
+    let Some(name) = name else {
+        return if given.is_some() {
+            Err("--materials needs --material NAME".into())
+        } else {
+            Ok(None)
+        };
+    };
+    let file = given
+        .or_else(|| env::var("PHOENIX_LASER_MATERIALS").ok())
+        .filter(|f| !f.trim().is_empty())
+        .ok_or("--material needs the library: --materials FILE or PHOENIX_LASER_MATERIALS")?;
+    let lib = materials::load(Path::new(&file))?;
+    let found = lib.find(&name).ok_or_else(|| {
+        format!(
+            "{file}: there is no material '{}' (it has: {})",
+            name.trim(),
+            lib.names().join(", ")
+        )
+    })?;
+    Ok(Some((found.clone(), file)))
 }
 
 fn list(text: &str, what: &str) -> Result<Vec<f64>, String> {
@@ -160,12 +190,13 @@ impl Overrides {
 }
 
 /// The settings of a drawing command: the file of `--config` (or the defaults, with `default_mode` for every layer) and the options of the command line over it. Gives the file of
-/// settings too, so that it is never written over.
+/// the files it was made from (the settings and the library of materials), so that none of them is ever written over.
 fn drawing_settings(
     args: &mut Vec<String>,
     default_mode: LayerMode,
-) -> Result<(Settings, Option<String>), String> {
+) -> Result<(Settings, Vec<String>), String> {
     let config = flag(args, "--config")?;
+    let material = take_material(args)?;
     let mut s = match &config {
         Some(path) => vconfig::load(Path::new(path))?,
         None => {
@@ -203,13 +234,21 @@ fn drawing_settings(
         }
         s.machine.bed_mm = Some((b[0], b[1]));
     }
+    // the material is applied to every layer like the options of the command line, and under them
+    if let Some((m, _)) = &material {
+        m.apply_to_layer(&mut s.defaults);
+        for (_, p) in s.layers.iter_mut() {
+            m.apply_to_layer(p);
+        }
+    }
     let over = Overrides::take(args)?;
     over.apply(&mut s.defaults);
     for (_, p) in s.layers.iter_mut() {
         over.apply(p);
     }
     s.validate()?;
-    Ok((s, config))
+    let sources = config.into_iter().chain(material.map(|(_, f)| f)).collect();
+    Ok((s, sources))
 }
 
 /// Reads an SVG or DXF file, with the limit on its size that the settings give.
@@ -238,7 +277,7 @@ fn read_drawing(path: &str, s: &Settings) -> Result<(Vec<u8>, Drawing), String> 
 /// `cut` and `vector`: a drawing becomes the G-code of the laser.
 fn drawing_job(mut args: Vec<String>, default_mode: LayerMode) -> Result<(), String> {
     let dry_run = switch(&mut args, "--dry-run");
-    let (settings, config) = drawing_settings(&mut args, default_mode)?;
+    let (settings, sources) = drawing_settings(&mut args, default_mode)?;
     let needed = if dry_run { 1 } else { 2 };
     if args.len() < needed {
         return Err(if dry_run {
@@ -256,9 +295,7 @@ fn drawing_job(mut args: Vec<String>, default_mode: LayerMode) -> Result<(), Str
         // never over the drawing or the settings that it was made from
         let out = Path::new(&args[1]);
         if same_file(Path::new(&args[0]), out)
-            || config
-                .as_deref()
-                .is_some_and(|c| same_file(Path::new(c), out))
+            || sources.iter().any(|c| same_file(Path::new(c), out))
         {
             return Err(format!(
                 "{}: the output would be written over a file it is made from",
@@ -332,9 +369,16 @@ fn run(mut args: Vec<String>) -> Result<(), String> {
                 .transpose()?
                 .ok_or("--width-mm is needed")?;
             let (max_power, config_s_max, config) = machine_limits(&mut args)?;
+            let material = take_material(&mut args)?;
             let mut p = Params::default();
             if let Some(s_max) = config_s_max {
                 p.s_max = s_max;
+            }
+            // the material goes under the options of the command line
+            let mut tone_base = Tone::default();
+            if let Some((m, _)) = &material {
+                m.apply_to_engraving(&mut p);
+                m.apply_to_tone(&mut tone_base);
             }
             if let Some(v) = flag(&mut args, "--dot-mm")? {
                 p.pixel_mm = num(&v, "--dot-mm")?;
@@ -364,16 +408,22 @@ fn run(mut args: Vec<String>) -> Result<(), String> {
                 Some(v) => p.overscan_mm = num(v, "--overscan")?,
                 None => {}
             }
+            let material_threshold = material
+                .as_ref()
+                .and_then(|(m, _)| m.threshold)
+                .map_or(128.0, f64::from);
             let threshold = flag(&mut args, "--threshold")?
                 .map(|v| num(&v, "--threshold"))
                 .transpose()?
-                .unwrap_or(128.0)
+                .unwrap_or(material_threshold)
                 .clamp(0.0, 255.0) as u8;
-            let word = flag(&mut args, "--dither")?.unwrap_or_else(|| "fs".to_string());
+            let word = flag(&mut args, "--dither")?
+                .or_else(|| material.as_ref().and_then(|(m, _)| m.dither.clone()))
+                .unwrap_or_else(|| "fs".to_string());
             let method = Method::from_word(&word, threshold).ok_or_else(|| {
                 format!("--dither '{word}' is not fs, atkinson, threshold or bayer")
             })?;
-            let tone = take_tone(&mut args, Tone::default())?;
+            let tone = take_tone(&mut args, tone_base)?;
             let dry_run = switch(&mut args, "--dry-run");
             let needed = if dry_run { 1 } else { 2 };
             if args.len() < needed {
@@ -399,8 +449,9 @@ fn run(mut args: Vec<String>) -> Result<(), String> {
             safety::check_power("--power", p.power_percent, max_power)?;
             if !dry_run
                 && config
-                    .as_deref()
-                    .is_some_and(|c| same_file(Path::new(c), Path::new(&args[1])))
+                    .iter()
+                    .chain(material.iter().map(|(_, f)| f))
+                    .any(|c| same_file(Path::new(c), Path::new(&args[1])))
             {
                 return Err(format!(
                     "{}: the output would be written over the settings it is made from",
@@ -477,6 +528,16 @@ fn run(mut args: Vec<String>) -> Result<(), String> {
         "cut" => drawing_job(args, LayerMode::Cut),
         "vector" => drawing_job(args, LayerMode::Engrave),
         "layers" => layers_job(args),
+        "materials" => {
+            finish(&args, 1)?;
+            let path = args.first().ok_or("materials needs a library file")?;
+            let lib = materials::load(Path::new(path))?;
+            for m in &lib.materials {
+                println!("{}: {}", m.name, m.describe());
+            }
+            println!("{} material(s) in {path}", lib.materials.len());
+            Ok(())
+        }
         "info" => {
             finish(&args, 1)?;
             let path = args.first().ok_or("info needs an image")?;

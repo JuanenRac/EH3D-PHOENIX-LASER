@@ -17,7 +17,7 @@
 
 ---
 
-**诚实检查 - 当前真正能运行的内容：** 一个 Rust 库和一个命令行程序（`phoenix-laser`），有 348 个在计算机上运行的测试：用抖动把图像变成点，并写出逐行烧蚀、带动态功率和超程的激光 G 代码；读取 SVG 和 DXF 图纸，写出切割其轮廓的 G 代码（先内后外，考虑光束宽度、连接桥和多遍），并用线条雕刻其图形，各图层的设置放在一个文件里；还有功率对进给的测试网格。它有一个窗口（用 `--features gui` 构建），可打开图像或图纸、显示激光路径、修改设置并导出 G 代码，但窗口尚未在屏幕上查看过；也没有在机器上试过，没有用一批真实文件检查过。
+**诚实检查 - 当前真正能运行的内容：** 一个 Rust 库和一个命令行程序（`phoenix-laser`），有 364 个在计算机上运行的测试：用抖动把图像变成点，并写出逐行烧蚀、带动态功率和超程的激光 G 代码；读取 SVG 和 DXF 图纸，写出切割其轮廓的 G 代码（先内后外，考虑光束宽度、连接桥和多遍），并用线条雕刻其图形，各图层的设置放在一个文件里；还有功率对进给的测试网格。它有一个窗口（用 `--features gui` 构建），可打开图像或图纸、显示激光路径、修改设置并导出 G 代码，但窗口尚未在屏幕上查看过；也没有在机器上试过，没有用一批真实文件检查过。
 
 ---
 
@@ -30,7 +30,7 @@
 |---|---|
 | 版本 | `0.0.6` |
 | 成熟度 | 可用 |
-| 测试 | 348 |
+| 测试 | 364 |
 | 技术栈 | Rust |
 | 真实硬件 | 未试过：这里的任何内容都没有在机器上运行过 |
 
@@ -46,7 +46,7 @@
 |---|---|---|
 | 核心 | 🟡 | 用抖动把图像变成点，并写出逐行烧蚀、带动态功率和超程的激光 G 代码；读取 SVG 和 DXF 图纸并按图层切割或雕刻（轮廓排序、光束宽度、连接桥、遍数、填充）；还有功率对进给的测试网格；已在计算机上用正常和损坏的输入测试，没有用一批真实文件检查。 |
 | 命令行 | 🟡 | `phoenix-laser`（`engrave`、`calibrate`、`info`、`cut`、`vector`、`layers`）运行与库相同的函数并打印结果；每个错误都以消息和非零退出码返回。 |
-| 测试 | 🟡 | 348 个测试通过（`cargo test`），包含正常情况、边界情况和损坏的输入。 |
+| 测试 | 🟡 | 364 个测试通过（`cargo test`），包含正常情况、边界情况和损坏的输入。 |
 | 安全 | 🟡 | 纯安全 Rust（`forbid(unsafe_code)`）：处理收到的文件时不会 panic，错误的值会返回带原因的错误；没有独立审查。 |
 | 窗口 | 🟠 | 已编写（egui，`--features gui`）：打开或拖入图像或 SVG、DXF 图纸，查看激光路径（切割为单一颜色，空移变淡），编辑图层表，校准网格，缩放与平移，估算时间，导出；其逻辑已测试，但尚未构建，也没有在屏幕上查看过。 |
 | 真实硬件 | 🔴 | 未试过：这里的任何内容都没有在机器上运行过。 |
@@ -62,6 +62,7 @@
 * **图纸**（`src/svg.rs`、`src/dxf.rs`、`src/flatten.rs`、`src/vector.rs`）：SVG 的安全子集（含全部命令的路径、图形、变换、分组、单位）和 DXF 的实体（直线、带圆弧的多段线、圆弧、圆、样条、单位）被转换为毫米图形；脚本、图像、`use`、已声明的实体和一切未知内容会被跳过或拒绝，大小、深度、元素数和点数由设置限制，曲线在容差内变为直线段。
 * **切割与雕刻**（`src/order.rs`、`src/offset.rs`、`src/cut.rs`）：图形按图层（DXF）或颜色（SVG）分组；每组按各自的设置切割（合并零散线条，先切位于其他轮廓内部的轮廓，空移最短，在正确一侧扣除光束宽度，保留连接桥，焦点逐遍推进的多遍切割）或雕刻（闭合图形按角度用线条填充，奇偶规则）。
 * **设置文件**（`src/vconfig.rs`、`docs/vector-settings.md`）：所有调整过的值（读取器的限制、机器、各图层的设置）都在一个逐行检查的纯文本文件里；代码中没有这些值。
+* **材料库**（`src/materials.rs`、`examples/materials.cfg`）：每种材料和加工方式适用的值（`[material 名称]`：功率、速度、遍数、焦距步进、光束宽度、填充线、点大小、抖动和色调曲线）只需写在一个文本文件里，用 `--material 名称 --materials 文件` 选用；命令行选项优先于它，功率上限对两者都有效。`phoenix-laser materials 文件` 列出材料库。
 * **功率上限**（`src/safety.rs`、`[machine]` 中的 `max_power_percent`、`--max-power`）：功率超过上限的程序会被拒绝，错误信息指出图层或选项，绝不会悄悄调低；在文件或选项另有指定之前，上限是 100 %。
 * **有序抖动**（`src/dither.rs`）：`--dither bayer`（窗口中也可选）用 8 x 8 的拜耳矩阵，仅凭每个点的位置和灰度决定它是否烧蚀，因此图案规则，相同的灰度总是烧同样的点；测试检查矩阵的每个级别各出现一次，并且灰度的深浅得以保持。
 * **色调曲线**（`src/tone.rs`）：生成点阵之前，可以把灰度拉伸到整个范围（`--auto-level`）、调整对比度和亮度、用伽马曲线弯曲或反相，只用一张 256 项的表；使用默认值时图像完全不变。
@@ -98,6 +99,7 @@ EH3D-PHOENIX-LASER 是 EH3D Fabrication Suite 的一个程序。它以库和命�
 | 恶意图纸（脚本、已声明的实体、深层嵌套、数百万个点、巨大的数值） | 脚本、图像和链接绝不会被运行或获取；已声明的实体是错误；大小、深度、元素、图形、点和曲线的分段数都有限制；含有超出范围的点的图形会被丢弃 |
 | 可能在没有速度时或超过满功率时打开激光的程序 | 每个程序在交出之前逐行检查，不合格的不会写出 |
 | 超过机器或材料应承受的功率 | 功率上限（`max_power_percent`、`--max-power`）会拒绝超过它的程序，错误信息指出图层或选项；绝不会悄悄调低 |
+| 损坏或巨大的材料库 | 文件的大小和材料数量有上限；超出范围的值、未知的键或重复的名称都是指出行号的错误；输出绝不会写在它上面 |
 | 选在图纸或所依据的设置之上的输出文件 | 在窗口和命令中都会被拒绝 |
 
 **没有防御的内容：** 无错误产生的结果不等于经过验证的结果。这里没有任何内容了解机器的极限，程序也没有经过独立审查。请私下报告漏洞（见 [SECURITY.md](SECURITY.md)）。
@@ -110,12 +112,14 @@ EH3D-PHOENIX-LASER 是 EH3D Fabrication Suite 的一个程序。它以库和命�
 phoenix-laser engrave IMAGE OUT.nc --width-mm 50 [--dot-mm 0.1] [--feed 3000] [--power 50] [--smax 1000]
               [--dither fs|atkinson|threshold|bayer] [--threshold 128] [--overscan MM|auto] [--accel 1000] [--origin X,Y] [--dry-run]
               [--gamma 1] [--contrast 0] [--brightness 0] [--invert] [--auto-level] [--max-power 100] [--config FILE]
+              [--material NAME --materials FILE]
 phoenix-laser calibrate OUT.nc --powers 20,40,60,80 --feeds 1000,2000,3000 [--smax 1000] [--max-power 100] [--config FILE]
 phoenix-laser info IMAGE
 phoenix-laser cut DRAWING OUT.nc [--config FILE] [--power P] [--speed MM/MIN] [--passes N] [--focus-step MM] [--kerf MM] [--kerf-side none|auto|inside|outside]
-              [--tabs N] [--tab-width MM] [--smax N] [--overscan MM] [--origin X,Y] [--bed X,Y] [--max-power P] [--dpi N] [--tolerance MM] [--dry-run]
+              [--tabs N] [--tab-width MM] [--smax N] [--overscan MM] [--origin X,Y] [--bed X,Y] [--max-power P] [--material NAME --materials FILE] [--dpi N] [--tolerance MM] [--dry-run]
 phoenix-laser vector DRAWING OUT.nc [the options of cut] [--angle DEG] [--spacing MM]
 phoenix-laser layers DRAWING [--config FILE] [--dpi N]
+phoenix-laser materials FILE
 phoenix-laser [gui] [FILE]                       the window (a build with --features gui); with no arguments it opens
 ```
 
@@ -142,7 +146,7 @@ cargo run --release --features gui -- --shot screen.png examples/plate.svg   # a
 
 ## 🧪 测试
 
-测试套件有 348 个测试（`cargo test`，CI 在 Windows 和 Linux 上运行）。它们检查正常情况、边界情况和损坏的输入：空文件、乱码和被截断的文件绝不会 panic。CI 还运行 `cargo fmt --check`、把警告当作错误的 `cargo clippy` 以及 `python -I tools/ci_validate.py`。
+测试套件有 364 个测试（`cargo test`，CI 在 Windows 和 Linux 上运行）。它们检查正常情况、边界情况和损坏的输入：空文件、乱码和被截断的文件绝不会 panic。CI 还运行 `cargo fmt --check`、把警告当作错误的 `cargo clippy` 以及 `python -I tools/ci_validate.py`。
 
 ## 🏗️ 构建与发布
 
@@ -169,6 +173,7 @@ EH3D-PHOENIX-LASER/
 │   ├── calibrate.rs                             逻辑的一部分
 │   ├── cli_args.rs                              命令行参数：每个小工具中的同一个文件
 │   ├── dither.rs                                逻辑的一部分
+│   ├── materials.rs                             材料库：功率、速度、遍数、点阵和色调
 │   ├── tone.rs                                  图像的色调曲线：生成点阵前的色阶、对比度、亮度、伽马和反相
 │   ├── gcode_out.rs                             G 代码数字的唯一写法和标准文件头
 │   ├── raster.rs                                逻辑的一部分
@@ -201,11 +206,13 @@ EH3D-PHOENIX-LASER/
 │   ├── gradient.pgm                             试用的示例
 │   ├── plate.svg                                带孔和待雕刻面板的板（SVG）
 │   ├── plate.dxf                                同一块板的 DXF
-│   └── plate.cfg                                各图层的设置：功率、速度、遍数、光束宽度、连接桥和填充
+│   ├── plate.cfg                                各图层的设置：功率、速度、遍数、光束宽度、连接桥和填充
+│   └── materials.cfg                            材料库：桦木和板岩，切割、雕刻和照片
 ├── docs/
 │   ├── architecture.json                        架构图数据
 │   ├── structure.json                           结构图数据
-│   └── vector-settings.md                       矢量作业设置文件，逐项说明
+│   ├── vector-settings.md                       矢量作业设置文件，逐项说明
+│   └── materials.md                             材料库，逐项说明
 ├── tools/                                       CI 和 README 检查及绘图工具
 ├── images/                                      横幅图以及架构和仓库结构图片
 ├── .github/                                     CI 与发布工作流、Issue 和 PR 模板
@@ -251,6 +258,7 @@ README 和文本提供英语、西班牙语、法语、意大利语、德语、�
 * [更新日志](CHANGELOG.md)
 * [架构与结构数据](docs/architecture.json)：绘制两张图所用的数据。
 * [矢量作业的设置](docs/vector-settings.md)：设置文件的每个键及其默认值和范围。
+* [材料库](docs/materials.md)：材料的每个键以及材料如何应用
 
 ## 🤝 参与贡献与社区
 
