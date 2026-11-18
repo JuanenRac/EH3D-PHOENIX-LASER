@@ -14,6 +14,7 @@ use eh3d_phoenix_laser::gcode_out::{header, sha256_hex, Header};
 use eh3d_phoenix_laser::image::from_bytes;
 use eh3d_phoenix_laser::raster::{engrave, overscan_for, Params};
 use eh3d_phoenix_laser::svg::read_svg;
+use eh3d_phoenix_laser::tone::Tone;
 use eh3d_phoenix_laser::vconfig::{self, KerfSide, LayerMode, LayerParams, Settings};
 use eh3d_phoenix_laser::vector::Drawing;
 use eh3d_phoenix_laser::window::{same_file, write_atomic};
@@ -26,6 +27,7 @@ const HELP: &str = "phoenix-laser: laser engraving from an image
 
   phoenix-laser engrave IMAGE OUT.nc --width-mm 50 [--dot-mm 0.1] [--feed 3000] [--power 50] [--smax 1000]
                 [--dither fs|atkinson|threshold] [--threshold 128] [--overscan MM|auto] [--accel 1000] [--origin X,Y] [--dry-run]
+                [--gamma 1] [--contrast 0] [--brightness 0] [--invert] [--auto-level]
   phoenix-laser calibrate OUT.nc --powers 20,40,60,80 --feeds 1000,2000,3000 [--smax 1000]
   phoenix-laser info IMAGE
   phoenix-laser cut DRAWING OUT.nc [--config FILE] [--power P] [--speed MM/MIN] [--passes N] [--focus-step MM] [--kerf MM] [--kerf-side none|auto|inside|outside]
@@ -37,9 +39,32 @@ const HELP: &str = "phoenix-laser: laser engraving from an image
 
 IMAGE is a PNG or a PGM file. --dry-run works the engraving out and counts it but writes nothing (OUT.nc may then be left out). --power is a percent of full power; --smax is the spindle value that is full power for the controller (GRBL: $30).
 The engraving is made of dots of --dot-mm on a side, so the image is scaled to --width-mm / --dot-mm dots wide.
+The tone options change the grey levels before the dots are made: --gamma (0.1 to 10, more than 1 lightens the middle greys), --contrast and --brightness (-100 to 100), --invert (black burns least) and --auto-level (the darkest level becomes black and the lightest white).
 DRAWING is an SVG or a DXF file. cut follows the contours (the ones inside first), vector fills the closed shapes with lines and follows the open ones. Every layer (or colour, for an SVG) has its
 own settings in the file of --config (see the documentation); an option of the command line changes them for all the layers. Without --config, cut cuts everything and vector engraves everything.
 layers lists the layers of a drawing with what would be done with each.";
+
+/// The tone options of the command line over `base`: the curve that is applied to the grey levels before the dots are made.
+fn take_tone(args: &mut Vec<String>, base: Tone) -> Result<Tone, String> {
+    let mut t = base;
+    if let Some(v) = flag(args, "--brightness")? {
+        t.brightness = num(&v, "--brightness")?;
+    }
+    if let Some(v) = flag(args, "--contrast")? {
+        t.contrast = num(&v, "--contrast")?;
+    }
+    if let Some(v) = flag(args, "--gamma")? {
+        t.gamma = num(&v, "--gamma")?;
+    }
+    if switch(args, "--invert") {
+        t.invert = true;
+    }
+    if switch(args, "--auto-level") {
+        t.auto_level = true;
+    }
+    t.validate()?;
+    Ok(t)
+}
 
 fn list(text: &str, what: &str) -> Result<Vec<f64>, String> {
     text.split(',').map(|p| num(p, what)).collect()
@@ -328,6 +353,7 @@ fn run(mut args: Vec<String>) -> Result<(), String> {
                     ))
                 }
             };
+            let tone = take_tone(&mut args, Tone::default())?;
             let dry_run = switch(&mut args, "--dry-run");
             let needed = if dry_run { 1 } else { 2 };
             if args.len() < needed {
@@ -352,7 +378,7 @@ fn run(mut args: Vec<String>) -> Result<(), String> {
             p.validate()?;
             let w = (width / p.pixel_mm).round().max(1.0) as usize;
             let h = ((w as f64) * img.h as f64 / img.w as f64).round().max(1.0) as usize;
-            let dots = dither(&img.resize(w, h)?, method);
+            let dots = dither(&tone.apply(&img.resize(w, h)?)?, method);
             let e = engrave(&dots, &p)?;
             // a dry run works the engraving out and counts it, and writes nothing
             if dry_run {

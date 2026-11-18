@@ -93,6 +93,19 @@
           }
         },
         {
+          "name": "tone.rs",
+          "desc": {
+            "en": "the tone curve of a picture: levels, contrast, brightness, gamma and inversion before the dots",
+            "es": "la curva de tonos de una imagen: niveles, contraste, brillo, gamma e inversión antes de los puntos",
+            "de": "die Tonkurve eines Bildes: Stufen, Kontrast, Helligkeit, Gamma und Inversion vor den Punkten",
+            "fr": "la courbe de tons d'une image : niveaux, contraste, luminosité, gamma et inversion avant les points",
+            "it": "la curva dei toni di un'immagine: livelli, contrasto, luminosità, gamma e inversione prima dei punti",
+            "ja": "画像のトーンカーブ：ドット化の前のレベル、コントラスト、明るさ、ガンマ、反転",
+            "zh": "图像的色调曲线：生成点阵前的色阶、对比度、亮度、伽马和反相",
+            "pt": "a curva de tons de uma imagem: níveis, contraste, brilho, gama e inversão antes dos pontos"
+          }
+        },
+        {
           "name": "gcode_out.rs",
           "desc": {
             "en": "the one way a G-code number is written and the standard header",
@@ -357,6 +370,19 @@
             "ja": "ライブラリとコマンドラインのテスト",
             "zh": "库和命令行的测试",
             "pt": "testes da biblioteca e da linha de comandos"
+          }
+        },
+        {
+          "name": "laser_tools.rs",
+          "desc": {
+            "en": "tests of the tools around the engraving, through the command line",
+            "es": "pruebas de las herramientas alrededor del grabado, por la línea de comandos",
+            "de": "Tests der Werkzeuge rund um das Gravieren über die Kommandozeile",
+            "fr": "tests des outils autour de la gravure, par la ligne de commande",
+            "it": "test degli strumenti attorno all'incisione, dalla riga di comando",
+            "ja": "彫刻まわりのツールのコマンドラインテスト",
+            "zh": "通过命令行测试雕刻周边的工具",
+            "pt": "testes das ferramentas à volta da gravação, pela linha de comandos"
           }
         },
         {
