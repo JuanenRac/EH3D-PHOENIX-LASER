@@ -67,6 +67,7 @@
 * **预览**（`src/preview.rs`）：`phoenix-laser preview` 读取 G-code 程序（自己生成的或其他程序的），输出移动、烧蚀和空移的长度、范围、功率，以及计入拐角减速的时间；对看起来危险的情况发出警告（快速移动时激光开启、没有进给、功率超过满功率、工作超出工作台、没有结束），并把路径画成 SVG；测试会读回雕刻写出的程序并核对同样的长度。
 * **材料库**（`src/materials.rs`、`examples/materials.cfg`）：每种材料和加工方式适用的值（`[material 名称]`：功率、速度、遍数、焦距步进、光束宽度、填充线、点大小、抖动和色调曲线）只需写在一个文本文件里，用 `--material 名称 --materials 文件` 选用；命令行选项优先于它，功率上限对两者都有效。`phoenix-laser materials 文件` 列出材料库。
 * **功率上限**（`src/safety.rs`、`[machine]` 中的 `max_power_percent`、`--max-power`）：功率超过上限的程序会被拒绝，错误信息指出图层或选项，绝不会悄悄调低；在文件或选项另有指定之前，上限是 100 %。
+* **机器配置文件**（设置文件中的 `[profile NAME]`，`--profile NAME`）：拥有两台机器、或更换激光模块的人，可为每台保存一个配置（工作台行程、功率上限、速度上限、满功率数值和瓦数）；所选配置即为机器，`--max-speed` 与 `--max-power` 并列：超过上限的速度会被拒绝，绝不会被悄悄降低。
 * **有序抖动**（`src/dither.rs`）：`--dither bayer`（窗口中也可选）用 8 x 8 的拜耳矩阵，仅凭每个点的位置和灰度决定它是否烧蚀，因此图案规则，相同的灰度总是烧同样的点；测试检查矩阵的每个级别各出现一次，并且灰度的深浅得以保持。
 * **色调曲线**（`src/tone.rs`）：生成点阵之前，可以把灰度拉伸到整个范围（`--auto-level`）、调整对比度和亮度、用伽马曲线弯曲或反相，只用一张 256 项的表；使用默认值时图像完全不变。
 * **经过检查的 G 代码：**图纸的程序在交出之前逐行检查：快速移动时或没有速度时激光不会开启，`S` 不会超过满功率，不会移动到床面之外，结尾是 `M5`；文件绝不会写在它所来自的图纸或设置之上。
@@ -117,19 +118,19 @@ EH3D-PHOENIX-LASER 是 EH3D Fabrication Suite 的一个程序。它以库和命�
 ```text
 phoenix-laser engrave IMAGE OUT.nc --width-mm 50 [--dot-mm 0.1] [--feed 3000] [--power 50] [--smax 1000]
               [--dither fs|atkinson|threshold|bayer] [--threshold 128] [--overscan MM|auto] [--accel 1000] [--origin X,Y] [--dry-run]
-              [--gamma 1] [--contrast 0] [--brightness 0] [--invert] [--auto-level] [--max-power 100] [--config FILE]
+              [--gamma 1] [--contrast 0] [--brightness 0] [--invert] [--auto-level] [--max-power 100] [--max-speed MM/MIN] [--config FILE] [--profile NAME]
               [--material NAME --materials FILE]
-phoenix-laser calibrate OUT.nc --powers 20,40,60,80 --feeds 1000,2000,3000 [--smax 1000] [--max-power 100] [--config FILE]
+phoenix-laser calibrate OUT.nc --powers 20,40,60,80 --feeds 1000,2000,3000 [--smax 1000] [--max-power 100] [--max-speed MM/MIN] [--config FILE] [--profile NAME]
 phoenix-laser info IMAGE
 phoenix-laser cut DRAWING OUT.nc [--config FILE] [--power P] [--speed MM/MIN] [--passes N] [--focus-step MM] [--kerf MM] [--kerf-side none|auto|inside|outside]
-              [--tabs N] [--tab-width MM] [--smax N] [--overscan MM] [--origin X,Y] [--bed X,Y] [--max-power P] [--material NAME --materials FILE] [--dpi N] [--tolerance MM] [--dry-run]
+              [--tabs N] [--tab-width MM] [--smax N] [--overscan MM] [--origin X,Y] [--bed X,Y] [--max-power P] [--max-speed MM/MIN] [--profile NAME] [--material NAME --materials FILE] [--dpi N] [--tolerance MM] [--dry-run]
 phoenix-laser vector DRAWING OUT.nc [the options of cut] [--angle DEG] [--spacing MM]
 phoenix-laser layers DRAWING [--config FILE] [--dpi N]
 phoenix-laser materials FILE
-phoenix-laser focus OUT.nc --z-step MM [--z-start MM] [--steps 9] [--length 10] [--spacing 2] [--feed 1000] [--power 30] [--smax 1000] [--max-power P] [--config FILE]
+phoenix-laser focus OUT.nc --z-step MM [--z-start MM] [--steps 9] [--length 10] [--spacing 2] [--feed 1000] [--power 30] [--smax 1000] [--max-power P] [--max-speed MM/MIN] [--config FILE] [--profile NAME]
 phoenix-laser frame OUT.nc --size W,H | --gcode PROGRAM.nc [--origin X,Y] [--margin MM] [--feed 3000] [--laps 1] [--bed X,Y] [--smax N]
-              [--pilot P --confirm-laser-on] [--max-power P] [--config FILE]
-phoenix-laser preview PROGRAM.nc [OUT.svg] [--accel 1000] [--rapid 6000] [--smax N] [--bed X,Y] [--width-px 900] [--config FILE]
+              [--pilot P --confirm-laser-on] [--max-power P] [--max-speed MM/MIN] [--config FILE] [--profile NAME]
+phoenix-laser preview PROGRAM.nc [OUT.svg] [--accel 1000] [--rapid 6000] [--smax N] [--bed X,Y] [--width-px 900] [--config FILE] [--profile NAME]
 phoenix-laser [gui] [FILE]                       the window (a build with --features gui); with no arguments it opens
 ```
 

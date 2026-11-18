@@ -14,6 +14,12 @@ pub const MAX_CONFIG_BYTES: u64 = 1024 * 1024;
 /// The most layers a settings file may describe.
 pub const MAX_LAYERS: usize = 256;
 
+/// The most machine profiles a settings file may describe.
+pub const MAX_PROFILES: usize = 64;
+
+/// The longest name of a profile.
+pub const MAX_PROFILE_NAME_CHARS: usize = 80;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LayerMode {
     /// Follow the contours with the laser.
@@ -175,6 +181,8 @@ pub struct Machine {
     pub max_passes: u32,
     /// The limit of power, as a percent of full power: a layer that asks for more is an error, never lowered without a word.
     pub max_power_percent: f64,
+    /// The limit of speed (mm/min): a layer or a command that asks for more is an error, never lowered without a word.
+    pub max_speed_mm_min: f64,
 }
 
 impl Default for Machine {
@@ -189,7 +197,79 @@ impl Default for Machine {
             bed_mm: None,
             max_passes: 50,
             max_power_percent: crate::safety::DEFAULT_MAX_POWER_PERCENT,
+            max_speed_mm_min: crate::safety::DEFAULT_MAX_SPEED_MM_MIN,
         }
+    }
+}
+
+/// A machine and laser that the person owns (`[profile NAME]`): its travel, its limits and its full-power value. A person with two machines, or a laser module that is changed for
+/// another, keeps one profile for each in the same file and picks one with `profile = NAME` in `[machine]` or `--profile NAME`. What a profile leaves out stays as `[machine]` says.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Profile {
+    /// The name, in lower case.
+    pub name: String,
+    /// The travel of the machine in X (mm): the width of the bed.
+    pub travel_x_mm: Option<f64>,
+    /// The travel of the machine in Y (mm): the depth of the bed.
+    pub travel_y_mm: Option<f64>,
+    /// The limit of power, as a percent of full power.
+    pub max_power_percent: Option<f64>,
+    /// The limit of speed (mm/min).
+    pub max_speed_mm_min: Option<f64>,
+    /// The spindle value that is full power for the controller.
+    pub s_max: Option<u32>,
+    /// The optical power of the laser at full power, in watts.
+    pub laser_watts: Option<f64>,
+}
+
+impl Profile {
+    /// The machine with what the profile says over it: the profile is the machine, so it wins over `[machine]`, and the options of the command line win over both.
+    pub fn apply_to(&self, m: &mut Machine) {
+        if let (Some(x), Some(y)) = (self.travel_x_mm, self.travel_y_mm) {
+            m.bed_mm = Some((x, y));
+        }
+        m.max_power_percent = self.max_power_percent.unwrap_or(m.max_power_percent);
+        m.max_speed_mm_min = self.max_speed_mm_min.unwrap_or(m.max_speed_mm_min);
+        m.s_max = self.s_max.unwrap_or(m.s_max);
+        m.laser_watts = self.laser_watts.unwrap_or(m.laser_watts);
+    }
+
+    pub fn validate(&self) -> Result<(), String> {
+        let range = |name: &str, v: f64, lo: f64, hi: f64| {
+            if v.is_finite() && (lo..=hi).contains(&v) {
+                Ok(())
+            } else {
+                Err(format!("{name} is {v}: it must be from {lo} to {hi}"))
+            }
+        };
+        if self.name.is_empty() || self.name.chars().count() > MAX_PROFILE_NAME_CHARS {
+            return Err(format!(
+                "the name of a profile must be from 1 to {MAX_PROFILE_NAME_CHARS} characters"
+            ));
+        }
+        match (self.travel_x_mm, self.travel_y_mm) {
+            (None, None) => {}
+            (Some(x), Some(y)) => {
+                range("travel_x_mm", x, 1.0, 100_000.0)?;
+                range("travel_y_mm", y, 1.0, 100_000.0)?;
+            }
+            _ => return Err("the travel needs both travel_x_mm and travel_y_mm".to_string()),
+        }
+        if let Some(p) = self.max_power_percent {
+            crate::safety::validate_max(p)?;
+        }
+        if let Some(v) = self.max_speed_mm_min {
+            crate::safety::validate_max_speed(v)?;
+        }
+        if let Some(s) = self.s_max {
+            if s == 0 || s > 100_000 {
+                return Err(format!("s_max is {s}: it must be from 1 to 100000"));
+            }
+        }
+        if let Some(w) = self.laser_watts {
+            range("laser_watts", w, 0.0, 1_000.0)?;
+        }
+        Ok(())
     }
 }
 
@@ -341,6 +421,12 @@ pub struct Settings {
     pub offset_max_points: usize,
     pub max_hatch_lines: usize,
     pub machine: Machine,
+    /// The machines and lasers that the file describes (`[profile NAME]`).
+    pub profiles: Vec<Profile>,
+    /// The profile that is applied to `machine` (its name, in lower case), if one was chosen.
+    pub profile: Option<String>,
+    /// The machine as `[machine]` wrote it, before any profile: a profile chosen later is applied over this, never over another profile.
+    pub base_machine: Machine,
     pub frame: FrameSettings,
     pub focus: FocusSettings,
     pub defaults: LayerParams,
@@ -364,6 +450,9 @@ impl Default for Settings {
             offset_max_points: 5_000,
             max_hatch_lines: 100_000,
             machine: Machine::default(),
+            profiles: Vec::new(),
+            profile: None,
+            base_machine: Machine::default(),
             frame: FrameSettings::default(),
             focus: FocusSettings::default(),
             defaults: LayerParams::default(),
@@ -382,8 +471,38 @@ impl Settings {
             .map_or(self.defaults, |(_, p)| *p)
     }
 
+    /// Applies the profile `name` to the machine: its values win over `[machine]`. A name that the file does not have is an error that lists the ones it has.
+    pub fn apply_profile(&mut self, name: &str) -> Result<(), String> {
+        let key = name.trim().to_lowercase();
+        let Some(p) = self.profiles.iter().find(|p| p.name == key).cloned() else {
+            let have: Vec<&str> = self.profiles.iter().map(|p| p.name.as_str()).collect();
+            return Err(format!(
+                "there is no profile '{}' (the file has: {})",
+                name.trim(),
+                if have.is_empty() {
+                    "none".to_string()
+                } else {
+                    have.join(", ")
+                }
+            ));
+        };
+        self.machine = self.base_machine;
+        p.apply_to(&mut self.machine);
+        self.profile = Some(key);
+        Ok(())
+    }
+
     pub fn validate(&self) -> Result<(), String> {
         self.read.validate()?;
+        if self.profiles.len() > MAX_PROFILES {
+            return Err(format!(
+                "the settings describe more than {MAX_PROFILES} profiles"
+            ));
+        }
+        for p in &self.profiles {
+            p.validate()
+                .map_err(|e| format!("profile {}: {e}", p.name))?;
+        }
         let m = &self.machine;
         let range = |name: &str, v: f64, lo: f64, hi: f64| {
             if v.is_finite() && (lo..=hi).contains(&v) {
@@ -402,6 +521,7 @@ impl Settings {
             ));
         }
         crate::safety::validate_max(m.max_power_percent)?;
+        crate::safety::validate_max_speed(m.max_speed_mm_min)?;
         range("overscan", m.overscan_mm, 0.0, 50.0)?;
         range("rapid", m.rapid_mm_min, 1.0, 100_000.0)?;
         range("laser_watts", m.laser_watts, 0.0, 1_000.0)?;
@@ -434,6 +554,8 @@ impl Settings {
         if self.defaults.mode != LayerMode::Skip {
             crate::safety::check_power("power", self.defaults.power_percent, m.max_power_percent)
                 .map_err(|e| format!("[defaults]: {e}"))?;
+            crate::safety::check_speed("speed", self.defaults.speed_mm_min, m.max_speed_mm_min)
+                .map_err(|e| format!("[defaults]: {e}"))?;
         }
         if self.layers.len() > MAX_LAYERS {
             return Err(format!(
@@ -445,6 +567,8 @@ impl Settings {
                 .map_err(|e| format!("layer {name}: {e}"))?;
             if p.mode != LayerMode::Skip {
                 crate::safety::check_power("power", p.power_percent, m.max_power_percent)
+                    .map_err(|e| format!("layer {name}: {e}"))?;
+                crate::safety::check_speed("speed", p.speed_mm_min, m.max_speed_mm_min)
                     .map_err(|e| format!("layer {name}: {e}"))?;
             }
         }
@@ -582,11 +706,29 @@ fn set_global(s: &mut Settings, section: &str, key: &str, value: &str) -> Result
         ("frame", "pilot_percent") => s.frame.pilot_percent = number(value)?,
         ("frame", "max_pilot_percent") => s.frame.max_pilot_percent = number(value)?,
         ("machine", "max_power_percent") => s.machine.max_power_percent = number(value)?,
+        ("machine", "max_speed_mm_min") => s.machine.max_speed_mm_min = number(value)?,
+        ("machine", "profile") => s.profile = Some(value.trim().to_lowercase()),
         ("machine", "max_passes") => {
             s.machine.max_passes =
                 u32::try_from(whole(value)?).map_err(|_| "max_passes is too large".to_string())?
         }
         _ => return Err(format!("'{key}' is not a setting of [{section}]")),
+    }
+    Ok(())
+}
+
+fn set_profile(p: &mut Profile, key: &str, value: &str) -> Result<(), String> {
+    match key {
+        "travel_x_mm" => p.travel_x_mm = Some(number(value)?),
+        "travel_y_mm" => p.travel_y_mm = Some(number(value)?),
+        "max_power_percent" => p.max_power_percent = Some(number(value)?),
+        "max_speed_mm_min" => p.max_speed_mm_min = Some(number(value)?),
+        "s_max" => {
+            p.s_max =
+                Some(u32::try_from(whole(value)?).map_err(|_| "s_max is too large".to_string())?)
+        }
+        "laser_watts" => p.laser_watts = Some(number(value)?),
+        _ => return Err(format!("'{key}' is not a setting of a profile")),
     }
     Ok(())
 }
@@ -601,6 +743,7 @@ pub fn parse(text: &str) -> Result<Settings, String> {
     }
     let mut entries: Vec<Entry> = Vec::new();
     let mut named: Vec<String> = Vec::new();
+    let mut named_profiles: Vec<String> = Vec::new();
     let mut section = String::new();
     for (n, raw) in text.lines().enumerate() {
         let line = n + 1;
@@ -621,7 +764,11 @@ pub fn parse(text: &str) -> Result<Settings, String> {
                     named.push(rest.trim().to_lowercase());
                     format!("layer {}", rest.trim().to_lowercase())
                 }
-                _ => return Err(format!("line {line}: '[{head}]' is not a section (limits, read, order, offset, hatch, machine, frame, focus, defaults or layer NAME)")),
+                "profile" if !rest.trim().is_empty() => {
+                    named_profiles.push(rest.trim().to_lowercase());
+                    format!("profile {}", rest.trim().to_lowercase())
+                }
+                _ => return Err(format!("line {line}: '[{head}]' is not a section (limits, read, order, offset, hatch, machine, frame, focus, defaults, layer NAME or profile NAME)")),
             };
             continue;
         }
@@ -648,7 +795,26 @@ pub fn parse(text: &str) -> Result<Settings, String> {
         if e.section == "defaults" {
             continue;
         }
-        if let Some(name) = e.section.strip_prefix("layer ") {
+        if let Some(name) = e.section.strip_prefix("profile ") {
+            let at = match s.profiles.iter().position(|p| p.name == name) {
+                Some(i) => i,
+                None => {
+                    if s.profiles.len() >= MAX_PROFILES {
+                        return Err(format!(
+                            "line {}: more than {MAX_PROFILES} profiles",
+                            e.line
+                        ));
+                    }
+                    s.profiles.push(Profile {
+                        name: name.to_string(),
+                        ..Profile::default()
+                    });
+                    s.profiles.len() - 1
+                }
+            };
+            set_profile(&mut s.profiles[at], e.key, e.value)
+                .map_err(|m| format!("line {}: {m}", e.line))?;
+        } else if let Some(name) = e.section.strip_prefix("layer ") {
             let at = match s.layers.iter().position(|(n, _)| n == name) {
                 Some(i) => i,
                 None => {
@@ -665,6 +831,23 @@ pub fn parse(text: &str) -> Result<Settings, String> {
             set_global(&mut s, &e.section, e.key, e.value)
                 .map_err(|m| format!("line {}: {m}", e.line))?;
         }
+    }
+    // a profile section with no key still names the profile
+    for name in named_profiles {
+        if !s.profiles.iter().any(|p| p.name == name) {
+            if s.profiles.len() >= MAX_PROFILES {
+                return Err(format!("more than {MAX_PROFILES} profiles"));
+            }
+            s.profiles.push(Profile {
+                name,
+                ..Profile::default()
+            });
+        }
+    }
+    // the profile that was chosen is the machine
+    s.base_machine = s.machine;
+    if let Some(name) = s.profile.clone() {
+        s.apply_profile(&name)?;
     }
     // a layer section with no key still names the layer, with the defaults
     for name in named {
@@ -926,6 +1109,118 @@ mod tests {
                 max_pilot_percent: 5.0,
             }
         );
+    }
+
+    const TWO_MACHINES: &str = "[machine]\ns_max = 255\nbed_x_mm = 100\nbed_y_mm = 100\nprofile = Diode\n\
+        [profile diode]\ntravel_x_mm = 400\ntravel_y_mm = 300\nmax_power_percent = 80\nmax_speed_mm_min = 6000\ns_max = 1000\nlaser_watts = 10\n\
+        [profile CO2]\ns_max = 100\nmax_power_percent = 90\n";
+
+    #[test]
+    fn a_profile_is_the_machine_and_wins_over_the_machine_section() {
+        let s = parse(TWO_MACHINES).unwrap();
+        assert_eq!(s.profile.as_deref(), Some("diode"));
+        assert_eq!(s.profiles.len(), 2);
+        let m = s.machine;
+        assert_eq!(m.s_max, 1000);
+        assert_eq!(m.bed_mm, Some((400.0, 300.0)));
+        assert_eq!((m.max_power_percent, m.max_speed_mm_min), (80.0, 6000.0));
+        assert_eq!(m.laser_watts, 10.0);
+        // what the file wrote in [machine] is kept apart
+        assert_eq!(s.base_machine.s_max, 255);
+        assert_eq!(s.base_machine.bed_mm, Some((100.0, 100.0)));
+        assert_eq!(s.base_machine.max_power_percent, 100.0);
+    }
+
+    #[test]
+    fn a_profile_chosen_later_is_applied_over_the_machine_and_not_over_the_first_profile() {
+        let mut s = parse(TWO_MACHINES).unwrap();
+        s.apply_profile(" co2 ").unwrap();
+        assert_eq!(s.profile.as_deref(), Some("co2"));
+        let m = s.machine;
+        assert_eq!((m.s_max, m.max_power_percent), (100, 90.0));
+        // the CO2 profile has no travel and no speed: the machine section decides, not the diode
+        assert_eq!(m.bed_mm, Some((100.0, 100.0)));
+        assert_eq!(m.max_speed_mm_min, 30_000.0);
+        assert_eq!(m.laser_watts, 0.0);
+        s.validate().unwrap();
+    }
+
+    #[test]
+    fn a_profile_that_does_not_exist_is_an_error_that_lists_the_ones_there_are() {
+        let mut s = parse(TWO_MACHINES).unwrap();
+        let e = s.apply_profile("plasma").unwrap_err();
+        assert!(e.contains("plasma") && e.contains("diode, co2"), "{e}");
+        let e = parse("[machine]\nprofile = nothing\n").unwrap_err();
+        assert!(e.contains("none"), "{e}");
+        // the failed choice left the machine as it was
+        assert_eq!(s.machine.s_max, 1000);
+    }
+
+    #[test]
+    fn a_profile_with_a_wrong_value_is_refused_and_the_error_names_it() {
+        for (text, word) in [
+            ("[profile a]\ntravel_x_mm = 100\n", "travel"),
+            (
+                "[profile a]\ntravel_x_mm = 0\ntravel_y_mm = 100\n",
+                "travel_x_mm",
+            ),
+            ("[profile a]\nmax_power_percent = 0\n", "max_power_percent"),
+            (
+                "[profile a]\nmax_power_percent = 101\n",
+                "max_power_percent",
+            ),
+            ("[profile a]\nmax_speed_mm_min = 0\n", "max_speed_mm_min"),
+            (
+                "[profile a]\nmax_speed_mm_min = 30001\n",
+                "max_speed_mm_min",
+            ),
+            ("[profile a]\ns_max = 0\n", "s_max"),
+            ("[profile a]\ns_max = 100001\n", "s_max"),
+            ("[profile a]\nlaser_watts = -1\n", "laser_watts"),
+            ("[profile a]\nspeed = 5\n", "not a setting of a profile"),
+        ] {
+            let e = parse(text).unwrap_err();
+            assert!(e.contains(word), "{text:?}: {e}");
+        }
+        // a profile section needs a name, and the sections of the file keep their own words
+        assert!(parse("[profile]\ns_max = 5\n").is_err());
+        // a key with no name of profile outside of a profile section is not a profile key
+        assert!(parse("[machine]\ntravel_x_mm = 5\n").is_err());
+    }
+
+    #[test]
+    fn a_profile_section_with_no_key_still_names_the_profile() {
+        let s = parse("[profile empty]\n").unwrap();
+        assert_eq!(s.profiles.len(), 1);
+        assert_eq!(s.profiles[0].name, "empty");
+        let mut s = s;
+        s.apply_profile("empty").unwrap();
+        assert_eq!(s.machine, Machine::default());
+    }
+
+    #[test]
+    fn the_limits_of_the_profile_hold_over_the_layers_and_the_defaults() {
+        // the power of a layer over the limit of the profile
+        let e = parse("[machine]\nprofile = low\n[profile low]\nmax_power_percent = 30\n[defaults]\npower = 20\n[layer red]\npower = 40\n").unwrap_err();
+        assert!(
+            e.contains("layer red") && e.contains("max_power_percent"),
+            "{e}"
+        );
+        // the speed of a layer over the limit of speed
+        let e = parse("[machine]\nprofile = slow\n[profile slow]\nmax_speed_mm_min = 500\n[defaults]\nspeed = 100\n[layer red]\nspeed = 600\n").unwrap_err();
+        assert!(
+            e.contains("layer red") && e.contains("max_speed_mm_min"),
+            "{e}"
+        );
+        // the same for [defaults], which has a speed of 600 unless it says another
+        let e = parse("[machine]\nmax_speed_mm_min = 100\n").unwrap_err();
+        assert!(
+            e.contains("[defaults]") && e.contains("max_speed_mm_min"),
+            "{e}"
+        );
+        parse("[machine]\nmax_speed_mm_min = 100\n[defaults]\nspeed = 100\n").unwrap();
+        // a speed at the limit is allowed
+        parse("[machine]\nmax_speed_mm_min = 900\n[defaults]\nspeed = 100\n[layer red]\nspeed = 900\n").unwrap();
     }
 
     #[test]

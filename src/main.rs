@@ -34,19 +34,19 @@ const HELP: &str = "phoenix-laser: laser engraving from an image
 
   phoenix-laser engrave IMAGE OUT.nc --width-mm 50 [--dot-mm 0.1] [--feed 3000] [--power 50] [--smax 1000]
                 [--dither fs|atkinson|threshold|bayer] [--threshold 128] [--overscan MM|auto] [--accel 1000] [--origin X,Y] [--dry-run]
-                [--gamma 1] [--contrast 0] [--brightness 0] [--invert] [--auto-level] [--max-power 100] [--config FILE]
+                [--gamma 1] [--contrast 0] [--brightness 0] [--invert] [--auto-level] [--max-power 100] [--max-speed MM/MIN] [--config FILE] [--profile NAME]
                 [--material NAME --materials FILE]
-  phoenix-laser calibrate OUT.nc --powers 20,40,60,80 --feeds 1000,2000,3000 [--smax 1000] [--max-power 100] [--config FILE]
+  phoenix-laser calibrate OUT.nc --powers 20,40,60,80 --feeds 1000,2000,3000 [--smax 1000] [--max-power 100] [--max-speed MM/MIN] [--config FILE] [--profile NAME]
   phoenix-laser info IMAGE
   phoenix-laser cut DRAWING OUT.nc [--config FILE] [--power P] [--speed MM/MIN] [--passes N] [--focus-step MM] [--kerf MM] [--kerf-side none|auto|inside|outside]
-                [--tabs N] [--tab-width MM] [--smax N] [--overscan MM] [--origin X,Y] [--bed X,Y] [--max-power P] [--material NAME --materials FILE] [--dpi N] [--tolerance MM] [--dry-run]
+                [--tabs N] [--tab-width MM] [--smax N] [--overscan MM] [--origin X,Y] [--bed X,Y] [--max-power P] [--max-speed MM/MIN] [--profile NAME] [--material NAME --materials FILE] [--dpi N] [--tolerance MM] [--dry-run]
   phoenix-laser vector DRAWING OUT.nc [the options of cut] [--angle DEG] [--spacing MM]
   phoenix-laser layers DRAWING [--config FILE] [--dpi N]
   phoenix-laser materials FILE
-  phoenix-laser focus OUT.nc --z-step MM [--z-start MM] [--steps 9] [--length 10] [--spacing 2] [--feed 1000] [--power 30] [--smax 1000] [--max-power P] [--config FILE]
+  phoenix-laser focus OUT.nc --z-step MM [--z-start MM] [--steps 9] [--length 10] [--spacing 2] [--feed 1000] [--power 30] [--smax 1000] [--max-power P] [--max-speed MM/MIN] [--config FILE] [--profile NAME]
   phoenix-laser frame OUT.nc --size W,H | --gcode PROGRAM.nc [--origin X,Y] [--margin MM] [--feed 3000] [--laps 1] [--bed X,Y] [--smax N]
-                [--pilot P --confirm-laser-on] [--max-power P] [--config FILE]
-  phoenix-laser preview PROGRAM.nc [OUT.svg] [--accel 1000] [--rapid 6000] [--smax N] [--bed X,Y] [--width-px 900] [--config FILE]
+                [--pilot P --confirm-laser-on] [--max-power P] [--max-speed MM/MIN] [--config FILE] [--profile NAME]
+  phoenix-laser preview PROGRAM.nc [OUT.svg] [--accel 1000] [--rapid 6000] [--smax N] [--bed X,Y] [--width-px 900] [--config FILE] [--profile NAME]
   phoenix-laser [gui] [FILE]                     the window (a build with --features gui): with no arguments, with a file or with gui it opens; the commands above never open it
   phoenix-laser gui [FILE] --shot OUT.png [--size WxH] [--theme forge|dark|light] [--wait N] [--lang CODE] [--replace]   a picture of the window (a build with --features gui)
 
@@ -60,7 +60,8 @@ materials FILE lists the materials of a library: a plain text file with a [mater
 focus writes a focus test: short lines side by side, each burnt with the head at another height (Z); the sharpest and thinnest line shows where the beam is in focus. --z-step has no default because which way is down depends on the machine: check it before running the program, which moves Z. The usual values live in the [focus] section of --config.
 frame writes a program that traces the rectangle of the work with the laser OFF, to see where it will land: --size W,H from the corner --origin, or the box of what burns in --gcode PROGRAM.nc (its real place). --margin widens it. A --pilot power (a percent, at most max_pilot_percent of [frame], 5 unless the file says another, and at most the limit of power) turns the laser on weakly and only with --confirm-laser-on; the [frame] section of --config holds the usual values.
 preview reads a G-code program (this program's or another's) and says what it would do: moves, burnt and travelled length, the box, the powers, a time that counts the corners (--accel in mm/s2) and what looks dangerous (the laser on during a rapid move, a burning move with no feed, S above --smax, work outside --bed, no end); with OUT.svg it also draws the path. It only reads text.
---max-power is the limit of power, a percent of full power (100 when nothing says another): a program whose power is more than the limit is refused, never lowered. engrave and calibrate also read the limit and --smax from the [machine] section of the file of --config.";
+--max-power is the limit of power, a percent of full power (100 when nothing says another): a program whose power is more than the limit is refused, never lowered. engrave and calibrate also read the limit and --smax from the [machine] section of the file of --config. --max-speed is the limit of speed (mm/min, 30000 when nothing says another) and works the same way: a feed over it is refused, never lowered.
+A [profile NAME] section of the file of --config describes a machine and laser (its travel, its limit of power and of speed, its S and its watts); --profile NAME (or profile = NAME in [machine]) makes it the machine, over [machine] and under the options of the command line.";
 
 /// The tone options of the command line over `base`: the curve that is applied to the grey levels before the dots are made.
 fn take_tone(args: &mut Vec<String>, base: Tone) -> Result<Tone, String> {
@@ -84,21 +85,62 @@ fn take_tone(args: &mut Vec<String>, base: Tone) -> Result<Tone, String> {
     Ok(t)
 }
 
-/// The limit of power and the spindle value that `--config` and `--max-power` give to `engrave` and `calibrate`: the file is read as a whole (so it is checked), and the option wins.
-fn machine_limits(args: &mut Vec<String>) -> Result<(f64, Option<u32>, Option<String>), String> {
+/// The profile that `--profile` names, made the machine of the settings. The profiles live in the file of `--config`, so the option without it is an error.
+fn take_profile(
+    args: &mut Vec<String>,
+    settings: &mut Settings,
+    has_config: bool,
+) -> Result<(), String> {
+    if let Some(name) = flag(args, "--profile")? {
+        if !has_config {
+            return Err(
+                "--profile needs --config FILE: the profiles live in the settings file".into(),
+            );
+        }
+        settings.apply_profile(&name)?;
+        settings.validate()?;
+    }
+    Ok(())
+}
+
+/// What `engrave` and `calibrate` take from the machine.
+struct MachineLimits {
+    /// The limit of power, a percent of full power.
+    max_power: f64,
+    /// The limit of speed, mm/min.
+    max_speed: f64,
+    /// The spindle value that is full power, when the settings file gave it.
+    s_max: Option<u32>,
+    /// The settings file, when there is one.
+    config: Option<String>,
+}
+
+/// The limits and the spindle value that `--config`, `--profile`, `--max-power` and `--max-speed` give to `engrave` and `calibrate`: the file is read as a whole (so it is checked), and
+/// the options win.
+fn machine_limits(args: &mut Vec<String>) -> Result<MachineLimits, String> {
     let config = flag(args, "--config")?;
-    let mut max = safety::DEFAULT_MAX_POWER_PERCENT;
-    let mut s_max = None;
-    if let Some(path) = &config {
-        let s = vconfig::load(Path::new(path))?;
-        max = s.machine.max_power_percent;
-        s_max = Some(s.machine.s_max);
-    }
+    let mut s = match &config {
+        Some(path) => vconfig::load(Path::new(path))?,
+        None => Settings::default(),
+    };
+    take_profile(args, &mut s, config.is_some())?;
+    let mut max_power = s.machine.max_power_percent;
+    let mut max_speed = s.machine.max_speed_mm_min;
+    let s_max = config.as_ref().map(|_| s.machine.s_max);
     if let Some(v) = flag(args, "--max-power")? {
-        max = num(&v, "--max-power")?;
+        max_power = num(&v, "--max-power")?;
     }
-    safety::validate_max(max)?;
-    Ok((max, s_max, config))
+    if let Some(v) = flag(args, "--max-speed")? {
+        max_speed = num(&v, "--max-speed")?;
+    }
+    safety::validate_max(max_power)?;
+    safety::validate_max_speed(max_speed)?;
+    Ok(MachineLimits {
+        max_power,
+        max_speed,
+        s_max,
+        config,
+    })
 }
 
 /// The material that `--material` names, taken from the library of `--materials` (or of the file named by `PHOENIX_LASER_MATERIALS`), with the file it comes from.
@@ -217,6 +259,7 @@ fn drawing_settings(
             s
         }
     };
+    take_profile(args, &mut s, config.is_some())?;
     if let Some(v) = flag(args, "--dpi")? {
         s.read.dpi = num(&v, "--dpi")?;
     }
@@ -231,6 +274,9 @@ fn drawing_settings(
     }
     if let Some(v) = flag(args, "--max-power")? {
         s.machine.max_power_percent = num(&v, "--max-power")?;
+    }
+    if let Some(v) = flag(args, "--max-speed")? {
+        s.machine.max_speed_mm_min = num(&v, "--max-speed")?;
     }
     if let Some(v) = flag(args, "--origin")? {
         let o = list(&v, "--origin")?;
@@ -380,10 +426,11 @@ fn run(mut args: Vec<String>) -> Result<(), String> {
                 .map(|v| num(&v, "--width-mm"))
                 .transpose()?
                 .ok_or("--width-mm is needed")?;
-            let (max_power, config_s_max, config) = machine_limits(&mut args)?;
+            let limits = machine_limits(&mut args)?;
+            let (max_power, config) = (limits.max_power, limits.config.clone());
             let material = take_material(&mut args)?;
             let mut p = Params::default();
-            if let Some(s_max) = config_s_max {
+            if let Some(s_max) = limits.s_max {
                 p.s_max = s_max;
             }
             // the material goes under the options of the command line
@@ -459,6 +506,7 @@ fn run(mut args: Vec<String>) -> Result<(), String> {
             }
             p.validate()?;
             safety::check_power("--power", p.power_percent, max_power)?;
+            safety::check_speed("--feed", p.feed_mm_min, limits.max_speed)?;
             if !dry_run
                 && config
                     .iter()
@@ -503,9 +551,10 @@ fn run(mut args: Vec<String>) -> Result<(), String> {
                 &flag(&mut args, "--feeds")?.ok_or("--feeds is needed")?,
                 "--feeds",
             )?;
-            let (max_power, config_s_max, config) = machine_limits(&mut args)?;
+            let limits = machine_limits(&mut args)?;
+            let (max_power, config) = (limits.max_power, limits.config.clone());
             let mut g = Grid::default();
-            if let Some(s_max) = config_s_max {
+            if let Some(s_max) = limits.s_max {
                 g.s_max = s_max;
             }
             if let Some(v) = flag(&mut args, "--smax")? {
@@ -515,6 +564,9 @@ fn run(mut args: Vec<String>) -> Result<(), String> {
             let out = args.first().ok_or("calibrate needs an output file")?;
             for p in &powers {
                 safety::check_power("a power of --powers", *p, max_power)?;
+            }
+            for f in &feeds {
+                safety::check_speed("a speed of --feeds", *f, limits.max_speed)?;
             }
             if config
                 .as_deref()
@@ -546,10 +598,14 @@ fn run(mut args: Vec<String>) -> Result<(), String> {
             if let Some(path) = &config {
                 settings = vconfig::load(Path::new(path))?;
             }
+            take_profile(&mut args, &mut settings, config.is_some())?;
             let mut machine = settings.machine;
             let mut f = settings.focus;
             if let Some(v) = flag(&mut args, "--max-power")? {
                 machine.max_power_percent = num(&v, "--max-power")?;
+            }
+            if let Some(v) = flag(&mut args, "--max-speed")? {
+                machine.max_speed_mm_min = num(&v, "--max-speed")?;
             }
             if let Some(v) = flag(&mut args, "--smax")? {
                 machine.s_max = whole(&v, "--smax")?;
@@ -578,6 +634,11 @@ fn run(mut args: Vec<String>) -> Result<(), String> {
             finish(&args, 1)?;
             let out = args.first().ok_or("focus needs an output file")?;
             safety::validate_max(machine.max_power_percent)?;
+            safety::check_speed(
+                "the speed of the focus test",
+                f.feed_mm_min,
+                machine.max_speed_mm_min,
+            )?;
             let text = focus_test(&f, machine.s_max, machine.max_power_percent)?;
             if config
                 .as_deref()
@@ -615,10 +676,14 @@ fn run(mut args: Vec<String>) -> Result<(), String> {
             if let Some(path) = &config {
                 settings = vconfig::load(Path::new(path))?;
             }
+            take_profile(&mut args, &mut settings, config.is_some())?;
             let mut machine = settings.machine;
             let mut fr = settings.frame;
             if let Some(v) = flag(&mut args, "--max-power")? {
                 machine.max_power_percent = num(&v, "--max-power")?;
+            }
+            if let Some(v) = flag(&mut args, "--max-speed")? {
+                machine.max_speed_mm_min = num(&v, "--max-speed")?;
             }
             if let Some(v) = flag(&mut args, "--smax")? {
                 machine.s_max = whole(&v, "--smax")?;
@@ -658,6 +723,11 @@ fn run(mut args: Vec<String>) -> Result<(), String> {
             finish(&args, 1)?;
             let out = args.first().ok_or("frame needs an output file")?;
             safety::validate_max(machine.max_power_percent)?;
+            safety::check_speed(
+                "the speed of the frame",
+                fr.feed_mm_min,
+                machine.max_speed_mm_min,
+            )?;
             let pilot = safety::pilot_percent(
                 fr.pilot_percent,
                 confirmed,
@@ -753,10 +823,13 @@ fn run(mut args: Vec<String>) -> Result<(), String> {
             let mut o = preview::Options::default();
             let config = flag(&mut args, "--config")?;
             if let Some(path) = &config {
-                let s = vconfig::load(Path::new(path))?;
+                let mut s = vconfig::load(Path::new(path))?;
+                take_profile(&mut args, &mut s, true)?;
                 o.rapid_mm_min = s.machine.rapid_mm_min;
                 o.bed_mm = s.machine.bed_mm;
                 o.s_max = Some(s.machine.s_max);
+            } else {
+                take_profile(&mut args, &mut Settings::default(), false)?;
             }
             if let Some(v) = flag(&mut args, "--accel")? {
                 o.accel_mm_s2 = num(&v, "--accel")?;

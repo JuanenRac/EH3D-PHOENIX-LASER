@@ -10,6 +10,32 @@ pub const DEFAULT_MAX_POWER_PERCENT: f64 = 100.0;
 /// The most that a power to show the frame may be when nothing says another (`max_pilot_percent` in `[frame]`): a percent of full power. The limit of power of the machine still holds over it.
 pub const DEFAULT_MAX_PILOT_PERCENT: f64 = 5.0;
 
+/// The limit of speed when nothing says another: the fastest speed any setting of the program accepts (mm/min).
+pub const DEFAULT_MAX_SPEED_MM_MIN: f64 = 30_000.0;
+
+/// A limit of speed must be from 1 to 30000 mm/min.
+pub fn validate_max_speed(max_mm_min: f64) -> Result<(), String> {
+    if max_mm_min.is_finite() && (1.0..=DEFAULT_MAX_SPEED_MM_MIN).contains(&max_mm_min) {
+        Ok(())
+    } else {
+        Err(format!(
+            "max_speed_mm_min is {max_mm_min}: it must be from 1 to {DEFAULT_MAX_SPEED_MM_MIN}"
+        ))
+    }
+}
+
+/// Refuses a speed over the limit, like a power over the limit of power; `what` names where the speed comes from (`--feed`, a layer...).
+pub fn check_speed(what: &str, mm_min: f64, max_mm_min: f64) -> Result<(), String> {
+    validate_max_speed(max_mm_min)?;
+    if mm_min.is_finite() && mm_min <= max_mm_min {
+        Ok(())
+    } else {
+        Err(format!(
+            "{what} is {mm_min} mm/min: it is more than the limit of speed, max_speed_mm_min, which is {max_mm_min} mm/min"
+        ))
+    }
+}
+
 /// The cap of the pilot power must be from 0 (no pilot power at all) to 100 percent.
 pub fn validate_max_pilot(max_pilot_percent: f64) -> Result<(), String> {
     if max_pilot_percent.is_finite() && (0.0..=100.0).contains(&max_pilot_percent) {
@@ -138,6 +164,23 @@ mod tests {
         // a cap that is not a number is an error, whatever is asked
         assert!(pilot_percent(0.0, false, 100.0, f64::NAN).is_err());
         assert!(pilot_percent(1.0, true, 100.0, 100.1).is_err());
+    }
+
+    #[test]
+    fn a_limit_of_speed_must_be_from_1_to_30000_and_a_speed_over_it_is_refused() {
+        assert!(validate_max_speed(1.0).is_ok());
+        assert!(validate_max_speed(30_000.0).is_ok());
+        for bad in [0.0, 0.5, 30_000.1, -1.0, f64::NAN, f64::INFINITY] {
+            assert!(validate_max_speed(bad).is_err(), "{bad}");
+        }
+        assert!(check_speed("--feed", 1000.0, 1000.0).is_ok());
+        let e = check_speed("--feed", 1000.1, 1000.0).unwrap_err();
+        assert!(
+            e.contains("--feed") && e.contains("max_speed_mm_min"),
+            "{e}"
+        );
+        assert!(check_speed("--feed", f64::NAN, 1000.0).is_err());
+        assert!(check_speed("--feed", 10.0, 0.0).is_err());
     }
 
     #[test]

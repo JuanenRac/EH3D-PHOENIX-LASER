@@ -4,6 +4,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+- **Machine profiles:** a `[profile NAME]` section of the settings file describes a machine and laser (`travel_x_mm`, `travel_y_mm`, `max_power_percent`, `max_speed_mm_min`, `s_max`, `laser_watts`), so that a person with two machines, or a laser module that is changed for another, keeps one profile for each in the same file. The profile that is chosen with `profile = NAME` in `[machine]` or with `--profile NAME` (on `engrave`, `calibrate`, `cut`, `vector`, `layers`, `focus`, `frame` and `preview`) is the machine: its values win over `[machine]` and the options of the command line win over both. The limits of the profile hold over the layers and the defaults, a profile that is not in the file is an error that lists the ones that are, and `--profile` without `--config` is an error.
+- **A limit of speed that refuses instead of lowering:** `max_speed_mm_min` in `[machine]` (30000 by default) and `--max-speed` on the commands that take a limit of power. A layer, a `--feed`, a `--feeds`, the frame or the focus test that asks for more is an error that names it, the way a power over the limit of power already is.
 - **The cap of the pilot power of the frame is a setting:** `max_pilot_percent` in `[frame]` (5 by default, from 0 to 100; 0 allows no pilot power at all) replaces the fixed 5 %. The limit of power of the machine (`max_power_percent`) still holds over it, a `pilot_percent` above the cap is an error of the file, and `--confirm-laser-on` is still needed on every run.
 
 ## [0.0.7] - A tone curve, ordered dithering, a limit of power, a library of materials, a preview of the program, a frame with the laser off and a focus test

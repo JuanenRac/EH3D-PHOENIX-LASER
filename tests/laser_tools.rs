@@ -642,6 +642,255 @@ fn the_frame_takes_its_values_from_the_settings_file_and_the_bed_limits_it() {
     assert!(err.contains("--confirm-laser-on"), "{err}");
 }
 
+const PROFILES: &str = "[profile small diode]\ntravel_x_mm = 40\ntravel_y_mm = 30\nmax_power_percent = 5\nmax_speed_mm_min = 1500\ns_max = 255\n\
+    [profile big]\ntravel_x_mm = 400\ntravel_y_mm = 300\nmax_power_percent = 70\nmax_speed_mm_min = 9000\ns_max = 1000\nlaser_watts = 10\n";
+
+/// A settings file with the two profiles of [`PROFILES`] and the name of the test in it.
+fn profiles_file(name: &str, extra: &str) -> String {
+    let cfg = tmp(name);
+    std::fs::write(&cfg, format!("{extra}{PROFILES}")).unwrap();
+    cfg
+}
+
+#[test]
+fn a_profile_is_chosen_with_the_option_and_its_limits_hold_over_the_work() {
+    let cfg = profiles_file("profiles.cfg", "");
+    let drawing = [
+        "cut",
+        "examples/plate.svg",
+        "--dry-run",
+        "--config",
+        cfg.as_str(),
+    ];
+    // no profile chosen: the default power of the layers (50 %) is allowed
+    let (ok, _, err) = run(&drawing);
+    assert!(ok, "{err}");
+    // the small diode allows 5 % only, and the default layers ask for 50 %
+    let mut small = drawing.to_vec();
+    small.extend(["--profile", "Small Diode"]);
+    let (ok, _, err) = run(&small);
+    assert!(!ok);
+    assert!(
+        err.contains("max_power_percent") && err.contains("[defaults]"),
+        "{err}"
+    );
+    // the big one allows 70 %
+    let mut big = drawing.to_vec();
+    big.extend(["--profile", "big"]);
+    let (ok, _, err) = run(&big);
+    assert!(ok, "{err}");
+    // a profile that is not in the file is an error that lists the ones there are
+    let mut none = drawing.to_vec();
+    none.extend(["--profile", "plasma"]);
+    let (ok, _, err) = run(&none);
+    assert!(!ok);
+    assert!(
+        err.contains("plasma") && err.contains("small diode, big"),
+        "{err}"
+    );
+    // the profiles live in the settings file
+    let (ok, _, err) = run(&["cut", "examples/plate.svg", "--dry-run", "--profile", "big"]);
+    assert!(!ok);
+    assert!(err.contains("--config"), "{err}");
+}
+
+#[test]
+fn a_profile_chosen_in_the_file_is_the_machine_and_the_option_still_wins_over_it() {
+    let cfg = profiles_file(
+        "profile-in-file.cfg",
+        "[machine]\nprofile = small diode\n[defaults]\npower = 5\nspeed = 1000\n",
+    );
+    let nc = tmp("profile-s.nc");
+    // the S of the profile is the full power of the program: 255, not the 1000 of the default
+    let (ok, _, err) = run(&[
+        "engrave",
+        GRADIENT,
+        &nc,
+        "--width-mm",
+        "16",
+        "--dot-mm",
+        "0.5",
+        "--power",
+        "5",
+        "--feed",
+        "1500",
+        "--config",
+        &cfg,
+    ]);
+    assert!(ok, "{err}");
+    let text = std::fs::read_to_string(&nc).unwrap();
+    assert!(text.contains("S13") && !text.contains("S50"), "{text}");
+    assert!(text.contains("S 0-255"), "{text}");
+    // the big profile chosen on the command line replaces it (S1000, up to 70 %)
+    let (ok, _, err) = run(&[
+        "engrave",
+        GRADIENT,
+        &nc,
+        "--width-mm",
+        "16",
+        "--dot-mm",
+        "0.5",
+        "--power",
+        "60",
+        "--config",
+        &cfg,
+        "--profile",
+        "big",
+    ]);
+    assert!(ok, "{err}");
+    assert!(std::fs::read_to_string(&nc).unwrap().contains("S600"));
+    // the option of the command line wins over the profile
+    let (ok, _, err) = run(&[
+        "engrave",
+        GRADIENT,
+        &nc,
+        "--width-mm",
+        "16",
+        "--dot-mm",
+        "0.5",
+        "--power",
+        "5",
+        "--feed",
+        "1500",
+        "--config",
+        &cfg,
+        "--smax",
+        "100",
+    ]);
+    assert!(ok, "{err}");
+    assert!(std::fs::read_to_string(&nc).unwrap().contains("S 0-100"));
+}
+
+#[test]
+fn a_feed_over_the_limit_of_speed_is_refused_and_never_lowered() {
+    let base = [
+        "engrave",
+        GRADIENT,
+        "--width-mm",
+        "16",
+        "--dot-mm",
+        "0.5",
+        "--dry-run",
+    ];
+    let mut over = base.to_vec();
+    over.extend(["--feed", "4000", "--max-speed", "3000"]);
+    let (ok, _, err) = run(&over);
+    assert!(!ok);
+    assert!(
+        err.contains("--feed") && err.contains("max_speed_mm_min"),
+        "{err}"
+    );
+    let mut at = base.to_vec();
+    at.extend(["--feed", "3000", "--max-speed", "3000"]);
+    let (ok, _, err) = run(&at);
+    assert!(ok, "{err}");
+    // the speeds of the grid, of the frame and of the focus test obey it too
+    let nc = tmp("speed.nc");
+    let (ok, _, err) = run(&[
+        "calibrate",
+        &nc,
+        "--powers",
+        "20",
+        "--feeds",
+        "1000,4000",
+        "--max-speed",
+        "3000",
+    ]);
+    assert!(!ok);
+    assert!(err.contains("--feeds"), "{err}");
+    let (ok, _, err) = run(&["frame", &nc, "--size", "10,10", "--max-speed", "2000"]);
+    assert!(!ok);
+    assert!(
+        err.contains("frame") && err.contains("max_speed_mm_min"),
+        "{err}"
+    );
+    let (ok, _, err) = run(&[
+        "focus",
+        &nc,
+        "--z-step",
+        "0.5",
+        "--feed",
+        "2000",
+        "--max-speed",
+        "1000",
+    ]);
+    assert!(!ok);
+    assert!(
+        err.contains("focus") && err.contains("max_speed_mm_min"),
+        "{err}"
+    );
+    // a limit out of range is an error
+    let (ok, _, err) = run(&["frame", &nc, "--size", "10,10", "--max-speed", "0"]);
+    assert!(!ok);
+    assert!(err.contains("max_speed_mm_min"), "{err}");
+}
+
+#[test]
+fn the_travel_of_a_profile_is_the_bed_of_the_frame_and_of_the_preview() {
+    let cfg = profiles_file("profile-bed.cfg", "[defaults]\npower = 5\nspeed = 1000\n");
+    let nc = tmp("profile-bed.nc");
+    // 50 x 50 does not fit the 40 x 30 of the small diode, and fits the big one
+    let (ok, _, err) = run(&[
+        "frame",
+        &nc,
+        "--size",
+        "50,50",
+        "--feed",
+        "1000",
+        "--config",
+        &cfg,
+        "--profile",
+        "small diode",
+    ]);
+    assert!(!ok);
+    assert!(err.contains("outside of the bed"), "{err}");
+    // the frame at its default speed is over the limit of speed of the small diode
+    let (ok, _, err) = run(&[
+        "frame",
+        &nc,
+        "--size",
+        "10,10",
+        "--config",
+        &cfg,
+        "--profile",
+        "small diode",
+    ]);
+    assert!(!ok);
+    assert!(err.contains("max_speed_mm_min"), "{err}");
+    let (ok, out, err) = run(&[
+        "frame",
+        &nc,
+        "--size",
+        "50,50",
+        "--config",
+        &cfg,
+        "--profile",
+        "big",
+    ]);
+    assert!(ok, "{err}");
+    assert!(out.contains("50.0 x 50.0"), "{out}");
+    // the preview warns of work outside the travel of the profile
+    let work = tmp("profile-work.nc");
+    std::fs::write(
+        &work,
+        "G21\nG90\nF1000\nG0 X0 Y0\nM3 S100\nG1 X80 Y0\nM5\nM2\n",
+    )
+    .unwrap();
+    let (ok, _, err) = run(&[
+        "preview",
+        &work,
+        "--config",
+        &cfg,
+        "--profile",
+        "small diode",
+    ]);
+    assert!(ok, "{err}");
+    assert!(err.contains("outside"), "{err}");
+    let (ok, _, err) = run(&["preview", &work, "--config", &cfg, "--profile", "big"]);
+    assert!(ok, "{err}");
+    assert!(!err.contains("outside"), "{err}");
+}
+
 #[test]
 fn the_cap_of_the_pilot_power_is_in_the_settings_file_and_the_limit_of_power_still_holds() {
     let cfg = tmp("frame-cap.cfg");

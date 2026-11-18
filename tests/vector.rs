@@ -634,6 +634,7 @@ fn every_setting_the_file_reads_is_documented_and_every_documented_setting_is_re
     let doc = fs::read_to_string(root.join("docs/vector-settings.md")).unwrap();
     let layer = source.find("fn set_layer").unwrap();
     let global = source.find("fn set_global").unwrap();
+    let profile = source.find("fn set_profile").unwrap();
     let end = source.find("pub fn parse").unwrap();
     let mut keys: Vec<String> = Vec::new();
     // the keys of a layer are the arms `"key" => ...` of set_layer
@@ -649,8 +650,20 @@ fn every_setting_the_file_reads_is_documented_and_every_documented_setting_is_re
         }
     }
     let layer_keys = keys.len();
+    // the keys of a profile are the arms `"key" => ...` of set_profile
+    for line in source[profile..end].lines() {
+        if let Some((key, after)) = line
+            .trim()
+            .strip_prefix('"')
+            .and_then(|r| r.split_once('"'))
+        {
+            if after.trim_start().starts_with("=>") {
+                keys.push(key.to_string());
+            }
+        }
+    }
     // the others are the arms `("section", "key") => ...` of set_global
-    for line in source[global..end].lines() {
+    for line in source[global..profile].lines() {
         if let Some(rest) = line.trim().strip_prefix("(\"") {
             // `limits", "max_depth") => ...` splits into the section, ", ", the key and the rest
             let parts: Vec<&str> = rest.split('"').collect();
@@ -660,7 +673,7 @@ fn every_setting_the_file_reads_is_documented_and_every_documented_setting_is_re
         }
     }
     assert_eq!(layer_keys, 12, "{keys:?}");
-    assert_eq!(keys.len(), 12 + 44, "{keys:?}");
+    assert_eq!(keys.len(), 12 + 46 + 6, "{keys:?}");
     for k in &keys {
         assert!(
             doc.contains(&format!("`{k}`")),

@@ -67,6 +67,7 @@ Chaque ligne est une partie de ce dépôt et le feu dit où elle en est aujourd'
 * **L'aperçu** (`src/preview.rs`) : `phoenix-laser preview` lit un programme G-code (le sien ou un autre), affiche les mouvements, la longueur brûlée et parcourue, la boîte, les puissances et un temps qui compte le freinage dans les coins, avertit de ce qui semble dangereux (laser allumé pendant un déplacement rapide, pas d'avance, puissance au-dessus du plein, travail hors du plateau, pas de fin) et dessine le parcours en SVG ; les tests relisent ce que la gravure écrit et vérifient la même longueur.
 * **La bibliothèque de matériaux** (`src/materials.rs`, `examples/materials.cfg`) : ce qui convient à chaque matériau et manière de travailler s'écrit une fois dans un fichier texte (`[material NOM]` : puissance, vitesse, passes, pas de mise au point, largeur du faisceau, hachures, taille du point, tramage et courbe de tons) et se choisit avec `--material NOM --materials FICHIER` ; les options de la ligne de commande l'emportent et la limite de puissance vaut sur les deux. `phoenix-laser materials FICHIER` liste la bibliothèque.
 * **La limite de puissance** (`src/safety.rs`, `max_power_percent` dans `[machine]`, `--max-power`) : un programme dont la puissance dépasse la limite est refusé avec une erreur qui nomme le calque ou l'option, jamais abaissé sans le dire ; la limite est de 100 % tant qu'un fichier ou une option n'en dit pas moins.
+* **Profils de machine** (`[profile NAME]` dans le fichier de réglages, `--profile NAME`) : qui a deux machines, ou change le module laser pour un autre, garde un profil pour chacune (la course du plateau, la limite de puissance, la limite de vitesse, la valeur de pleine puissance et les watts) ; le profil choisi est la machine, et `--max-speed` accompagne `--max-power` : une vitesse au-delà de la limite est refusée, jamais abaissée.
 * **Tramage ordonné** (`src/dither.rs`) : `--dither bayer` (aussi dans la fenêtre) décide chaque point selon sa place et son gris avec une matrice de Bayer 8 x 8, donc le motif est régulier et le même gris brûle toujours les mêmes points ; les tests vérifient que chaque niveau de la matrice apparaît une fois et que le noircissement d'un gris est conservé.
 * **La courbe de tons** (`src/tone.rs`) : avant de fabriquer les points, les niveaux de gris peuvent être étirés sur toute la plage (`--auto-level`), recevoir plus ou moins de contraste et de luminosité, être courbés par un gamma ou inversés, avec une seule table de 256 entrées ; avec les valeurs par défaut l'image n'est pas modifiée du tout.
 * **Un G-code vérifié :** le programme d'un dessin est vérifié ligne par ligne avant d'être livré : aucun laser allumé pendant un déplacement rapide ou sans vitesse, aucun `S` au-dessus de la pleine puissance, aucun déplacement hors du plateau, `M5` à la fin ; le fichier n'est jamais écrit sur le dessin ni sur les réglages dont il provient.
@@ -117,19 +118,19 @@ La bibliothèque est `eh3d_phoenix_laser` (`use eh3d_phoenix_laser::...`) ; la l
 ```text
 phoenix-laser engrave IMAGE OUT.nc --width-mm 50 [--dot-mm 0.1] [--feed 3000] [--power 50] [--smax 1000]
               [--dither fs|atkinson|threshold|bayer] [--threshold 128] [--overscan MM|auto] [--accel 1000] [--origin X,Y] [--dry-run]
-              [--gamma 1] [--contrast 0] [--brightness 0] [--invert] [--auto-level] [--max-power 100] [--config FILE]
+              [--gamma 1] [--contrast 0] [--brightness 0] [--invert] [--auto-level] [--max-power 100] [--max-speed MM/MIN] [--config FILE] [--profile NAME]
               [--material NAME --materials FILE]
-phoenix-laser calibrate OUT.nc --powers 20,40,60,80 --feeds 1000,2000,3000 [--smax 1000] [--max-power 100] [--config FILE]
+phoenix-laser calibrate OUT.nc --powers 20,40,60,80 --feeds 1000,2000,3000 [--smax 1000] [--max-power 100] [--max-speed MM/MIN] [--config FILE] [--profile NAME]
 phoenix-laser info IMAGE
 phoenix-laser cut DRAWING OUT.nc [--config FILE] [--power P] [--speed MM/MIN] [--passes N] [--focus-step MM] [--kerf MM] [--kerf-side none|auto|inside|outside]
-              [--tabs N] [--tab-width MM] [--smax N] [--overscan MM] [--origin X,Y] [--bed X,Y] [--max-power P] [--material NAME --materials FILE] [--dpi N] [--tolerance MM] [--dry-run]
+              [--tabs N] [--tab-width MM] [--smax N] [--overscan MM] [--origin X,Y] [--bed X,Y] [--max-power P] [--max-speed MM/MIN] [--profile NAME] [--material NAME --materials FILE] [--dpi N] [--tolerance MM] [--dry-run]
 phoenix-laser vector DRAWING OUT.nc [the options of cut] [--angle DEG] [--spacing MM]
 phoenix-laser layers DRAWING [--config FILE] [--dpi N]
 phoenix-laser materials FILE
-phoenix-laser focus OUT.nc --z-step MM [--z-start MM] [--steps 9] [--length 10] [--spacing 2] [--feed 1000] [--power 30] [--smax 1000] [--max-power P] [--config FILE]
+phoenix-laser focus OUT.nc --z-step MM [--z-start MM] [--steps 9] [--length 10] [--spacing 2] [--feed 1000] [--power 30] [--smax 1000] [--max-power P] [--max-speed MM/MIN] [--config FILE] [--profile NAME]
 phoenix-laser frame OUT.nc --size W,H | --gcode PROGRAM.nc [--origin X,Y] [--margin MM] [--feed 3000] [--laps 1] [--bed X,Y] [--smax N]
-              [--pilot P --confirm-laser-on] [--max-power P] [--config FILE]
-phoenix-laser preview PROGRAM.nc [OUT.svg] [--accel 1000] [--rapid 6000] [--smax N] [--bed X,Y] [--width-px 900] [--config FILE]
+              [--pilot P --confirm-laser-on] [--max-power P] [--max-speed MM/MIN] [--config FILE] [--profile NAME]
+phoenix-laser preview PROGRAM.nc [OUT.svg] [--accel 1000] [--rapid 6000] [--smax N] [--bed X,Y] [--width-px 900] [--config FILE] [--profile NAME]
 phoenix-laser [gui] [FILE]                       the window (a build with --features gui); with no arguments it opens
 ```
 

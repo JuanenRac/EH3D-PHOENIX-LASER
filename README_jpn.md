@@ -67,6 +67,7 @@
 * **プレビュー**（`src/preview.rs`）：`phoenix-laser preview` は G-code プログラム（自作のものでも他のものでも）を読み、移動、焼いた長さと移動した長さ、範囲、出力、角での減速を数えた時間を表示します。危険に見えるもの（早送り中のレーザーオン、送り速度なし、全出力超えの値、ベッド外の作業、終了なし）を警告し、経路を SVG で描きます。テストは彫刻が書いたものを読み戻して同じ長さを確認します。
 * **素材ライブラリ**（`src/materials.rs`、`examples/materials.cfg`）：素材と加工方法ごとに合う値（`[material 名前]`：出力、速度、パス数、焦点ステップ、ビーム幅、ハッチ、ドットの大きさ、ディザリング、トーンカーブ）を 1 つのテキストファイルに書き、`--material 名前 --materials ファイル` で選びます。コマンドラインのオプションが優先し、出力の上限は両方に対して有効です。`phoenix-laser materials ファイル` でライブラリを一覧できます。
 * **出力の上限**（`src/safety.rs`、`[machine]` の `max_power_percent`、`--max-power`）：出力が上限を超えるプログラムは、レイヤーまたはオプションを示すエラーで拒否され、黙って下げられることはありません。ファイルかオプションが指定するまで上限は 100 % です。
+* **マシンプロファイル**（設定ファイルの `[profile NAME]`、`--profile NAME`）：2 台のマシンを持つ人や、レーザーモジュールを交換する人は、それぞれにプロファイルを持てます（ベッドの移動量、出力の上限、速度の上限、フルパワーの値、ワット数）。選んだプロファイルがマシンになり、`--max-speed` は `--max-power` と並んで働きます。上限を超える速度は拒否され、黙って下げられることはありません。
 * **規則的ディザリング**（`src/dither.rs`）：`--dither bayer`（ウィンドウでも選べます）は 8 x 8 のベイヤー行列で、各ドットをその位置と灰色だけで決めます。模様は規則的で、同じ灰色は常に同じドットを焼きます。テストは行列の各レベルが 1 回ずつ現れることと、灰色の濃さが保たれることを確認します。
 * **トーンカーブ**（`src/tone.rs`）：ドットを作る前に、グレー階調を全範囲に伸ばす（`--auto-level`）、コントラストと明るさを変える、ガンマで曲げる、反転する、といった調整を 256 項目の 1 つの表で行います。既定値では画像はまったく変わりません。
 * **検証済みの G コード：**図面のプログラムは渡す前に1行ずつ検証されます。早送り中や速度なしでレーザーが点灯せず、`S` は全出力を超えず、ベッド外への移動はなく、最後は `M5` です。元の図面や設定の上にファイルが書かれることはありません。
@@ -117,19 +118,19 @@ EH3D-PHOENIX-LASER は EH3D Fabrication Suite のプログラムの一つです�
 ```text
 phoenix-laser engrave IMAGE OUT.nc --width-mm 50 [--dot-mm 0.1] [--feed 3000] [--power 50] [--smax 1000]
               [--dither fs|atkinson|threshold|bayer] [--threshold 128] [--overscan MM|auto] [--accel 1000] [--origin X,Y] [--dry-run]
-              [--gamma 1] [--contrast 0] [--brightness 0] [--invert] [--auto-level] [--max-power 100] [--config FILE]
+              [--gamma 1] [--contrast 0] [--brightness 0] [--invert] [--auto-level] [--max-power 100] [--max-speed MM/MIN] [--config FILE] [--profile NAME]
               [--material NAME --materials FILE]
-phoenix-laser calibrate OUT.nc --powers 20,40,60,80 --feeds 1000,2000,3000 [--smax 1000] [--max-power 100] [--config FILE]
+phoenix-laser calibrate OUT.nc --powers 20,40,60,80 --feeds 1000,2000,3000 [--smax 1000] [--max-power 100] [--max-speed MM/MIN] [--config FILE] [--profile NAME]
 phoenix-laser info IMAGE
 phoenix-laser cut DRAWING OUT.nc [--config FILE] [--power P] [--speed MM/MIN] [--passes N] [--focus-step MM] [--kerf MM] [--kerf-side none|auto|inside|outside]
-              [--tabs N] [--tab-width MM] [--smax N] [--overscan MM] [--origin X,Y] [--bed X,Y] [--max-power P] [--material NAME --materials FILE] [--dpi N] [--tolerance MM] [--dry-run]
+              [--tabs N] [--tab-width MM] [--smax N] [--overscan MM] [--origin X,Y] [--bed X,Y] [--max-power P] [--max-speed MM/MIN] [--profile NAME] [--material NAME --materials FILE] [--dpi N] [--tolerance MM] [--dry-run]
 phoenix-laser vector DRAWING OUT.nc [the options of cut] [--angle DEG] [--spacing MM]
 phoenix-laser layers DRAWING [--config FILE] [--dpi N]
 phoenix-laser materials FILE
-phoenix-laser focus OUT.nc --z-step MM [--z-start MM] [--steps 9] [--length 10] [--spacing 2] [--feed 1000] [--power 30] [--smax 1000] [--max-power P] [--config FILE]
+phoenix-laser focus OUT.nc --z-step MM [--z-start MM] [--steps 9] [--length 10] [--spacing 2] [--feed 1000] [--power 30] [--smax 1000] [--max-power P] [--max-speed MM/MIN] [--config FILE] [--profile NAME]
 phoenix-laser frame OUT.nc --size W,H | --gcode PROGRAM.nc [--origin X,Y] [--margin MM] [--feed 3000] [--laps 1] [--bed X,Y] [--smax N]
-              [--pilot P --confirm-laser-on] [--max-power P] [--config FILE]
-phoenix-laser preview PROGRAM.nc [OUT.svg] [--accel 1000] [--rapid 6000] [--smax N] [--bed X,Y] [--width-px 900] [--config FILE]
+              [--pilot P --confirm-laser-on] [--max-power P] [--max-speed MM/MIN] [--config FILE] [--profile NAME]
+phoenix-laser preview PROGRAM.nc [OUT.svg] [--accel 1000] [--rapid 6000] [--smax N] [--bed X,Y] [--width-px 900] [--config FILE] [--profile NAME]
 phoenix-laser [gui] [FILE]                       the window (a build with --features gui); with no arguments it opens
 ```
 

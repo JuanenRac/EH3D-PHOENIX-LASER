@@ -17,7 +17,7 @@ key = value
 key = value
 ```
 
-Sections: `[limits]`, `[read]`, `[order]`, `[offset]`, `[hatch]`, `[machine]`, `[frame]`, `[focus]`, `[defaults]` and one `[layer NAME]` for each layer or colour. `[defaults]` is what a layer gets that the file
+Sections: `[limits]`, `[read]`, `[order]`, `[offset]`, `[hatch]`, `[machine]`, `[frame]`, `[focus]`, `[defaults]`, one `[layer NAME]` for each layer or colour and one `[profile NAME]` for each machine. `[defaults]` is what a layer gets that the file
 does not name, and also what every `[layer NAME]` starts from (wherever in the file `[defaults]` is written). The switches are `on` and `off`.
 
 ## What a layer is
@@ -135,8 +135,24 @@ the settings file it is made from.
 | `bed_x_mm`, `bed_y_mm` | 0 | the size of the bed; 0 for both means it is not known; the work may not go outside of it |
 | `max_passes` | 50 | the most passes a layer may ask for, up to 1000 |
 | `max_power_percent` | 100 | the limit of power, from 0.1 to 100 percent of full power: a layer (or `[defaults]`) that asks for more is an error that names it, never lowered; `--max-power` of the commands overrides it |
+| `max_speed_mm_min` | 30000 | the limit of speed, from 1 to 30000 mm/min: a layer (or `[defaults]`), a `--feed`, a `--feeds`, the frame or the focus test that asks for more is an error that names it, never lowered; `--max-speed` of the commands overrides it |
+| `profile` | none | the name of the `[profile NAME]` that is the machine (see below); `--profile` of the commands chooses another |
 
-The keys of `[machine]` are `s_max`, `overscan_mm`, `rapid_mm_min`, `laser_watts`, `origin_x`, `origin_y`, `focus_z_mm`, `bed_x_mm`, `bed_y_mm`, `max_passes` and `max_power_percent`.
+The keys of `[machine]` are `s_max`, `overscan_mm`, `rapid_mm_min`, `laser_watts`, `origin_x`, `origin_y`, `focus_z_mm`, `bed_x_mm`, `bed_y_mm`, `max_passes`, `max_power_percent`, `max_speed_mm_min` and `profile`.
+
+### `[profile NAME]`
+
+A person with two machines, or a laser module that is changed for another, keeps one profile for each in the same file. A profile holds the travel of the machine, its limits and its full-power value; what it leaves out stays as `[machine]` says. The profile that is chosen (`profile = NAME` in `[machine]`, or `--profile NAME` on the command line, which wins) is the machine: its values win over `[machine]`, and the options of the command line (`--smax`, `--bed`, `--max-power`...) win over both. The name is not case sensitive and may have spaces. The limits of a profile hold over everything, so a `[defaults]` or a `[layer NAME]` that asks for more power or speed than the profile allows is an error.
+
+| Key | Default | Meaning |
+|---|---|---|
+| `travel_x_mm`, `travel_y_mm` | not given | the travel of the machine, the size of its bed (1 to 100000 mm); both or none; the work may not go outside of it |
+| `max_power_percent` | not given | the limit of power of this laser, from 0.1 to 100 |
+| `max_speed_mm_min` | not given | the limit of speed of this machine, from 1 to 30000 |
+| `s_max` | not given | the spindle value that is full power for its controller |
+| `laser_watts` | not given | the optical power of its laser, from 0 to 1000 |
+
+The keys of `[profile NAME]` are `travel_x_mm`, `travel_y_mm`, `max_power_percent`, `max_speed_mm_min`, `s_max` and `laser_watts`. A file may describe up to 64 profiles.
 
 ### `[frame]`
 
