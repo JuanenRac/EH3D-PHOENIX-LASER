@@ -42,6 +42,40 @@ fn a_brightness_of_100_leaves_nothing_to_burn() {
 }
 
 #[test]
+fn the_tone_curve_can_come_from_the_settings_file_and_the_options_win_over_it() {
+    let cfg = tmp("tone.cfg");
+    std::fs::write(&cfg, "[tone]\nbrightness = 100\n").unwrap();
+    let base = [
+        "engrave",
+        GRADIENT,
+        "--width-mm",
+        "16",
+        "--dot-mm",
+        "0.5",
+        "--dither",
+        "threshold",
+        "--dry-run",
+        "--config",
+        cfg.as_str(),
+    ];
+    // a brightness of 100 in the file leaves nothing to burn
+    let (ok, out, err) = run(&base);
+    assert!(ok, "{err}");
+    assert!(out.contains("0 lines"), "{out}");
+    // the option wins over the file
+    let mut over = base.to_vec();
+    over.extend(["--brightness", "0"]);
+    let (ok, out, err) = run(&over);
+    assert!(ok, "{err}");
+    assert!(!out.contains(" 0 lines"), "{out}");
+    // a tone that is out of range in the file is an error that names the file
+    std::fs::write(&cfg, "[tone]\ngamma = 0\n").unwrap();
+    let (ok, _, err) = run(&base);
+    assert!(!ok);
+    assert!(err.contains("gamma"), "{err}");
+}
+
+#[test]
 fn inverting_the_picture_changes_what_burns() {
     let (plain, flipped) = (tmp("plain.nc"), tmp("flipped.nc"));
     let base = [

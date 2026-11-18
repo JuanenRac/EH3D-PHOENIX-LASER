@@ -17,7 +17,7 @@ key = value
 key = value
 ```
 
-Sections: `[limits]`, `[read]`, `[order]`, `[offset]`, `[hatch]`, `[machine]`, `[frame]`, `[focus]`, `[trace]`, `[defaults]`, one `[layer NAME]` for each layer or colour and one `[profile NAME]` for each machine. `[defaults]` is what a layer gets that the file
+Sections: `[limits]`, `[read]`, `[order]`, `[offset]`, `[hatch]`, `[machine]`, `[frame]`, `[focus]`, `[trace]`, `[tone]`, `[defaults]`, one `[layer NAME]` for each layer or colour and one `[profile NAME]` for each machine. `[defaults]` is what a layer gets that the file
 does not name, and also what every `[layer NAME]` starts from (wherever in the file `[defaults]` is written). The switches are `on` and `off`.
 
 ## What a layer is
@@ -199,6 +199,20 @@ The contours of a picture (`phoenix-laser trace IMAGE OUT.nc --width-mm W`): the
 | `max_segments` | 2000000 | a picture with more pieces of border is an error (1 to 50000000): it is too detailed to follow its outline |
 
 The keys of `[trace]` are `threshold`, `invert`, `simplify_mm`, `min_area_mm2`, `max_pixels`, `max_contours` and `max_segments`.
+
+### `[tone]`
+
+The tone curve of a picture before it becomes dots. It is the starting point of `phoenix-laser engrave` when `--config` is given (a material over it, the options `--gamma`, `--contrast`, `--brightness`, `--invert` and `--auto-level` over both) and the starting values of the boxes of the window when the file is loaded. With the default values the picture is not changed at all.
+
+| Key | Default | Meaning |
+|---|---|---|
+| `gamma` | 1 | from 0.1 to 10: more than 1 lightens the middle greys, less than 1 darkens them; black and white stay where they are |
+| `contrast` | 0 | from -100 to 100: negative flattens the picture, positive pushes the greys away from the middle |
+| `brightness` | 0 | from -100 to 100: a percent of the full range added to every level (positive makes the picture lighter, so it burns less) |
+| `invert` | off | black becomes white and white becomes black |
+| `auto_level` | off | the darkest level of the picture becomes black and the lightest becomes white |
+
+The keys of `[tone]` are `gamma`, `contrast`, `brightness`, `invert` and `auto_level`.
 
 ### `[defaults]` and `[layer NAME]`
 

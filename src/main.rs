@@ -63,7 +63,7 @@ materials FILE lists the materials of a library: a plain text file with a [mater
 focus writes a focus test: short lines side by side, each burnt with the head at another height (Z); the sharpest and thinnest line shows where the beam is in focus. --z-step has no default because which way is down depends on the machine: check it before running the program, which moves Z. The usual values live in the [focus] section of --config.
 frame writes a program that traces the rectangle of the work with the laser OFF, to see where it will land: --size W,H from the corner --origin, or the box of what burns in --gcode PROGRAM.nc (its real place). --margin widens it. A --pilot power (a percent, at most max_pilot_percent of [frame], 5 unless the file says another, and at most the limit of power) turns the laser on weakly and only with --confirm-laser-on; the [frame] section of --config holds the usual values.
 preview reads a G-code program (this program's or another's) and says what it would do: moves, burnt and travelled length, the box, the powers, a time that counts the corners (--accel in mm/s2) and what looks dangerous (the laser on during a rapid move, a burning move with no feed, S above --smax, work outside --bed, no end); with OUT.svg it also draws the path. It only reads text.
---max-power is the limit of power, a percent of full power (100 when nothing says another): a program whose power is more than the limit is refused, never lowered. engrave and calibrate also read the limit and --smax from the [machine] section of the file of --config. --max-speed is the limit of speed (mm/min, 30000 when nothing says another) and works the same way: a feed over it is refused, never lowered.
+--max-power is the limit of power, a percent of full power (100 when nothing says another): a program whose power is more than the limit is refused, never lowered. engrave and calibrate also read the limit and --smax from the [machine] section of the file of --config, and engrave the tone curve from its [tone] section (a material and the tone options win over it). --max-speed is the limit of speed (mm/min, 30000 when nothing says another) and works the same way: a feed over it is refused, never lowered.
 A [profile NAME] section of the file of --config describes a machine and laser (its travel, its limit of power and of speed, its S and its watts); --profile NAME (or profile = NAME in [machine]) makes it the machine, over [machine] and under the options of the command line.";
 
 /// The tone options of the command line over `base`: the curve that is applied to the grey levels before the dots are made.
@@ -114,6 +114,8 @@ struct MachineLimits {
     max_speed: f64,
     /// The spindle value that is full power, when the settings file gave it.
     s_max: Option<u32>,
+    /// The tone curve of the settings file (the default curve when there is no file).
+    tone: Tone,
     /// The settings file, when there is one.
     config: Option<String>,
 }
@@ -130,6 +132,7 @@ fn machine_limits(args: &mut Vec<String>) -> Result<MachineLimits, String> {
     let mut max_power = s.machine.max_power_percent;
     let mut max_speed = s.machine.max_speed_mm_min;
     let s_max = config.as_ref().map(|_| s.machine.s_max);
+    let tone = s.tone;
     if let Some(v) = flag(args, "--max-power")? {
         max_power = num(&v, "--max-power")?;
     }
@@ -142,6 +145,7 @@ fn machine_limits(args: &mut Vec<String>) -> Result<MachineLimits, String> {
         max_power,
         max_speed,
         s_max,
+        tone,
         config,
     })
 }
@@ -529,7 +533,7 @@ fn run(mut args: Vec<String>) -> Result<(), String> {
                 p.s_max = s_max;
             }
             // the material goes under the options of the command line
-            let mut tone_base = Tone::default();
+            let mut tone_base = limits.tone;
             if let Some((m, _)) = &material {
                 m.apply_to_engraving(&mut p);
                 m.apply_to_tone(&mut tone_base);

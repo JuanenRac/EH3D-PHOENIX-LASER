@@ -160,9 +160,13 @@ impl App {
                         Mode::Engrave => {
                             self.dots_group(ui);
                             self.laser_group(ui);
+                            self.material_group(ui);
                         }
                         Mode::Calibrate => self.calibration_group(ui),
-                        Mode::Cut => self.vector_group(ui),
+                        Mode::Cut => {
+                            self.vector_group(ui);
+                            self.material_group(ui);
+                        }
                     }
                     self.layers_group(ui);
                     self.notes_group(ui);
@@ -284,6 +288,49 @@ impl App {
                 if kind != self.win.kind {
                     self.win.set_kind(kind);
                 }
+                let mut invert = self.win.tone_invert;
+                if ui.checkbox(&mut invert, Msg::Invert.tr(lang)).changed() {
+                    self.win.set_tone_invert(invert);
+                }
+                let mut level = self.win.tone_auto_level;
+                if ui.checkbox(&mut level, Msg::AutoLevel.tr(lang)).changed() {
+                    self.win.set_tone_auto_level(level);
+                }
+            });
+    }
+
+    /// The library of materials: the file to load it from and the list to take a material from, which fills the boxes of the window.
+    fn material_group(&mut self, ui: &mut egui::Ui) {
+        let lang = self.win.lang;
+        egui::CollapsingHeader::new(self.heading(Msg::SectionMaterial))
+            .default_open(true)
+            .show(ui, |ui| {
+                if ui.button(Msg::OpenMaterials.tr(lang)).clicked() {
+                    self.ask(Job::OpenMaterials);
+                }
+                let names = self.win.material_names();
+                if names.is_empty() {
+                    return;
+                }
+                let shown = self
+                    .win
+                    .material
+                    .clone()
+                    .unwrap_or_else(|| Msg::NoMaterial.tr(lang).to_string());
+                let mut chosen: Option<String> = None;
+                egui::ComboBox::from_id_salt("material")
+                    .selected_text(shown)
+                    .show_ui(ui, |ui| {
+                        for n in &names {
+                            let current = self.win.material.as_deref() == Some(n.as_str());
+                            if ui.selectable_label(current, n.as_str()).clicked() {
+                                chosen = Some(n.clone());
+                            }
+                        }
+                    });
+                if let Some(n) = chosen {
+                    self.win.apply_material(&n);
+                }
             });
     }
 
@@ -305,8 +352,10 @@ impl App {
             .default_open(true)
             .show(ui, |ui| {
                 self.fields_of(ui, Section::Calibration);
-                // the full power value is the same setting as the one of the laser
-                self.field_for(ui, Key::SMax);
+                // the full power value and the limits are the same settings as the ones of the laser
+                for key in [Key::SMax, Key::MaxPower, Key::MaxSpeed] {
+                    self.field_for(ui, key);
+                }
             });
     }
 
@@ -316,7 +365,14 @@ impl App {
             .default_open(true)
             .show(ui, |ui| {
                 self.fields_of(ui, Section::Vector);
-                for key in [Key::SMax, Key::Overscan, Key::OriginX, Key::OriginY] {
+                for key in [
+                    Key::SMax,
+                    Key::Overscan,
+                    Key::OriginX,
+                    Key::OriginY,
+                    Key::MaxPower,
+                    Key::MaxSpeed,
+                ] {
                     self.field_for(ui, key);
                 }
             });
@@ -648,7 +704,7 @@ impl App {
                                 self.win.compute();
                             }
                         }
-                        Job::ExportGcode => {}
+                        Job::OpenMaterials | Job::ExportGcode => {}
                     }
                 } else {
                     // the window stays open so that another file or name can be tried

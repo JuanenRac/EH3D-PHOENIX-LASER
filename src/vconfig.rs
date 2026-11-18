@@ -5,6 +5,7 @@
 //! The file is a list of `key = value` lines in sections (`[limits]`, `[read]`, `[order]`, `[offset]`, `[hatch]`, `[machine]`, `[defaults]` and one `[layer NAME]` for each layer or
 //! colour); a line that starts with `#` or `;` is a note. A key that is not known is an error that names its line: a typing mistake never changes nothing silently.
 
+use crate::tone::Tone;
 use crate::vector::{GroupBy, Limits, Pt, ReadOptions};
 use std::path::Path;
 
@@ -487,6 +488,8 @@ pub struct Settings {
     pub frame: FrameSettings,
     pub focus: FocusSettings,
     pub trace: TraceSettings,
+    /// The tone curve of a picture before it becomes dots (`phoenix-laser engrave` and the window).
+    pub tone: Tone,
     pub defaults: LayerParams,
     /// The settings of the layers that the file names, by name (lower case).
     pub layers: Vec<(String, LayerParams)>,
@@ -514,6 +517,7 @@ impl Default for Settings {
             frame: FrameSettings::default(),
             focus: FocusSettings::default(),
             trace: TraceSettings::default(),
+            tone: Tone::default(),
             defaults: LayerParams::default(),
             layers: Vec::new(),
         }
@@ -610,6 +614,7 @@ impl Settings {
         self.frame.validate(m.max_power_percent)?;
         self.focus.validate()?;
         self.trace.validate()?;
+        self.tone.validate()?;
         self.defaults.validate(m.max_passes)?;
         if self.defaults.mode != LayerMode::Skip {
             crate::safety::check_power("power", self.defaults.power_percent, m.max_power_percent)
@@ -757,6 +762,11 @@ fn set_global(s: &mut Settings, section: &str, key: &str, value: &str) -> Result
         ("focus", "spacing_mm") => s.focus.spacing_mm = number(value)?,
         ("focus", "feed_mm_min") => s.focus.feed_mm_min = number(value)?,
         ("focus", "power_percent") => s.focus.power_percent = number(value)?,
+        ("tone", "gamma") => s.tone.gamma = number(value)?,
+        ("tone", "contrast") => s.tone.contrast = number(value)?,
+        ("tone", "brightness") => s.tone.brightness = number(value)?,
+        ("tone", "invert") => s.tone.invert = switch(value)?,
+        ("tone", "auto_level") => s.tone.auto_level = switch(value)?,
         ("trace", "threshold") => {
             s.trace.threshold = u8::try_from(whole(value)?)
                 .map_err(|_| "trace threshold must be from 0 to 255".to_string())?
@@ -829,7 +839,7 @@ pub fn parse(text: &str) -> Result<Settings, String> {
             let (word, rest) = head.split_once(char::is_whitespace).unwrap_or((head, ""));
             let word = word.to_ascii_lowercase();
             section = match word.as_str() {
-                "limits" | "read" | "order" | "offset" | "hatch" | "machine" | "frame" | "focus" | "trace" | "defaults" if rest.trim().is_empty() => word,
+                "limits" | "read" | "order" | "offset" | "hatch" | "machine" | "frame" | "focus" | "trace" | "tone" | "defaults" if rest.trim().is_empty() => word,
                 "layer" if !rest.trim().is_empty() => {
                     named.push(rest.trim().to_lowercase());
                     format!("layer {}", rest.trim().to_lowercase())
@@ -838,7 +848,7 @@ pub fn parse(text: &str) -> Result<Settings, String> {
                     named_profiles.push(rest.trim().to_lowercase());
                     format!("profile {}", rest.trim().to_lowercase())
                 }
-                _ => return Err(format!("line {line}: '[{head}]' is not a section (limits, read, order, offset, hatch, machine, frame, focus, trace, defaults, layer NAME or profile NAME)")),
+                _ => return Err(format!("line {line}: '[{head}]' is not a section (limits, read, order, offset, hatch, machine, frame, focus, trace, tone, defaults, layer NAME or profile NAME)")),
             };
             continue;
         }
@@ -1312,6 +1322,35 @@ mod tests {
                 max_segments: 5000,
             }
         );
+    }
+
+    #[test]
+    fn the_tone_settings_are_read_and_checked() {
+        assert!(Settings::default().tone.is_identity());
+        let s = parse(
+            "[tone]\ngamma = 1.4\ncontrast = 10\nbrightness = -5\ninvert = on\nauto_level = yes\n",
+        )
+        .unwrap();
+        assert_eq!(
+            s.tone,
+            Tone {
+                brightness: -5.0,
+                contrast: 10.0,
+                gamma: 1.4,
+                invert: true,
+                auto_level: true,
+            }
+        );
+        for text in [
+            "[tone]\ngamma = 0\n",
+            "[tone]\ngamma = 10.5\n",
+            "[tone]\ncontrast = 101\n",
+            "[tone]\nbrightness = -101\n",
+            "[tone]\ninvert = maybe\n",
+            "[tone]\nspeed = 5\n",
+        ] {
+            assert!(parse(text).is_err(), "{text:?}");
+        }
     }
 
     #[test]

@@ -9,8 +9,11 @@ use crate::dxf::read_dxf;
 use crate::gcode_out::{header, sha256_hex, Header};
 use crate::image::{from_bytes, Gray};
 use crate::lang::{fill, Lang, Msg};
+use crate::materials::{self, Library, Material};
 use crate::raster::{engrave, overscan_for, Params};
+use crate::safety;
 use crate::svg::read_svg;
+use crate::tone::Tone;
 use crate::vconfig::{self, KerfSide, LayerMode, LayerParams, Settings};
 use crate::vector::{Drawing, ReadOptions};
 use crate::viewport::Viewport;
@@ -30,6 +33,8 @@ pub enum Job {
     /// A settings file for the vector work.
     OpenConfig,
     ExportGcode,
+    /// A library of materials.
+    OpenMaterials,
 }
 
 impl Job {
@@ -43,6 +48,7 @@ impl Job {
             Job::OpenImage => &["png", "pgm", "svg", "dxf"],
             Job::OpenConfig => &["cfg"],
             Job::ExportGcode => &["nc", "ngc", "gcode", "gc", "tap", "txt"],
+            Job::OpenMaterials => &["cfg"],
         }
     }
 
@@ -51,6 +57,7 @@ impl Job {
             Job::OpenImage => Msg::TitleOpenImage,
             Job::OpenConfig => Msg::TitleOpenSettings,
             Job::ExportGcode => Msg::TitleExport,
+            Job::OpenMaterials => Msg::TitleOpenMaterials,
         }
     }
 }
@@ -80,6 +87,17 @@ impl Kind {
         Kind::Threshold,
     ];
 
+    /// The kind of dots a word of a material or of the command line names.
+    pub fn from_word(word: &str) -> Option<Kind> {
+        match word.trim().to_ascii_lowercase().as_str() {
+            "fs" | "floyd-steinberg" => Some(Kind::FloydSteinberg),
+            "atkinson" => Some(Kind::Atkinson),
+            "bayer" | "ordered" => Some(Kind::Bayer),
+            "threshold" => Some(Kind::Threshold),
+            _ => None,
+        }
+    }
+
     pub fn label(self) -> Msg {
         match self {
             Kind::FloydSteinberg => Msg::DitherFs,
@@ -107,6 +125,11 @@ pub enum Key {
     Feeds,
     Dpi,
     Tolerance,
+    Gamma,
+    Contrast,
+    Brightness,
+    MaxPower,
+    MaxSpeed,
 }
 
 /// The group of the side panel a setting belongs to.
@@ -137,6 +160,9 @@ fn default_fields() -> Vec<Field> {
         f(Key::WidthMm, Msg::WidthMm, Section::Image, "50"),
         f(Key::DotMm, Msg::DotMm, Section::Image, "0.1"),
         f(Key::Threshold, Msg::Threshold, Section::Image, "128"),
+        f(Key::Gamma, Msg::Gamma, Section::Image, "1"),
+        f(Key::Contrast, Msg::Contrast, Section::Image, "0"),
+        f(Key::Brightness, Msg::Brightness, Section::Image, "0"),
         f(Key::Feed, Msg::Feed, Section::Laser, "3000"),
         f(Key::Power, Msg::Power, Section::Laser, "50"),
         f(Key::SMax, Msg::SMax, Section::Laser, "1000"),
@@ -144,6 +170,8 @@ fn default_fields() -> Vec<Field> {
         f(Key::Accel, Msg::Accel, Section::Laser, "1000"),
         f(Key::OriginX, Msg::OriginX, Section::Laser, "0"),
         f(Key::OriginY, Msg::OriginY, Section::Laser, "0"),
+        f(Key::MaxPower, Msg::MaxPower, Section::Laser, "100"),
+        f(Key::MaxSpeed, Msg::MaxSpeed, Section::Laser, "30000"),
         f(
             Key::Powers,
             Msg::Powers,
@@ -481,6 +509,10 @@ pub enum Status {
     NeedVector,
     BadValue(Msg),
     SameFile(String),
+    /// A library of materials was read: its name and how many materials it holds.
+    MaterialsLoaded(String, usize),
+    /// A material was applied to the boxes of the window.
+    MaterialApplied(String),
     Failed(String),
 }
 
@@ -560,6 +592,10 @@ impl Status {
             Status::NeedVector => Msg::NeedVector.tr(lang).to_string(),
             Status::BadValue(label) => fill(Msg::BadValue.tr(lang), &[label.tr(lang)]),
             Status::SameFile(name) => fill(Msg::SameFile.tr(lang), &[name]),
+            Status::MaterialsLoaded(name, n) => {
+                fill(Msg::MaterialsLoaded.tr(lang), &[name, &n.to_string()])
+            }
+            Status::MaterialApplied(name) => fill(Msg::MaterialApplied.tr(lang), &[name]),
             Status::Failed(e) => fill(Msg::Failed.tr(lang), &[e]),
         }
     }
@@ -572,6 +608,15 @@ pub struct Window {
     pub fields: Vec<Field>,
     pub mode: Mode,
     pub kind: Kind,
+    /// The tone curve inverts the picture (black burns least).
+    pub tone_invert: bool,
+    /// The tone curve stretches the darkest level to black and the lightest to white.
+    pub tone_auto_level: bool,
+    /// The library of materials that is loaded, and the file it came from.
+    pub materials: Option<Library>,
+    pub materials_path: Option<PathBuf>,
+    /// The name of the material that was applied last.
+    pub material: Option<String>,
     /// The overscan is worked out from the feed and the acceleration instead of being typed.
     pub overscan_auto: bool,
     pub picture: Option<Picture>,
@@ -601,6 +646,11 @@ impl Window {
             fields: default_fields(),
             mode: Mode::Engrave,
             kind: Kind::FloydSteinberg,
+            tone_invert: false,
+            tone_auto_level: false,
+            materials: None,
+            materials_path: None,
+            material: None,
             overscan_auto: false,
             picture: None,
             vector: None,
@@ -661,6 +711,20 @@ impl Window {
         }
     }
 
+    pub fn set_tone_invert(&mut self, on: bool) {
+        if self.tone_invert != on {
+            self.tone_invert = on;
+            self.mark_stale();
+        }
+    }
+
+    pub fn set_tone_auto_level(&mut self, on: bool) {
+        if self.tone_auto_level != on {
+            self.tone_auto_level = on;
+            self.mark_stale();
+        }
+    }
+
     pub fn set_overscan_auto(&mut self, on: bool) {
         if self.overscan_auto != on {
             self.overscan_auto = on;
@@ -710,6 +774,28 @@ impl Window {
             .collect()
     }
 
+    /// The tone curve of the boxes and the two switches, checked the way the command line checks it.
+    pub fn tone(&self) -> Result<Tone, Status> {
+        let t = Tone {
+            brightness: self.number(Key::Brightness)?,
+            contrast: self.number(Key::Contrast)?,
+            gamma: self.number(Key::Gamma)?,
+            invert: self.tone_invert,
+            auto_level: self.tone_auto_level,
+        };
+        t.validate().map_err(Status::Failed)?;
+        Ok(t)
+    }
+
+    /// The limit of power (a percent of full power) and the limit of speed (mm/min) of the boxes.
+    pub fn limits(&self) -> Result<(f64, f64), Status> {
+        let power = self.number(Key::MaxPower)?;
+        safety::validate_max(power).map_err(|_| Status::BadValue(Msg::MaxPower))?;
+        let speed = self.number(Key::MaxSpeed)?;
+        safety::validate_max_speed(speed).map_err(|_| Status::BadValue(Msg::MaxSpeed))?;
+        Ok((power, speed))
+    }
+
     /// The parameters of the laser from the settings, checked the way the command line checks them.
     pub fn params(&self) -> Result<Params, Status> {
         let feed = self.number(Key::Feed)?;
@@ -727,6 +813,10 @@ impl Window {
             origin: (self.number(Key::OriginX)?, self.number(Key::OriginY)?),
         };
         p.validate().map_err(Status::Failed)?;
+        // a power or a speed over the limit is refused, never lowered
+        let (max_power, max_speed) = self.limits()?;
+        safety::check_power("the power", p.power_percent, max_power).map_err(Status::Failed)?;
+        safety::check_speed("the speed", p.feed_mm_min, max_speed).map_err(Status::Failed)?;
         Ok(p)
     }
 
@@ -883,6 +973,7 @@ impl Window {
         let mut s = self.settings.clone();
         s.read = self.read_options()?;
         s.machine.s_max = self.whole(Key::SMax, 1.0, 100_000.0)?;
+        (s.machine.max_power_percent, s.machine.max_speed_mm_min) = self.limits()?;
         s.machine.overscan_mm = self.number(Key::Overscan)?;
         s.machine.origin = (self.number(Key::OriginX)?, self.number(Key::OriginY)?);
         s.layers = self
@@ -964,6 +1055,13 @@ impl Window {
                 self.put(Key::Overscan, t(s.machine.overscan_mm));
                 self.put(Key::OriginX, t(s.machine.origin.0));
                 self.put(Key::OriginY, t(s.machine.origin.1));
+                self.put(Key::MaxPower, t(s.machine.max_power_percent));
+                self.put(Key::MaxSpeed, t(s.machine.max_speed_mm_min));
+                self.put(Key::Gamma, t(s.tone.gamma));
+                self.put(Key::Contrast, t(s.tone.contrast));
+                self.put(Key::Brightness, t(s.tone.brightness));
+                self.tone_invert = s.tone.invert;
+                self.tone_auto_level = s.tone.auto_level;
                 self.settings = s;
                 self.config_path = Some(path.to_path_buf());
                 self.rebuild_rows();
@@ -985,6 +1083,105 @@ impl Window {
             .or_else(|| Some(PathBuf::from("phoenix-laser.cfg")).filter(|p| p.is_file()));
         if let Some(p) = path {
             self.load_config(&p);
+        }
+        self.load_default_materials();
+    }
+
+    /// Reads a library of materials; the materials are then offered by name.
+    pub fn load_materials(&mut self, path: &Path) -> bool {
+        match materials::load(path) {
+            Ok(lib) => {
+                self.status = Status::MaterialsLoaded(name_of(path), lib.materials.len());
+                self.materials = Some(lib);
+                self.materials_path = Some(path.to_path_buf());
+                self.material = None;
+                true
+            }
+            Err(e) => {
+                self.status = Status::Failed(e);
+                false
+            }
+        }
+    }
+
+    /// Reads the library named by `PHOENIX_LASER_MATERIALS`, the way the command line does, when there is one.
+    pub fn load_default_materials(&mut self) {
+        if let Some(p) = std::env::var_os("PHOENIX_LASER_MATERIALS")
+            .map(PathBuf::from)
+            .filter(|p| !p.as_os_str().is_empty())
+        {
+            self.load_materials(&p);
+        }
+    }
+
+    /// The names of the materials of the library, in the order of the file.
+    pub fn material_names(&self) -> Vec<String> {
+        self.materials
+            .as_ref()
+            .map(|l| l.materials.iter().map(|m| m.name.clone()).collect())
+            .unwrap_or_default()
+    }
+
+    /// Puts what a material says in the boxes of the window (what it leaves out stays as it is), like `--material` does before the options: the power, the speed, the dot, the dithering,
+    /// the tone curve and the settings of every layer of the drawing. The limits still hold when the work is made.
+    pub fn apply_material(&mut self, name: &str) -> bool {
+        let Some(m) = self.materials.as_ref().and_then(|l| l.find(name)).cloned() else {
+            self.status = Status::Failed(format!("there is no material '{}'", name.trim()));
+            return false;
+        };
+        self.apply_material_values(&m);
+        self.material = Some(m.name.clone());
+        self.mark_stale();
+        self.status = Status::MaterialApplied(m.name);
+        true
+    }
+
+    fn apply_material_values(&mut self, m: &Material) {
+        let t = |v: f64| format!("{v}");
+        if let Some(v) = m.power {
+            self.put(Key::Power, t(v));
+        }
+        if let Some(v) = m.speed {
+            self.put(Key::Feed, t(v));
+        }
+        if let Some(v) = m.dot {
+            self.put(Key::DotMm, t(v));
+        }
+        if let Some(v) = m.overscan {
+            self.put(Key::Overscan, t(v));
+            self.overscan_auto = false;
+        }
+        if let Some(v) = m.gamma {
+            self.put(Key::Gamma, t(v));
+        }
+        if let Some(v) = m.contrast {
+            self.put(Key::Contrast, t(v));
+        }
+        if let Some(v) = m.brightness {
+            self.put(Key::Brightness, t(v));
+        }
+        if let Some(v) = m.invert {
+            self.tone_invert = v;
+        }
+        if let Some(v) = m.auto_level {
+            self.tone_auto_level = v;
+        }
+        if let Some(v) = m.threshold {
+            self.put(Key::Threshold, v.to_string());
+        }
+        if let Some(word) = &m.dither {
+            if let Some(kind) = Kind::from_word(word) {
+                self.kind = kind;
+            }
+        }
+        for i in 0..self.rows.len() {
+            let key = self.rows[i].key.clone();
+            let shapes = self.rows[i].shapes;
+            let mut p = self
+                .layer_params(&self.rows[i])
+                .unwrap_or_else(|_| self.settings.params_for(&key));
+            m.apply_to_layer(&mut p);
+            self.rows[i] = LayerRow::new(&key, shapes, &p);
         }
     }
 
@@ -1048,11 +1245,13 @@ impl Window {
         }
         let p = self.params()?;
         let method = self.method()?;
+        let tone = self.tone()?;
         let w = (width / p.pixel_mm).round().max(1.0) as usize;
         let h = ((w as f64) * pic.gray.h as f64 / pic.gray.w as f64)
             .round()
             .max(1.0) as usize;
-        let dots = dither(&pic.gray.resize(w, h).map_err(Status::Failed)?, method);
+        let resized = pic.gray.resize(w, h).map_err(Status::Failed)?;
+        let dots = dither(&tone.apply(&resized).map_err(Status::Failed)?, method);
         let e = engrave(&dots, &p).map_err(Status::Failed)?;
         Ok(Done {
             gcode: e.gcode,
@@ -1102,6 +1301,13 @@ impl Window {
     fn calibrate_job(&self) -> Result<Done, Status> {
         let powers = self.list(Key::Powers)?;
         let feeds = self.list(Key::Feeds)?;
+        let (max_power, max_speed) = self.limits()?;
+        for p in &powers {
+            safety::check_power("a power of the grid", *p, max_power).map_err(Status::Failed)?;
+        }
+        for f in &feeds {
+            safety::check_speed("a speed of the grid", *f, max_speed).map_err(Status::Failed)?;
+        }
         let g = Grid {
             s_max: self.whole(Key::SMax, 1.0, 100_000.0)?,
             ..Grid::default()
@@ -1161,6 +1367,7 @@ impl Window {
         match job {
             Job::OpenImage => self.open_dropped(path),
             Job::OpenConfig => self.load_config(path),
+            Job::OpenMaterials => self.load_materials(path),
             Job::ExportGcode => self.export(path),
         }
     }
@@ -2006,5 +2213,265 @@ mod tests {
                 && !Job::OpenConfig.is_export()
         );
         assert_eq!(Kind::ALL.len(), 4);
+    }
+
+    fn text_of(w: &Window, key: Key) -> String {
+        w.fields.iter().find(|f| f.key == key).unwrap().text.clone()
+    }
+
+    /// A library with a way of working for a picture and one for cutting.
+    const LIBRARY: &str = "[material photo]\npower = 30\nspeed = 2500\ndot = 0.2\noverscan = 1\ndither = bayer\ngamma = 1.4\ncontrast = 5\nbrightness = -3\ninvert = on\nauto_level = on\nthreshold = 90\n\n[material Cut 3 mm]\npower = 90\nspeed = 300\npasses = 2\nkerf = 0.15\n";
+
+    fn engraved_gcode(w: &Window) -> String {
+        w.done.as_ref().unwrap().gcode.clone()
+    }
+
+    #[test]
+    fn the_tone_curve_of_the_boxes_is_applied_like_the_command_line_applies_it() {
+        let (_s, mut w) = ready("tone");
+        assert!(w.tone().unwrap().is_identity());
+        assert!(w.compute());
+        let plain = engraved_gcode(&w);
+        // inverted: the right half burns and the left half does not
+        w.set_tone_invert(true);
+        assert!(w.stale);
+        assert!(w.compute());
+        let img = from_bytes(PICTURE.as_bytes()).unwrap();
+        let tone = Tone {
+            invert: true,
+            ..Tone::default()
+        };
+        let dots = dither(
+            &tone.apply(&img.resize(8, 4).unwrap()).unwrap(),
+            Method::Threshold(128),
+        );
+        let expected = engrave(&dots, &Params::default()).unwrap();
+        assert_eq!(engraved_gcode(&w), expected.gcode);
+        assert_ne!(engraved_gcode(&w), plain);
+        // the other switch and the three boxes
+        w.set_tone_invert(false);
+        w.set_tone_auto_level(true);
+        set(&mut w, Key::Gamma, "1.5");
+        set(&mut w, Key::Contrast, "20");
+        set(&mut w, Key::Brightness, "-10");
+        let t = w.tone().unwrap();
+        assert_eq!(
+            (t.gamma, t.contrast, t.brightness, t.invert, t.auto_level),
+            (1.5, 20.0, -10.0, false, true)
+        );
+        // a brightness of 100 leaves nothing to burn
+        set(&mut w, Key::Brightness, "100");
+        w.set_tone_auto_level(false);
+        assert!(w.compute());
+        assert!(matches!(
+            w.done.as_ref().unwrap().summary,
+            Summary::Engraved { runs: 0, .. }
+        ));
+    }
+
+    #[test]
+    fn a_tone_box_that_is_not_valid_says_which() {
+        let (_s, mut w) = ready("tone-bad");
+        set(&mut w, Key::Gamma, "fast");
+        assert!(!w.compute());
+        assert_eq!(w.status, Status::BadValue(Msg::Gamma));
+        set(&mut w, Key::Gamma, "0");
+        assert!(!w.compute());
+        assert!(
+            matches!(&w.status, Status::Failed(e) if e.contains("gamma")),
+            "{:?}",
+            w.status
+        );
+        set(&mut w, Key::Gamma, "1");
+        set(&mut w, Key::Contrast, "101");
+        assert!(!w.compute());
+        assert!(matches!(&w.status, Status::Failed(e) if e.contains("contrast")));
+        set(&mut w, Key::Contrast, "0");
+        set(&mut w, Key::Brightness, "");
+        assert!(!w.compute());
+        assert_eq!(w.status, Status::BadValue(Msg::Brightness));
+    }
+
+    #[test]
+    fn a_power_or_a_speed_over_the_limit_is_refused_and_never_lowered() {
+        let (_s, mut w) = ready("limits");
+        assert_eq!(w.limits().unwrap(), (100.0, 30_000.0));
+        set(&mut w, Key::MaxPower, "40");
+        assert!(!w.compute());
+        assert!(
+            matches!(&w.status, Status::Failed(e) if e.contains("max_power_percent")),
+            "{:?}",
+            w.status
+        );
+        // the box of the power is left as it was typed
+        assert_eq!(text_of(&w, Key::Power), "50");
+        set(&mut w, Key::Power, "40");
+        assert!(w.compute());
+        set(&mut w, Key::MaxSpeed, "2000");
+        assert!(!w.compute());
+        assert!(matches!(&w.status, Status::Failed(e) if e.contains("max_speed_mm_min")));
+        set(&mut w, Key::Feed, "2000");
+        assert!(w.compute());
+        // a limit that is not a limit is a bad box
+        for (key, bad, label) in [
+            (Key::MaxPower, "0", Msg::MaxPower),
+            (Key::MaxPower, "100.5", Msg::MaxPower),
+            (Key::MaxPower, "x", Msg::MaxPower),
+            (Key::MaxSpeed, "0", Msg::MaxSpeed),
+            (Key::MaxSpeed, "30001", Msg::MaxSpeed),
+        ] {
+            let (_s2, mut v) = ready("limits-bad");
+            set(&mut v, key, bad);
+            assert!(!v.compute(), "{bad}");
+            assert_eq!(v.status, Status::BadValue(label), "{bad}");
+        }
+    }
+
+    #[test]
+    fn the_limits_hold_over_the_layers_of_a_drawing_and_over_the_grid() {
+        let (_s, mut w, _p) = drawn("limits-cut");
+        set(&mut w, Key::MaxPower, "30");
+        assert!(!w.compute());
+        assert!(matches!(&w.status, Status::Failed(e) if e.contains("max_power_percent")));
+        set(&mut w, Key::MaxPower, "100");
+        set(&mut w, Key::MaxSpeed, "500");
+        assert!(!w.compute());
+        assert!(matches!(&w.status, Status::Failed(e) if e.contains("max_speed_mm_min")));
+        set(&mut w, Key::MaxSpeed, "600");
+        assert!(w.compute());
+        // the grid: 20, 40, 60 and 80 % at 1000, 2000 and 3000 mm/min
+        w.set_mode(Mode::Calibrate);
+        set(&mut w, Key::MaxPower, "50");
+        assert!(!w.compute());
+        assert!(matches!(&w.status, Status::Failed(e) if e.contains("a power of the grid")));
+        set(&mut w, Key::MaxPower, "100");
+        set(&mut w, Key::MaxSpeed, "2500");
+        assert!(!w.compute());
+        assert!(matches!(&w.status, Status::Failed(e) if e.contains("a speed of the grid")));
+        set(&mut w, Key::MaxSpeed, "3000");
+        assert!(w.compute());
+    }
+
+    #[test]
+    fn a_file_of_settings_puts_its_tone_and_its_limits_in_the_boxes() {
+        let (s, mut w) = ready("tone-config");
+        let cfg = s.write(
+            "t.cfg",
+            "[tone]\ngamma = 1.4\ncontrast = 10\nbrightness = -5\ninvert = on\nauto_level = on\n[machine]\nmax_power_percent = 70\nmax_speed_mm_min = 5000\n",
+        );
+        assert!(w.load_config(&cfg));
+        assert_eq!(text_of(&w, Key::Gamma), "1.4");
+        assert_eq!(text_of(&w, Key::Contrast), "10");
+        assert_eq!(text_of(&w, Key::Brightness), "-5");
+        assert!(w.tone_invert && w.tone_auto_level);
+        assert_eq!(w.limits().unwrap(), (70.0, 5000.0));
+        // a file with a mistake in the tone changes nothing
+        let bad = s.write("b.cfg", "[tone]\ngamma = 0\n");
+        assert!(!w.load_config(&bad));
+        assert_eq!(text_of(&w, Key::Gamma), "1.4");
+        // a file without the section brings the boxes back to the default curve
+        let plain = s.write("p.cfg", "[machine]\ns_max = 1000\n");
+        assert!(w.load_config(&plain));
+        assert!(w.tone().unwrap().is_identity());
+        assert_eq!(w.limits().unwrap(), (100.0, 30_000.0));
+    }
+
+    #[test]
+    fn a_material_fills_the_boxes_and_the_limits_still_hold_over_it() {
+        let (s, mut w) = ready("material");
+        let lib = s.write("lib.cfg", LIBRARY);
+        assert!(w.load_materials(&lib));
+        assert_eq!(w.status, Status::MaterialsLoaded("lib.cfg".into(), 2));
+        assert_eq!(w.material_names(), vec!["photo", "Cut 3 mm"]);
+        assert!(w.apply_material(" PHOTO "));
+        assert_eq!(w.status, Status::MaterialApplied("photo".into()));
+        assert_eq!(w.material.as_deref(), Some("photo"));
+        for (key, text) in [
+            (Key::Power, "30"),
+            (Key::Feed, "2500"),
+            (Key::DotMm, "0.2"),
+            (Key::Overscan, "1"),
+            (Key::Gamma, "1.4"),
+            (Key::Contrast, "5"),
+            (Key::Brightness, "-3"),
+            (Key::Threshold, "90"),
+            // what the material does not say stays as it was
+            (Key::SMax, "1000"),
+            (Key::WidthMm, "0.8"),
+        ] {
+            assert_eq!(text_of(&w, key), text, "{key:?}");
+        }
+        assert_eq!(w.kind, Kind::Bayer);
+        assert!(w.tone_invert && w.tone_auto_level && !w.overscan_auto);
+        assert!(w.stale || w.done.is_none());
+        // the power of the material is over the limit of the machine: refused, and the box keeps what the material said
+        set(&mut w, Key::MaxPower, "20");
+        assert!(!w.compute());
+        assert!(matches!(&w.status, Status::Failed(e) if e.contains("max_power_percent")));
+        assert_eq!(text_of(&w, Key::Power), "30");
+        set(&mut w, Key::MaxPower, "100");
+        assert!(w.compute());
+        // a material that is not in the library, and a library that cannot be read, change nothing
+        assert!(!w.apply_material("plasma"));
+        assert!(matches!(&w.status, Status::Failed(e) if e.contains("plasma")));
+        assert_eq!(w.material.as_deref(), Some("photo"));
+        let bad = s.write("bad.cfg", "[material x]\npower = 500\n");
+        assert!(!w.load_materials(&bad));
+        assert!(matches!(&w.status, Status::Failed(_)));
+        assert_eq!(w.material_names().len(), 2);
+        assert!(!w.load_materials(Path::new("/no/such/folder/lib.cfg")));
+    }
+
+    #[test]
+    fn a_material_fills_the_table_of_layers_of_a_drawing() {
+        let (s, mut w, _p) = drawn("material-rows");
+        let lib = s.write("lib.cfg", LIBRARY);
+        assert!(w.load_materials(&lib));
+        w.set_layer_mode(0, LayerMode::Engrave);
+        assert!(w.apply_material("cut 3 mm"));
+        for r in &w.rows {
+            assert_eq!(r.fields[LayerField::Power as usize], "90");
+            assert_eq!(r.fields[LayerField::Speed as usize], "300");
+            assert_eq!(r.fields[LayerField::Passes as usize], "2");
+            assert_eq!(r.fields[LayerField::Kerf as usize], "0.15");
+        }
+        // the mode of a layer is the person's, not the material's
+        assert_eq!(w.rows[0].mode, LayerMode::Engrave);
+        assert_eq!(w.rows[1].mode, LayerMode::Cut);
+        assert!(w.compute());
+        // 90 % of 1000 is S900
+        assert!(engraved_gcode(&w).contains(" S900\n"));
+        // the limit of power holds over it
+        set(&mut w, Key::MaxPower, "80");
+        assert!(!w.compute());
+        assert!(matches!(&w.status, Status::Failed(e) if e.contains("max_power_percent")));
+    }
+
+    #[test]
+    fn the_words_of_a_material_are_the_kinds_of_dots_and_the_job_lists_its_files() {
+        assert_eq!(Kind::from_word("FS"), Some(Kind::FloydSteinberg));
+        assert_eq!(
+            Kind::from_word(" floyd-steinberg "),
+            Some(Kind::FloydSteinberg)
+        );
+        assert_eq!(Kind::from_word("atkinson"), Some(Kind::Atkinson));
+        assert_eq!(Kind::from_word("ordered"), Some(Kind::Bayer));
+        assert_eq!(Kind::from_word("threshold"), Some(Kind::Threshold));
+        assert_eq!(Kind::from_word("halftone"), None);
+        assert_eq!(Job::OpenMaterials.extensions(), &["cfg"]);
+        assert!(!Job::OpenMaterials.is_export());
+        for l in Lang::ALL {
+            assert!(!Job::OpenMaterials.title().tr(l).is_empty());
+            assert!(Status::MaterialsLoaded("a.cfg".into(), 3)
+                .text(l)
+                .contains("a.cfg"));
+            assert!(Status::MaterialApplied("birch".into())
+                .text(l)
+                .contains("birch"));
+        }
+        assert_eq!(
+            Status::MaterialsLoaded("a.cfg".into(), 3).text(Lang::Es),
+            "a.cfg: 3 material(es) cargado(s)"
+        );
     }
 }
