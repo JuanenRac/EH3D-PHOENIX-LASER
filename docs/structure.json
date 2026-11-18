@@ -132,6 +132,19 @@
           }
         },
         {
+          "name": "safety.rs",
+          "desc": {
+            "en": "the limit of power, and the rules that keep the laser off while the work is shown",
+            "es": "el límite de potencia y las reglas que mantienen el láser apagado al mostrar el trabajo",
+            "de": "die Leistungsgrenze und die Regeln, die den Laser beim Zeigen der Arbeit aus lassen",
+            "fr": "la limite de puissance et les règles qui gardent le laser éteint pendant qu'on montre le travail",
+            "it": "il limite di potenza e le regole che tengono spento il laser mentre si mostra il lavoro",
+            "ja": "出力の上限と、作業範囲を示す間レーザーを消しておく規則",
+            "zh": "功率上限，以及展示工作范围时保持激光关闭的规则",
+            "pt": "o limite de potência e as regras que mantêm o laser desligado ao mostrar o trabalho"
+          }
+        },
+        {
           "name": "shot.rs",
           "desc": {
             "en": "the picture mode of the window (--shot): its arguments, read and checked without a screen",

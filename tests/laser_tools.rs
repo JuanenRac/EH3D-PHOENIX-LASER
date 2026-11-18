@@ -138,3 +138,137 @@ fn a_method_of_dithering_that_does_not_exist_names_the_ones_that_do() {
     assert!(!ok);
     assert!(err.contains("fs, atkinson, threshold or bayer"), "{err}");
 }
+
+#[test]
+fn a_power_over_the_limit_of_power_is_refused_and_one_at_the_limit_is_not() {
+    let args = |power: &str| {
+        run(&[
+            "engrave",
+            GRADIENT,
+            "--width-mm",
+            "16",
+            "--dry-run",
+            "--power",
+            power,
+            "--max-power",
+            "50",
+        ])
+    };
+    let (ok, _, err) = args("60");
+    assert!(!ok);
+    assert!(
+        err.contains("max_power_percent") && err.contains("--power"),
+        "{err}"
+    );
+    let (ok, _, err) = args("50");
+    assert!(ok, "{err}");
+}
+
+#[test]
+fn the_grid_obeys_the_limit_of_power_too() {
+    let out = tmp("limit-grid.nc");
+    let (ok, _, err) = run(&[
+        "calibrate",
+        &out,
+        "--powers",
+        "20,80",
+        "--feeds",
+        "1000",
+        "--max-power",
+        "50",
+    ]);
+    assert!(!ok);
+    assert!(err.contains("max_power_percent"), "{err}");
+    let (ok, _, err) = run(&[
+        "calibrate",
+        &out,
+        "--powers",
+        "20,50",
+        "--feeds",
+        "1000",
+        "--max-power",
+        "50",
+    ]);
+    assert!(ok, "{err}");
+}
+
+#[test]
+fn a_drawing_over_the_limit_of_power_is_refused_unless_the_power_is_lowered() {
+    let base = [
+        "cut",
+        "examples/plate.svg",
+        "--dry-run",
+        "--config",
+        "examples/plate.cfg",
+        "--max-power",
+        "50",
+    ];
+    let (ok, _, err) = run(&base);
+    assert!(!ok);
+    assert!(
+        err.contains("max_power_percent") && err.contains("layer"),
+        "{err}"
+    );
+    let mut lowered = base.to_vec();
+    lowered.extend(["--power", "40"]);
+    let (ok, _, err) = run(&lowered);
+    assert!(ok, "{err}");
+}
+
+#[test]
+fn the_limit_and_the_spindle_value_can_come_from_the_settings_file() {
+    let cfg = tmp("limit.cfg");
+    std::fs::write(
+        &cfg,
+        "[machine]\nmax_power_percent = 30\ns_max = 255\n[defaults]\npower = 20\n",
+    )
+    .unwrap();
+    let base = [
+        "engrave",
+        GRADIENT,
+        "--width-mm",
+        "16",
+        "--dot-mm",
+        "0.5",
+        "--config",
+        cfg.as_str(),
+    ];
+    let mut over = base.to_vec();
+    over.extend(["--dry-run", "--power", "40"]);
+    let (ok, _, err) = run(&over);
+    assert!(!ok);
+    assert!(err.contains("max_power_percent"), "{err}");
+    // 20 % of 255 is 51
+    let out = tmp("limit.nc");
+    let mut at = base.to_vec();
+    at.extend([out.as_str(), "--power", "20"]);
+    let (ok, _, err) = run(&at);
+    assert!(ok, "{err}");
+    assert!(std::fs::read_to_string(&out).unwrap().contains("S51"));
+    // the option wins over the file
+    let mut wins = base.to_vec();
+    wins.extend(["--dry-run", "--power", "40", "--max-power", "60"]);
+    let (ok, _, err) = run(&wins);
+    assert!(ok, "{err}");
+}
+
+#[test]
+fn the_output_is_never_written_over_the_settings_file() {
+    let cfg = tmp("same.cfg");
+    std::fs::write(&cfg, "[machine]\ns_max = 1000\n").unwrap();
+    let (ok, _, err) = run(&[
+        "engrave",
+        GRADIENT,
+        &cfg,
+        "--width-mm",
+        "16",
+        "--config",
+        &cfg,
+    ]);
+    assert!(!ok);
+    assert!(err.contains("settings"), "{err}");
+    assert_eq!(
+        std::fs::read_to_string(&cfg).unwrap(),
+        "[machine]\ns_max = 1000\n"
+    );
+}

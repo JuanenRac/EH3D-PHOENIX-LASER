@@ -13,6 +13,7 @@ use eh3d_phoenix_laser::energy::describe;
 use eh3d_phoenix_laser::gcode_out::{header, sha256_hex, Header};
 use eh3d_phoenix_laser::image::from_bytes;
 use eh3d_phoenix_laser::raster::{engrave, overscan_for, Params};
+use eh3d_phoenix_laser::safety;
 use eh3d_phoenix_laser::svg::read_svg;
 use eh3d_phoenix_laser::tone::Tone;
 use eh3d_phoenix_laser::vconfig::{self, KerfSide, LayerMode, LayerParams, Settings};
@@ -27,11 +28,11 @@ const HELP: &str = "phoenix-laser: laser engraving from an image
 
   phoenix-laser engrave IMAGE OUT.nc --width-mm 50 [--dot-mm 0.1] [--feed 3000] [--power 50] [--smax 1000]
                 [--dither fs|atkinson|threshold|bayer] [--threshold 128] [--overscan MM|auto] [--accel 1000] [--origin X,Y] [--dry-run]
-                [--gamma 1] [--contrast 0] [--brightness 0] [--invert] [--auto-level]
-  phoenix-laser calibrate OUT.nc --powers 20,40,60,80 --feeds 1000,2000,3000 [--smax 1000]
+                [--gamma 1] [--contrast 0] [--brightness 0] [--invert] [--auto-level] [--max-power 100] [--config FILE]
+  phoenix-laser calibrate OUT.nc --powers 20,40,60,80 --feeds 1000,2000,3000 [--smax 1000] [--max-power 100] [--config FILE]
   phoenix-laser info IMAGE
   phoenix-laser cut DRAWING OUT.nc [--config FILE] [--power P] [--speed MM/MIN] [--passes N] [--focus-step MM] [--kerf MM] [--kerf-side none|auto|inside|outside]
-                [--tabs N] [--tab-width MM] [--smax N] [--overscan MM] [--origin X,Y] [--bed X,Y] [--dpi N] [--tolerance MM] [--dry-run]
+                [--tabs N] [--tab-width MM] [--smax N] [--overscan MM] [--origin X,Y] [--bed X,Y] [--max-power P] [--dpi N] [--tolerance MM] [--dry-run]
   phoenix-laser vector DRAWING OUT.nc [the options of cut] [--angle DEG] [--spacing MM]
   phoenix-laser layers DRAWING [--config FILE] [--dpi N]
   phoenix-laser [gui] [FILE]                     the window (a build with --features gui): with no arguments, with a file or with gui it opens; the commands above never open it
@@ -42,7 +43,8 @@ The engraving is made of dots of --dot-mm on a side, so the image is scaled to -
 The tone options change the grey levels before the dots are made: --gamma (0.1 to 10, more than 1 lightens the middle greys), --contrast and --brightness (-100 to 100), --invert (black burns least) and --auto-level (the darkest level becomes black and the lightest white).
 DRAWING is an SVG or a DXF file. cut follows the contours (the ones inside first), vector fills the closed shapes with lines and follows the open ones. Every layer (or colour, for an SVG) has its
 own settings in the file of --config (see the documentation); an option of the command line changes them for all the layers. Without --config, cut cuts everything and vector engraves everything.
-layers lists the layers of a drawing with what would be done with each.";
+layers lists the layers of a drawing with what would be done with each.
+--max-power is the limit of power, a percent of full power (100 when nothing says another): a program whose power is more than the limit is refused, never lowered. engrave and calibrate also read the limit and --smax from the [machine] section of the file of --config.";
 
 /// The tone options of the command line over `base`: the curve that is applied to the grey levels before the dots are made.
 fn take_tone(args: &mut Vec<String>, base: Tone) -> Result<Tone, String> {
@@ -64,6 +66,23 @@ fn take_tone(args: &mut Vec<String>, base: Tone) -> Result<Tone, String> {
     }
     t.validate()?;
     Ok(t)
+}
+
+/// The limit of power and the spindle value that `--config` and `--max-power` give to `engrave` and `calibrate`: the file is read as a whole (so it is checked), and the option wins.
+fn machine_limits(args: &mut Vec<String>) -> Result<(f64, Option<u32>, Option<String>), String> {
+    let config = flag(args, "--config")?;
+    let mut max = safety::DEFAULT_MAX_POWER_PERCENT;
+    let mut s_max = None;
+    if let Some(path) = &config {
+        let s = vconfig::load(Path::new(path))?;
+        max = s.machine.max_power_percent;
+        s_max = Some(s.machine.s_max);
+    }
+    if let Some(v) = flag(args, "--max-power")? {
+        max = num(&v, "--max-power")?;
+    }
+    safety::validate_max(max)?;
+    Ok((max, s_max, config))
 }
 
 fn list(text: &str, what: &str) -> Result<Vec<f64>, String> {
@@ -166,6 +185,9 @@ fn drawing_settings(
     }
     if let Some(v) = flag(args, "--overscan")? {
         s.machine.overscan_mm = num(&v, "--overscan")?;
+    }
+    if let Some(v) = flag(args, "--max-power")? {
+        s.machine.max_power_percent = num(&v, "--max-power")?;
     }
     if let Some(v) = flag(args, "--origin")? {
         let o = list(&v, "--origin")?;
@@ -309,7 +331,11 @@ fn run(mut args: Vec<String>) -> Result<(), String> {
                 .map(|v| num(&v, "--width-mm"))
                 .transpose()?
                 .ok_or("--width-mm is needed")?;
+            let (max_power, config_s_max, config) = machine_limits(&mut args)?;
             let mut p = Params::default();
+            if let Some(s_max) = config_s_max {
+                p.s_max = s_max;
+            }
             if let Some(v) = flag(&mut args, "--dot-mm")? {
                 p.pixel_mm = num(&v, "--dot-mm")?;
             }
@@ -370,6 +396,17 @@ fn run(mut args: Vec<String>) -> Result<(), String> {
                 return Err("--width-mm must be from 0 to 2000".into());
             }
             p.validate()?;
+            safety::check_power("--power", p.power_percent, max_power)?;
+            if !dry_run
+                && config
+                    .as_deref()
+                    .is_some_and(|c| same_file(Path::new(c), Path::new(&args[1])))
+            {
+                return Err(format!(
+                    "{}: the output would be written over the settings it is made from",
+                    args[1]
+                ));
+            }
             let w = (width / p.pixel_mm).round().max(1.0) as usize;
             let h = ((w as f64) * img.h as f64 / img.w as f64).round().max(1.0) as usize;
             let dots = dither(&tone.apply(&img.resize(w, h)?)?, method);
@@ -403,12 +440,27 @@ fn run(mut args: Vec<String>) -> Result<(), String> {
                 &flag(&mut args, "--feeds")?.ok_or("--feeds is needed")?,
                 "--feeds",
             )?;
+            let (max_power, config_s_max, config) = machine_limits(&mut args)?;
             let mut g = Grid::default();
+            if let Some(s_max) = config_s_max {
+                g.s_max = s_max;
+            }
             if let Some(v) = flag(&mut args, "--smax")? {
                 g.s_max = whole(&v, "--smax")?;
             }
             finish(&args, 1)?;
             let out = args.first().ok_or("calibrate needs an output file")?;
+            for p in &powers {
+                safety::check_power("a power of --powers", *p, max_power)?;
+            }
+            if config
+                .as_deref()
+                .is_some_and(|c| same_file(Path::new(c), Path::new(out)))
+            {
+                return Err(format!(
+                    "{out}: the output would be written over the settings it is made from"
+                ));
+            }
             let head = header(&Header {
                 generator: "phoenix-laser",
                 version: env!("CARGO_PKG_VERSION"),

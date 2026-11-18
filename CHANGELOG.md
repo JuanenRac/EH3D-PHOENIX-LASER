@@ -4,6 +4,7 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+- **A limit of power that refuses instead of lowering:** `max_power_percent` in `[machine]` (100 by default) and `--max-power` on `engrave`, `calibrate`, `cut` and `vector`. A program whose power is over the limit is an error that names the option or the layer, so what is written is always what was asked for. `engrave` and `calibrate` take `--config FILE` to read the limit and `s_max` from the `[machine]` section of the same settings file as the other commands, and never write their output over that file.
 - **Ordered dithering (Bayer):** `engrave --dither bayer` decides every dot by its own place and grey with an 8 x 8 Bayer matrix, so the pattern is regular and a grey burns the same dots every time; it is also in the list of dithering methods of the window, in the eight languages.
 - **Tone curve for a picture:** `engrave` takes `--gamma`, `--contrast`, `--brightness`, `--invert` and `--auto-level`, which change the grey levels with one table of 256 entries before the dots are made (`src/tone.rs`). The default values leave the picture exactly as it is, and a value out of range is an error that names it.
 - **The README says the maturity of the manifest:** the badge and the Maturity row of the eight READMEs read functional, as the manifest does, and the check of the status lights now fails when they differ.

@@ -19,6 +19,7 @@ pub mod lang;
 pub mod offset;
 pub mod order;
 pub mod raster;
+pub mod safety;
 pub mod shot;
 pub mod svg;
 pub mod tone;

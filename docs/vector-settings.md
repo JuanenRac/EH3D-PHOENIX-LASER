@@ -134,8 +134,9 @@ the settings file it is made from.
 | `focus_z_mm` | 0 | where the focus (Z) is for the first pass |
 | `bed_x_mm`, `bed_y_mm` | 0 | the size of the bed; 0 for both means it is not known; the work may not go outside of it |
 | `max_passes` | 50 | the most passes a layer may ask for, up to 1000 |
+| `max_power_percent` | 100 | the limit of power, from 0.1 to 100 percent of full power: a layer (or `[defaults]`) that asks for more is an error that names it, never lowered; `--max-power` of the commands overrides it |
 
-The keys of `[machine]` are `s_max`, `overscan_mm`, `rapid_mm_min`, `laser_watts`, `origin_x`, `origin_y`, `focus_z_mm`, `bed_x_mm`, `bed_y_mm` and `max_passes`.
+The keys of `[machine]` are `s_max`, `overscan_mm`, `rapid_mm_min`, `laser_watts`, `origin_x`, `origin_y`, `focus_z_mm`, `bed_x_mm`, `bed_y_mm`, `max_passes` and `max_power_percent`.
 
 ### `[defaults]` and `[layer NAME]`
 

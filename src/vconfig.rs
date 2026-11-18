@@ -173,6 +173,8 @@ pub struct Machine {
     pub bed_mm: Option<Pt>,
     /// The most passes a layer may ask for.
     pub max_passes: u32,
+    /// The limit of power, as a percent of full power: a layer that asks for more is an error, never lowered without a word.
+    pub max_power_percent: f64,
 }
 
 impl Default for Machine {
@@ -186,6 +188,7 @@ impl Default for Machine {
             focus_z_mm: 0.0,
             bed_mm: None,
             max_passes: 50,
+            max_power_percent: crate::safety::DEFAULT_MAX_POWER_PERCENT,
         }
     }
 }
@@ -274,6 +277,7 @@ impl Settings {
                 m.max_passes
             ));
         }
+        crate::safety::validate_max(m.max_power_percent)?;
         range("overscan", m.overscan_mm, 0.0, 50.0)?;
         range("rapid", m.rapid_mm_min, 1.0, 100_000.0)?;
         range("laser_watts", m.laser_watts, 0.0, 1_000.0)?;
@@ -301,6 +305,10 @@ impl Settings {
             return Err("two_opt_budget is too large".to_string());
         }
         self.defaults.validate(m.max_passes)?;
+        if self.defaults.mode != LayerMode::Skip {
+            crate::safety::check_power("power", self.defaults.power_percent, m.max_power_percent)
+                .map_err(|e| format!("[defaults]: {e}"))?;
+        }
         if self.layers.len() > MAX_LAYERS {
             return Err(format!(
                 "the settings describe more than {MAX_LAYERS} layers"
@@ -309,6 +317,10 @@ impl Settings {
         for (name, p) in &self.layers {
             p.validate(m.max_passes)
                 .map_err(|e| format!("layer {name}: {e}"))?;
+            if p.mode != LayerMode::Skip {
+                crate::safety::check_power("power", p.power_percent, m.max_power_percent)
+                    .map_err(|e| format!("layer {name}: {e}"))?;
+            }
         }
         Ok(())
     }
@@ -425,6 +437,7 @@ fn set_global(s: &mut Settings, section: &str, key: &str, value: &str) -> Result
             let x = s.machine.bed_mm.map_or(0.0, |b| b.0);
             s.machine.bed_mm = (v > 0.0 || x > 0.0).then_some((x, v));
         }
+        ("machine", "max_power_percent") => s.machine.max_power_percent = number(value)?,
         ("machine", "max_passes") => {
             s.machine.max_passes =
                 u32::try_from(whole(value)?).map_err(|_| "max_passes is too large".to_string())?
@@ -709,6 +722,83 @@ mod tests {
             "[defaults]\npower=1e999\n",
         ] {
             let _ = parse(junk);
+        }
+    }
+
+    #[test]
+    fn the_limit_of_power_is_full_power_unless_the_file_says_otherwise() {
+        assert_eq!(Settings::default().machine.max_power_percent, 100.0);
+        let s = parse(
+            "[machine]
+max_power_percent = 30
+[defaults]
+power = 20
+",
+        )
+        .unwrap();
+        assert_eq!(s.machine.max_power_percent, 30.0);
+    }
+
+    #[test]
+    fn a_layer_over_the_limit_of_power_is_refused_and_names_the_layer() {
+        let e = parse(
+            "[machine]
+max_power_percent = 30
+[defaults]
+power = 20
+[layer red]
+power = 31
+",
+        )
+        .unwrap_err();
+        assert!(
+            e.contains("layer red") && e.contains("max_power_percent"),
+            "{e}"
+        );
+        // at the limit it is accepted, and a skipped layer is not checked
+        parse(
+            "[machine]
+max_power_percent = 30
+[defaults]
+power = 30
+",
+        )
+        .unwrap();
+        parse(
+            "[machine]
+max_power_percent = 30
+[defaults]
+power = 20
+[layer a]
+mode = skip
+power = 90
+",
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn the_defaults_over_the_limit_of_power_are_refused_too() {
+        let e = parse(
+            "[machine]
+max_power_percent = 30
+",
+        )
+        .unwrap_err();
+        assert!(e.contains("[defaults]"), "{e}");
+    }
+
+    #[test]
+    fn the_limit_of_power_has_a_range() {
+        for bad in ["0", "0.05", "100.5", "-1", "x"] {
+            let text = format!(
+                "[machine]
+max_power_percent = {bad}
+[defaults]
+power = 0.1
+"
+            );
+            assert!(parse(&text).is_err(), "{bad}");
         }
     }
 }

@@ -17,7 +17,7 @@
 
 ---
 
-**Honesty check - what actually runs today:** a Rust library and a command line program (`phoenix-laser`) with 330 tests that run on a computer: turns an image into dots by dithering and writes the G-code of a laser that burns line by line with dynamic power and overscan, reads SVG and DXF drawings and writes the G-code that cuts their contours (the inside ones first, the width of the beam taken into account, bridges, several passes) and engraves their shapes with lines, with the settings of each layer in a file, and a power-against-feed test grid. It has a window (built with `--features gui`) that opens a picture or a drawing, shows the path of the laser, lets the settings be changed and exports the G-code, but the window has not been looked at on a screen yet; it has not been tried on a machine and it has not been checked against a collection of real files.
+**Honesty check - what actually runs today:** a Rust library and a command line program (`phoenix-laser`) with 348 tests that run on a computer: turns an image into dots by dithering and writes the G-code of a laser that burns line by line with dynamic power and overscan, reads SVG and DXF drawings and writes the G-code that cuts their contours (the inside ones first, the width of the beam taken into account, bridges, several passes) and engraves their shapes with lines, with the settings of each layer in a file, and a power-against-feed test grid. It has a window (built with `--features gui`) that opens a picture or a drawing, shows the path of the laser, lets the settings be changed and exports the G-code, but the window has not been looked at on a screen yet; it has not been tried on a machine and it has not been checked against a collection of real files.
 
 ---
 
@@ -30,7 +30,7 @@
 |---|---|
 | Version | `0.0.6` |
 | Maturity | Functional |
-| Tests | 330 |
+| Tests | 348 |
 | Stack | Rust |
 | On real hardware | Not tried: nothing here has run on a machine |
 
@@ -46,7 +46,7 @@ Each line is one part of this repository and the light says how far it is today.
 |---|---|---|
 | Core | 🟡 | turns an image into dots by dithering and writes the G-code of a laser that burns line by line with dynamic power and overscan, reads SVG and DXF drawings and cuts or engraves them by layer (ordered contours, beam width, bridges, passes, hatch), and a power-against-feed test grid; tested on a computer with normal and damaged input, not with a collection of real files. |
 | Command line | 🟡 | `phoenix-laser` (`engrave`, `calibrate`, `info`, `cut`, `vector`, `layers`) runs the same functions as the library and prints the result; every error comes back as a message and a non-zero exit code. |
-| Tests | 🟡 | 330 tests pass (`cargo test`), with normal cases, edge cases and damaged input. |
+| Tests | 🟡 | 348 tests pass (`cargo test`), with normal cases, edge cases and damaged input. |
 | Security | 🟡 | Plain safe Rust (`forbid(unsafe_code)`): nothing panics on the files it is given and a bad value is an error with its reason; no independent review. |
 | Window | 🟠 | Written (egui, `--features gui`): open or drop a picture or an SVG or DXF drawing, see the path of the laser (the cut in one colour, the travel dim), edit the table of layers, a calibration grid, zoom and pan, estimate the time, export; its logic is tested, but it has not been built or looked at on a screen yet. |
 | Real hardware | 🔴 | Not tried: nothing here has been run on a machine. |
@@ -62,6 +62,7 @@ Each line is one part of this repository and the light says how far it is today.
 * **The drawings** (`src/svg.rs`, `src/dxf.rs`, `src/flatten.rs`, `src/vector.rs`): a safe subset of SVG (paths with all their commands, shapes, transforms, groups, units) and the entities of a DXF (lines, polylines with arcs, arcs, circles, splines, units) become shapes in millimetres; scripts, images, `use`, declared entities and anything unknown are skipped or refused, the size, the depth, the number of elements and of points are limited by the settings, and curves become straight pieces within a tolerance.
 * **Cutting and engraving** (`src/order.rs`, `src/offset.rs`, `src/cut.rs`): the shapes are grouped by layer (DXF) or colour (SVG); each group is cut (loose lines joined, the contours inside another one first, the shortest travel, the width of the beam taken off on the right side, bridges left uncut, several passes with the focus moving on) or engraved (closed shapes filled with lines at an angle, by the even-odd rule) with its own settings.
 * **The settings file** (`src/vconfig.rs`, `docs/vector-settings.md`): every value that is tuned (the limits of the readers, the machine, the settings of each layer) is in a plain text file that is checked line by line; none of it is in the code.
+* **The limit of power** (`src/safety.rs`, `max_power_percent` in `[machine]`, `--max-power`): a program whose power is over the limit is refused with an error that names the layer or the option, never lowered without a word; the limit is 100 % until a file or an option says less.
 * **Ordered dithering** (`src/dither.rs`): `--dither bayer` (also in the window) decides each dot by its own place and grey with an 8 x 8 Bayer matrix, so the pattern is regular and the same grey always burns the same dots; the tests check that each level of the matrix appears once and that the darkness of a grey is kept.
 * **The tone curve** (`src/tone.rs`): before the dots are made the grey levels can be stretched to the full range (`--auto-level`), given more or less contrast and brightness, bent with a gamma or inverted, with one table of 256 entries; with the default values the picture is not changed at all.
 * **A checked G-code:** the program of a drawing is checked line by line before it is given: no laser on during a rapid move or at no speed, no `S` above full power, no move outside of the bed, `M5` at the end; the file is never written over the drawing or the settings it comes from.
@@ -96,6 +97,7 @@ How the parts of this repository fit together: who uses it, what it holds and wh
 | Unsafe memory use | plain safe Rust with `forbid(unsafe_code)` |
 | A hostile drawing (scripts, declared entities, deep nesting, millions of points, huge numbers) | scripts, images and links are never run or fetched; a declared entity is an error; the size, the depth, the elements, the shapes, the points and the pieces of a curve are limited; a shape with a point out of range is left out |
 | A program that could turn the laser on at no speed or above full power | every program is checked line by line before it is given, and one that fails is not written |
+| A power higher than the machine or the material should get | the limit of power (`max_power_percent`, `--max-power`) refuses a program over it with an error that names the layer or the option; it is never lowered without a word |
 | The output file chosen over the drawing or the settings it is made from | refused, in the window and in the commands |
 
 **What is not defended:** a result that was produced cleanly is not a verified result. Nothing here knows the limits of a machine, and the program has had no independent review. Report a vulnerability privately (see [SECURITY.md](SECURITY.md)).
@@ -107,11 +109,11 @@ The library is `eh3d_phoenix_laser` (`use eh3d_phoenix_laser::...`); the command
 ```text
 phoenix-laser engrave IMAGE OUT.nc --width-mm 50 [--dot-mm 0.1] [--feed 3000] [--power 50] [--smax 1000]
               [--dither fs|atkinson|threshold|bayer] [--threshold 128] [--overscan MM|auto] [--accel 1000] [--origin X,Y] [--dry-run]
-              [--gamma 1] [--contrast 0] [--brightness 0] [--invert] [--auto-level]
-phoenix-laser calibrate OUT.nc --powers 20,40,60,80 --feeds 1000,2000,3000 [--smax 1000]
+              [--gamma 1] [--contrast 0] [--brightness 0] [--invert] [--auto-level] [--max-power 100] [--config FILE]
+phoenix-laser calibrate OUT.nc --powers 20,40,60,80 --feeds 1000,2000,3000 [--smax 1000] [--max-power 100] [--config FILE]
 phoenix-laser info IMAGE
 phoenix-laser cut DRAWING OUT.nc [--config FILE] [--power P] [--speed MM/MIN] [--passes N] [--focus-step MM] [--kerf MM] [--kerf-side none|auto|inside|outside]
-              [--tabs N] [--tab-width MM] [--smax N] [--overscan MM] [--origin X,Y] [--bed X,Y] [--dpi N] [--tolerance MM] [--dry-run]
+              [--tabs N] [--tab-width MM] [--smax N] [--overscan MM] [--origin X,Y] [--bed X,Y] [--max-power P] [--dpi N] [--tolerance MM] [--dry-run]
 phoenix-laser vector DRAWING OUT.nc [the options of cut] [--angle DEG] [--spacing MM]
 phoenix-laser layers DRAWING [--config FILE] [--dpi N]
 phoenix-laser [gui] [FILE]                       the window (a build with --features gui); with no arguments it opens
@@ -140,7 +142,7 @@ To take a picture of the window without opening it by hand, run it with `--shot 
 
 ## 🧪 Testing
 
-The suite has 330 tests (`cargo test`, run on Windows and Linux in the CI). They check the normal cases, the edge cases and damaged input: empty files, garbage and cut files never panic. The CI also runs `cargo fmt --check`, `cargo clippy` with warnings as errors and `python -I tools/ci_validate.py`.
+The suite has 348 tests (`cargo test`, run on Windows and Linux in the CI). They check the normal cases, the edge cases and damaged input: empty files, garbage and cut files never panic. The CI also runs `cargo fmt --check`, `cargo clippy` with warnings as errors and `python -I tools/ci_validate.py`.
 
 ## 🏗️ Build & Release
 
@@ -170,6 +172,7 @@ EH3D-PHOENIX-LASER/
 │   ├── tone.rs                                  the tone curve of a picture: levels, contrast, brightness, gamma and inversion before the dots
 │   ├── gcode_out.rs                             the one way a G-code number is written and the standard header
 │   ├── raster.rs                                a part of the logic
+│   ├── safety.rs                                the limit of power, and the rules that keep the laser off while the work is shown
 │   ├── shot.rs                                  the picture mode of the window (--shot): its arguments, read and checked without a screen
 │   ├── vector.rs                                a drawing once read: shapes in mm, layers, limits and the small geometry
 │   ├── flatten.rs                               curves cut into straight pieces within a tolerance (Bezier, arcs)
