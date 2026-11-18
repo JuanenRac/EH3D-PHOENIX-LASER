@@ -5,7 +5,7 @@
 mod cli_args;
 
 use cli_args::{finish, flag, num, switch};
-use eh3d_phoenix_laser::calibrate::{grid, Grid};
+use eh3d_phoenix_laser::calibrate::{focus_test, grid, Grid};
 use eh3d_phoenix_laser::cut::{layers as layer_list, plan};
 use eh3d_phoenix_laser::dither::{dither, Method};
 use eh3d_phoenix_laser::dxf::read_dxf;
@@ -43,6 +43,7 @@ const HELP: &str = "phoenix-laser: laser engraving from an image
   phoenix-laser vector DRAWING OUT.nc [the options of cut] [--angle DEG] [--spacing MM]
   phoenix-laser layers DRAWING [--config FILE] [--dpi N]
   phoenix-laser materials FILE
+  phoenix-laser focus OUT.nc --z-step MM [--z-start MM] [--steps 9] [--length 10] [--spacing 2] [--feed 1000] [--power 30] [--smax 1000] [--max-power P] [--config FILE]
   phoenix-laser frame OUT.nc --size W,H | --gcode PROGRAM.nc [--origin X,Y] [--margin MM] [--feed 3000] [--laps 1] [--bed X,Y] [--smax N]
                 [--pilot P --confirm-laser-on] [--max-power P] [--config FILE]
   phoenix-laser preview PROGRAM.nc [OUT.svg] [--accel 1000] [--rapid 6000] [--smax N] [--bed X,Y] [--width-px 900] [--config FILE]
@@ -56,6 +57,7 @@ DRAWING is an SVG or a DXF file. cut follows the contours (the ones inside first
 own settings in the file of --config (see the documentation); an option of the command line changes them for all the layers. Without --config, cut cuts everything and vector engraves everything.
 layers lists the layers of a drawing with what would be done with each.
 materials FILE lists the materials of a library: a plain text file with a [material NAME] section for each material and way of working (see the documentation). --material NAME takes the power, the speed, the passes and the rest that the library says for it, before the other options, which win; the library is --materials FILE or the file named by PHOENIX_LASER_MATERIALS.
+focus writes a focus test: short lines side by side, each burnt with the head at another height (Z); the sharpest and thinnest line shows where the beam is in focus. --z-step has no default because which way is down depends on the machine: check it before running the program, which moves Z. The usual values live in the [focus] section of --config.
 frame writes a program that traces the rectangle of the work with the laser OFF, to see where it will land: --size W,H from the corner --origin, or the box of what burns in --gcode PROGRAM.nc (its real place). --margin widens it. A --pilot power (a percent, at most 5 and at most the limit of power) turns the laser on weakly and only with --confirm-laser-on; the [frame] section of --config holds the usual values.
 preview reads a G-code program (this program's or another's) and says what it would do: moves, burnt and travelled length, the box, the powers, a time that counts the corners (--accel in mm/s2) and what looks dangerous (the laser on during a rapid move, a burning move with no feed, S above --smax, work outside --bed, no end); with OUT.svg it also draws the path. It only reads text.
 --max-power is the limit of power, a percent of full power (100 when nothing says another): a program whose power is more than the limit is refused, never lowered. engrave and calibrate also read the limit and --smax from the [machine] section of the file of --config.";
@@ -538,6 +540,75 @@ fn run(mut args: Vec<String>) -> Result<(), String> {
         "cut" => drawing_job(args, LayerMode::Cut),
         "vector" => drawing_job(args, LayerMode::Engrave),
         "layers" => layers_job(args),
+        "focus" => {
+            let config = flag(&mut args, "--config")?;
+            let mut settings = Settings::default();
+            if let Some(path) = &config {
+                settings = vconfig::load(Path::new(path))?;
+            }
+            let mut machine = settings.machine;
+            let mut f = settings.focus;
+            if let Some(v) = flag(&mut args, "--max-power")? {
+                machine.max_power_percent = num(&v, "--max-power")?;
+            }
+            if let Some(v) = flag(&mut args, "--smax")? {
+                machine.s_max = whole(&v, "--smax")?;
+            }
+            if let Some(v) = flag(&mut args, "--z-step")? {
+                f.z_step_mm = num(&v, "--z-step")?;
+            }
+            if let Some(v) = flag(&mut args, "--z-start")? {
+                f.z_start_mm = num(&v, "--z-start")?;
+            }
+            if let Some(v) = flag(&mut args, "--steps")? {
+                f.steps = whole(&v, "--steps")?;
+            }
+            if let Some(v) = flag(&mut args, "--length")? {
+                f.length_mm = num(&v, "--length")?;
+            }
+            if let Some(v) = flag(&mut args, "--spacing")? {
+                f.spacing_mm = num(&v, "--spacing")?;
+            }
+            if let Some(v) = flag(&mut args, "--feed")? {
+                f.feed_mm_min = num(&v, "--feed")?;
+            }
+            if let Some(v) = flag(&mut args, "--power")? {
+                f.power_percent = num(&v, "--power")?;
+            }
+            finish(&args, 1)?;
+            let out = args.first().ok_or("focus needs an output file")?;
+            safety::validate_max(machine.max_power_percent)?;
+            let text = focus_test(&f, machine.s_max, machine.max_power_percent)?;
+            if config
+                .as_deref()
+                .is_some_and(|c| same_file(Path::new(c), Path::new(out)))
+            {
+                return Err(format!(
+                    "{out}: the output would be written over the settings it is made from"
+                ));
+            }
+            let head = header(&Header {
+                generator: "phoenix-laser",
+                version: env!("CARGO_PKG_VERSION"),
+                source: None,
+                tools: &format!(
+                    "laser, S 0-{}, focus test (the head moves in Z)",
+                    machine.s_max
+                ),
+            });
+            write_atomic(Path::new(out), &format!("{head}{text}"))?;
+            eprintln!("note: this program moves Z: check which way is down before running it");
+            println!(
+                "{} lines of {} mm from Z{} to Z{}, at {} % and {} mm/min, written to {out}",
+                f.steps,
+                f.length_mm,
+                f.z_start_mm,
+                f.z_start_mm + f.z_step_mm * f64::from(f.steps - 1),
+                f.power_percent,
+                f.feed_mm_min
+            );
+            Ok(())
+        }
         "frame" => {
             let config = flag(&mut args, "--config")?;
             let mut settings = Settings::default();

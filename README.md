@@ -17,7 +17,7 @@
 
 ---
 
-**Honesty check - what actually runs today:** a Rust library and a command line program (`phoenix-laser`) with 395 tests that run on a computer: turns an image into dots by dithering and writes the G-code of a laser that burns line by line with dynamic power and overscan, reads SVG and DXF drawings and writes the G-code that cuts their contours (the inside ones first, the width of the beam taken into account, bridges, several passes) and engraves their shapes with lines, with the settings of each layer in a file, and a power-against-feed test grid. It has a window (built with `--features gui`) that opens a picture or a drawing, shows the path of the laser, lets the settings be changed and exports the G-code, but the window has not been looked at on a screen yet; it has not been tried on a machine and it has not been checked against a collection of real files.
+**Honesty check - what actually runs today:** a Rust library and a command line program (`phoenix-laser`) with 405 tests that run on a computer: turns an image into dots by dithering and writes the G-code of a laser that burns line by line with dynamic power and overscan, reads SVG and DXF drawings and writes the G-code that cuts their contours (the inside ones first, the width of the beam taken into account, bridges, several passes) and engraves their shapes with lines, with the settings of each layer in a file, and a power-against-feed test grid. It has a window (built with `--features gui`) that opens a picture or a drawing, shows the path of the laser, lets the settings be changed and exports the G-code, but the window has not been looked at on a screen yet; it has not been tried on a machine and it has not been checked against a collection of real files.
 
 ---
 
@@ -30,7 +30,7 @@
 |---|---|
 | Version | `0.0.6` |
 | Maturity | Functional |
-| Tests | 395 |
+| Tests | 405 |
 | Stack | Rust |
 | On real hardware | Not tried: nothing here has run on a machine |
 
@@ -46,7 +46,7 @@ Each line is one part of this repository and the light says how far it is today.
 |---|---|---|
 | Core | 🟡 | turns an image into dots by dithering and writes the G-code of a laser that burns line by line with dynamic power and overscan, reads SVG and DXF drawings and cuts or engraves them by layer (ordered contours, beam width, bridges, passes, hatch), and a power-against-feed test grid; tested on a computer with normal and damaged input, not with a collection of real files. |
 | Command line | 🟡 | `phoenix-laser` (`engrave`, `calibrate`, `info`, `cut`, `vector`, `layers`) runs the same functions as the library and prints the result; every error comes back as a message and a non-zero exit code. |
-| Tests | 🟡 | 395 tests pass (`cargo test`), with normal cases, edge cases and damaged input. |
+| Tests | 🟡 | 405 tests pass (`cargo test`), with normal cases, edge cases and damaged input. |
 | Security | 🟡 | Plain safe Rust (`forbid(unsafe_code)`): nothing panics on the files it is given and a bad value is an error with its reason; no independent review. |
 | Window | 🟠 | Written (egui, `--features gui`): open or drop a picture or an SVG or DXF drawing, see the path of the laser (the cut in one colour, the travel dim), edit the table of layers, a calibration grid, zoom and pan, estimate the time, export; its logic is tested, but it has not been built or looked at on a screen yet. |
 | Real hardware | 🔴 | Not tried: nothing here has been run on a machine. |
@@ -62,6 +62,7 @@ Each line is one part of this repository and the light says how far it is today.
 * **The drawings** (`src/svg.rs`, `src/dxf.rs`, `src/flatten.rs`, `src/vector.rs`): a safe subset of SVG (paths with all their commands, shapes, transforms, groups, units) and the entities of a DXF (lines, polylines with arcs, arcs, circles, splines, units) become shapes in millimetres; scripts, images, `use`, declared entities and anything unknown are skipped or refused, the size, the depth, the number of elements and of points are limited by the settings, and curves become straight pieces within a tolerance.
 * **Cutting and engraving** (`src/order.rs`, `src/offset.rs`, `src/cut.rs`): the shapes are grouped by layer (DXF) or colour (SVG); each group is cut (loose lines joined, the contours inside another one first, the shortest travel, the width of the beam taken off on the right side, bridges left uncut, several passes with the focus moving on) or engraved (closed shapes filled with lines at an angle, by the even-odd rule) with its own settings.
 * **The settings file** (`src/vconfig.rs`, `docs/vector-settings.md`): every value that is tuned (the limits of the readers, the machine, the settings of each layer) is in a plain text file that is checked line by line; none of it is in the code.
+* **The focus test** (`src/calibrate.rs`, `[focus]` in the settings file): `phoenix-laser focus` burns a ladder of short lines, each with the head at another height, so the sharpest line shows where the beam is in focus; the step of the height has no default (which way is down depends on the machine), the power obeys the limit of power and the head returns to its first height.
 * **The frame of the work** (`src/frame.rs`, `[frame]` in the settings file): `phoenix-laser frame` writes a program that traces the rectangle of the work with the laser off, from a size or from the box of what a G-code program burns, so the person sees where it will land; a weak pilot power needs `--confirm-laser-on` every time, is capped at 5 % and obeys the limit of power, and a frame outside the bed is refused.
 * **The preview** (`src/preview.rs`): `phoenix-laser preview` reads a G-code program (its own or another's), prints the moves, the burnt and travelled length, the box, the powers and a time that counts the braking at the corners, warns of what looks dangerous (laser on during a rapid move, no feed, power above full, work outside the bed, no end) and draws the path as an SVG; the tests read back what the engraving writes and check the same length.
 * **The library of materials** (`src/materials.rs`, `examples/materials.cfg`): what suits each material and way of working is written once in a plain text file (`[material NAME]`: power, speed, passes, focus step, beam width, hatch, dot size, dithering and tone curve) and chosen with `--material NAME --materials FILE`; the options of the command line win over it and the limit of power holds over both. `phoenix-laser materials FILE` lists the library.
@@ -104,6 +105,7 @@ How the parts of this repository fit together: who uses it, what it holds and wh
 | A library of materials that is broken or huge | the file is limited in size and in number of materials; a value out of range, an unknown key or a name used twice is an error that names the line; the output is never written over it |
 | A G-code program from somewhere else that is read before it is run | the preview only reads text, with a limit on its size, never runs or fetches anything, ignores numbers that are absurd and warns of the laser on during a rapid move, no feed, power above full, work outside the bed and no end |
 | The laser turning on just to position the work | the frame is traced with the laser off (no power set, the spindle never on); a pilot power needs `--confirm-laser-on` on every run, even when the settings file asks for it, stays at 5 % or less under the limit of power and is turned off before the program ends |
+| A head sent the wrong way in Z by a focus test | the step of the height has no default and the test is refused until the person gives it; the program says that it moves Z, the range is limited (50 mm in all), the head returns to the first height and the power obeys the limit of power |
 | The output file chosen over the drawing or the settings it is made from | refused, in the window and in the commands |
 
 **What is not defended:** a result that was produced cleanly is not a verified result. Nothing here knows the limits of a machine, and the program has had no independent review. Report a vulnerability privately (see [SECURITY.md](SECURITY.md)).
@@ -124,6 +126,7 @@ phoenix-laser cut DRAWING OUT.nc [--config FILE] [--power P] [--speed MM/MIN] [-
 phoenix-laser vector DRAWING OUT.nc [the options of cut] [--angle DEG] [--spacing MM]
 phoenix-laser layers DRAWING [--config FILE] [--dpi N]
 phoenix-laser materials FILE
+phoenix-laser focus OUT.nc --z-step MM [--z-start MM] [--steps 9] [--length 10] [--spacing 2] [--feed 1000] [--power 30] [--smax 1000] [--max-power P] [--config FILE]
 phoenix-laser frame OUT.nc --size W,H | --gcode PROGRAM.nc [--origin X,Y] [--margin MM] [--feed 3000] [--laps 1] [--bed X,Y] [--smax N]
               [--pilot P --confirm-laser-on] [--max-power P] [--config FILE]
 phoenix-laser preview PROGRAM.nc [OUT.svg] [--accel 1000] [--rapid 6000] [--smax N] [--bed X,Y] [--width-px 900] [--config FILE]
@@ -153,7 +156,7 @@ To take a picture of the window without opening it by hand, run it with `--shot 
 
 ## 🧪 Testing
 
-The suite has 395 tests (`cargo test`, run on Windows and Linux in the CI). They check the normal cases, the edge cases and damaged input: empty files, garbage and cut files never panic. The CI also runs `cargo fmt --check`, `cargo clippy` with warnings as errors and `python -I tools/ci_validate.py`.
+The suite has 405 tests (`cargo test`, run on Windows and Linux in the CI). They check the normal cases, the edge cases and damaged input: empty files, garbage and cut files never panic. The CI also runs `cargo fmt --check`, `cargo clippy` with warnings as errors and `python -I tools/ci_validate.py`.
 
 ## 🏗️ Build & Release
 

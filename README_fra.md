@@ -17,7 +17,7 @@
 
 ---
 
-**Vérification d'honnêteté - ce qui fonctionne aujourd'hui :** une bibliothèque Rust et un programme en ligne de commande (`phoenix-laser`) avec 395 tests qui s'exécutent sur un ordinateur : il transforme une image en points par tramage et écrit le G-code d'un laser qui brûle ligne par ligne avec une puissance dynamique et un dépassement, lit des dessins SVG et DXF et écrit le G-code qui découpe leurs contours (ceux de l'intérieur d'abord, avec la largeur du faisceau, des ponts et plusieurs passes) et grave leurs formes avec des lignes, avec les réglages de chaque calque dans un fichier, et une grille d'essai puissance contre avance. Il a une fenêtre (compilée avec `--features gui`) qui ouvre une image ou un dessin, montre le trajet du laser, permet de changer les réglages et exporte le G-code, mais la fenêtre n'a pas encore été vue sur un écran ; il n'a pas été essayé sur une machine et n'a pas été comparé à une collection de fichiers réels.
+**Vérification d'honnêteté - ce qui fonctionne aujourd'hui :** une bibliothèque Rust et un programme en ligne de commande (`phoenix-laser`) avec 405 tests qui s'exécutent sur un ordinateur : il transforme une image en points par tramage et écrit le G-code d'un laser qui brûle ligne par ligne avec une puissance dynamique et un dépassement, lit des dessins SVG et DXF et écrit le G-code qui découpe leurs contours (ceux de l'intérieur d'abord, avec la largeur du faisceau, des ponts et plusieurs passes) et grave leurs formes avec des lignes, avec les réglages de chaque calque dans un fichier, et une grille d'essai puissance contre avance. Il a une fenêtre (compilée avec `--features gui`) qui ouvre une image ou un dessin, montre le trajet du laser, permet de changer les réglages et exporte le G-code, mais la fenêtre n'a pas encore été vue sur un écran ; il n'a pas été essayé sur une machine et n'a pas été comparé à une collection de fichiers réels.
 
 ---
 
@@ -30,7 +30,7 @@
 |---|---|
 | Version | `0.0.6` |
 | Maturité | Fonctionnel |
-| Tests | 395 |
+| Tests | 405 |
 | Pile technique | Rust |
 | Sur du matériel réel | Non essayé : rien ici n'a fonctionné sur une machine |
 
@@ -46,7 +46,7 @@ Chaque ligne est une partie de ce dépôt et le feu dit où elle en est aujourd'
 |---|---|---|
 | Cœur | 🟡 | transforme une image en points par tramage et écrit le G-code d'un laser qui brûle ligne par ligne avec une puissance dynamique et un dépassement, lit des dessins SVG et DXF et les découpe ou les grave par calque (contours ordonnés, largeur du faisceau, ponts, passes, hachures), et une grille d'essai puissance contre avance ; testé sur un ordinateur avec des entrées normales et abîmées, pas avec une collection de fichiers réels. |
 | Ligne de commande | 🟡 | `phoenix-laser` (`engrave`, `calibrate`, `info`, `cut`, `vector`, `layers`) exécute les mêmes fonctions que la bibliothèque et affiche le résultat ; chaque erreur revient sous forme de message et d'un code de sortie non nul. |
-| Tests | 🟡 | 395 tests passent (`cargo test`), avec des cas normaux, des cas limites et des entrées abîmées. |
+| Tests | 🟡 | 405 tests passent (`cargo test`), avec des cas normaux, des cas limites et des entrées abîmées. |
 | Sécurité | 🟡 | Rust sûr et simple (`forbid(unsafe_code)`) : rien ne panique sur les fichiers reçus et une mauvaise valeur est une erreur avec sa raison ; pas de revue indépendante. |
 | Fenêtre | 🟠 | Écrite (egui, `--features gui`) : ouvrir ou déposer une image ou un dessin SVG ou DXF, voir le trajet du laser (la découpe d'une couleur, le déplacement atténué), modifier le tableau des calques, une grille d'étalonnage, zoom et déplacement, estimer la durée, exporter ; sa logique est testée, mais elle n'a pas encore été compilée ni vue sur un écran. |
 | Matériel réel | 🔴 | Non essayé : rien ici n'a été exécuté sur une machine. |
@@ -62,6 +62,7 @@ Chaque ligne est une partie de ce dépôt et le feu dit où elle en est aujourd'
 * **Les dessins** (`src/svg.rs`, `src/dxf.rs`, `src/flatten.rs`, `src/vector.rs`) : un sous-ensemble sûr de SVG (tracés avec toutes leurs commandes, formes, transformations, groupes, unités) et les entités d'un DXF (lignes, polylignes avec arcs, arcs, cercles, splines, unités) deviennent des formes en millimètres ; les scripts, les images, `use`, les entités déclarées et tout ce qui est inconnu sont ignorés ou refusés, la taille, la profondeur et le nombre d'éléments et de points sont limités par les réglages, et les courbes deviennent des segments droits dans une tolérance.
 * **Découpe et gravure** (`src/order.rs`, `src/offset.rs`, `src/cut.rs`) : les formes sont groupées par calque (DXF) ou par couleur (SVG) ; chaque groupe est découpé (lignes libres jointes, les contours à l'intérieur d'un autre d'abord, le plus court déplacement, la largeur du faisceau retirée du bon côté, ponts laissés, plusieurs passes avec la mise au point qui avance) ou gravé (formes fermées remplies de lignes selon un angle, par la règle pair-impair) avec ses propres réglages.
 * **Le fichier de réglages** (`src/vconfig.rs`, `docs/vector-settings.md`) : toute valeur ajustée (les limites des lecteurs, la machine, les réglages de chaque calque) est dans un fichier texte simple vérifié ligne par ligne ; rien de cela n'est dans le code.
+* **Le test de mise au point** (`src/calibrate.rs`, `[focus]` dans le fichier de réglages) : `phoenix-laser focus` brûle une échelle de courtes lignes, chacune avec la tête à une autre hauteur, et la ligne la plus nette montre où le faisceau est net ; le pas de hauteur n'a pas de valeur par défaut (le bas dépend de la machine), la puissance obéit à la limite de puissance et la tête revient à sa première hauteur.
 * **Le cadre du travail** (`src/frame.rs`, `[frame]` dans le fichier de réglages) : `phoenix-laser frame` écrit un programme qui parcourt le rectangle du travail laser éteint, à partir d'une taille ou de la boîte de ce qu'un programme G-code brûle, pour voir où il tombera ; une faible puissance pilote exige `--confirm-laser-on` à chaque fois, est plafonnée à 5 % et obéit à la limite de puissance, et un cadre hors du plateau est refusé.
 * **L'aperçu** (`src/preview.rs`) : `phoenix-laser preview` lit un programme G-code (le sien ou un autre), affiche les mouvements, la longueur brûlée et parcourue, la boîte, les puissances et un temps qui compte le freinage dans les coins, avertit de ce qui semble dangereux (laser allumé pendant un déplacement rapide, pas d'avance, puissance au-dessus du plein, travail hors du plateau, pas de fin) et dessine le parcours en SVG ; les tests relisent ce que la gravure écrit et vérifient la même longueur.
 * **La bibliothèque de matériaux** (`src/materials.rs`, `examples/materials.cfg`) : ce qui convient à chaque matériau et manière de travailler s'écrit une fois dans un fichier texte (`[material NOM]` : puissance, vitesse, passes, pas de mise au point, largeur du faisceau, hachures, taille du point, tramage et courbe de tons) et se choisit avec `--material NOM --materials FICHIER` ; les options de la ligne de commande l'emportent et la limite de puissance vaut sur les deux. `phoenix-laser materials FICHIER` liste la bibliothèque.
@@ -104,6 +105,7 @@ Comment les parties de ce dépôt s'articulent : qui l'utilise, ce qu'il contien
 | Une bibliothèque de matériaux cassée ou énorme | le fichier est limité en taille et en nombre de matériaux ; une valeur hors plage, une clé inconnue ou un nom répété est une erreur qui nomme la ligne ; la sortie n'est jamais écrite par-dessus |
 | Un programme G-code venu d'ailleurs que l'on lit avant de l'exécuter | l'aperçu ne lit que du texte, avec une limite de taille, n'exécute ni ne télécharge rien, ignore les nombres absurdes et avertit d'un laser allumé pendant un déplacement rapide, d'une avance absente, d'une puissance au-dessus du plein, d'un travail hors du plateau et d'une fin absente |
 | Le laser qui s'allume juste pour positionner le travail | le cadre est parcouru laser éteint (aucune puissance, broche jamais allumée) ; une puissance pilote exige `--confirm-laser-on` à chaque exécution, même si le fichier de réglages la demande, reste à 5 % ou moins sous la limite de puissance et est coupée avant la fin du programme |
+| Une tête envoyée dans le mauvais sens en Z par un test de mise au point | le pas de hauteur n'a pas de valeur par défaut et le test est refusé tant que la personne ne le donne pas ; le programme dit qu'il déplace Z, la course est limitée (50 mm en tout), la tête revient à la première hauteur et la puissance obéit à la limite de puissance |
 | Le fichier de sortie choisi sur le dessin ou sur les réglages dont il provient | refusé, dans la fenêtre et dans les commandes |
 
 **Ce qui n'est pas défendu :** un résultat produit sans erreur n'est pas un résultat vérifié. Rien ici ne connaît les limites d'une machine et le programme n'a pas eu de revue indépendante. Signalez une vulnérabilité en privé (voir [SECURITY.md](SECURITY.md)).
@@ -124,6 +126,7 @@ phoenix-laser cut DRAWING OUT.nc [--config FILE] [--power P] [--speed MM/MIN] [-
 phoenix-laser vector DRAWING OUT.nc [the options of cut] [--angle DEG] [--spacing MM]
 phoenix-laser layers DRAWING [--config FILE] [--dpi N]
 phoenix-laser materials FILE
+phoenix-laser focus OUT.nc --z-step MM [--z-start MM] [--steps 9] [--length 10] [--spacing 2] [--feed 1000] [--power 30] [--smax 1000] [--max-power P] [--config FILE]
 phoenix-laser frame OUT.nc --size W,H | --gcode PROGRAM.nc [--origin X,Y] [--margin MM] [--feed 3000] [--laps 1] [--bed X,Y] [--smax N]
               [--pilot P --confirm-laser-on] [--max-power P] [--config FILE]
 phoenix-laser preview PROGRAM.nc [OUT.svg] [--accel 1000] [--rapid 6000] [--smax N] [--bed X,Y] [--width-px 900] [--config FILE]
@@ -153,7 +156,7 @@ Pour prendre une capture de la fenêtre sans l'ouvrir à la main, lancez-la avec
 
 ## 🧪 Tests
 
-La suite compte 395 tests (`cargo test`, exécutés sous Windows et Linux dans le CI). Ils vérifient les cas normaux, les cas limites et les entrées abîmées : fichiers vides, bruit et fichiers coupés ne font jamais paniquer. Le CI exécute aussi `cargo fmt --check`, `cargo clippy` avec les avertissements comme erreurs et `python -I tools/ci_validate.py`.
+La suite compte 405 tests (`cargo test`, exécutés sous Windows et Linux dans le CI). Ils vérifient les cas normaux, les cas limites et les entrées abîmées : fichiers vides, bruit et fichiers coupés ne font jamais paniquer. Le CI exécute aussi `cargo fmt --check`, `cargo clippy` avec les avertissements comme erreurs et `python -I tools/ci_validate.py`.
 
 ## 🏗️ Compilation et publication
 

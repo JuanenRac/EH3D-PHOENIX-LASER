@@ -671,3 +671,60 @@ fn the_frame_needs_one_source_and_never_lands_on_what_it_is_made_from() {
     assert!(err.contains("written over"), "{err}");
     assert_eq!(written(&work), before);
 }
+
+#[test]
+fn the_focus_test_burns_a_ladder_of_lines_at_different_heights() {
+    let nc = tmp("focus.nc");
+    let (ok, out, err) = run(&[
+        "focus", &nc, "--z-step", "-0.5", "--steps", "4", "--length", "8", "--power", "20",
+    ]);
+    assert!(ok, "{err}");
+    assert!(err.contains("moves Z"), "{err}");
+    assert!(
+        out.contains("4 lines of 8 mm from Z0 to Z-1.5, at 20 %"),
+        "{out}"
+    );
+    let text = written(&nc);
+    assert!(
+        text.contains("G0 Z-1.5\n") && text.contains("G1 X8 S200\n"),
+        "{text}"
+    );
+    let (ok, seen, err) = run(&["preview", &nc]);
+    assert!(ok, "{err}");
+    assert!(seen.contains("32 mm burned"), "{seen}");
+}
+
+#[test]
+fn the_focus_test_does_not_guess_which_way_is_down_and_obeys_the_limit_of_power() {
+    let nc = tmp("focus-bad.nc");
+    let (ok, _, err) = run(&["focus", &nc]);
+    assert!(!ok);
+    assert!(err.contains("--z-step"), "{err}");
+    let (ok, _, err) = run(&["focus", &nc, "--z-step", "0.5", "--max-power", "20"]);
+    assert!(!ok);
+    assert!(err.contains("max_power_percent"), "{err}");
+    let (ok, _, err) = run(&["focus", &nc, "--z-step", "0.5", "--steps", "1"]);
+    assert!(!ok);
+    assert!(err.contains("steps"), "{err}");
+}
+
+#[test]
+fn the_focus_test_reads_the_settings_file_and_never_lands_on_it() {
+    let cfg = tmp("focus.cfg");
+    std::fs::write(
+        &cfg,
+        "[machine]\ns_max = 255\n[focus]\nz_start_mm = 2\nz_step_mm = 0.5\nsteps = 3\npower_percent = 40\n",
+    )
+    .unwrap();
+    let nc = tmp("focus-cfg.nc");
+    let (ok, out, err) = run(&["focus", &nc, "--config", &cfg]);
+    assert!(ok, "{err}");
+    assert!(out.contains("3 lines of 10 mm from Z2 to Z3"), "{out}");
+    // 40 % of 255
+    assert!(written(&nc).contains("S102"));
+    let before = written(&cfg);
+    let (ok, _, err) = run(&["focus", &cfg, "--config", &cfg]);
+    assert!(!ok);
+    assert!(err.contains("written over"), "{err}");
+    assert_eq!(written(&cfg), before);
+}

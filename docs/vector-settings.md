@@ -17,7 +17,7 @@ key = value
 key = value
 ```
 
-Sections: `[limits]`, `[read]`, `[order]`, `[offset]`, `[hatch]`, `[machine]`, `[frame]`, `[defaults]` and one `[layer NAME]` for each layer or colour. `[defaults]` is what a layer gets that the file
+Sections: `[limits]`, `[read]`, `[order]`, `[offset]`, `[hatch]`, `[machine]`, `[frame]`, `[focus]`, `[defaults]` and one `[layer NAME]` for each layer or colour. `[defaults]` is what a layer gets that the file
 does not name, and also what every `[layer NAME]` starts from (wherever in the file `[defaults]` is written). The switches are `on` and `off`.
 
 ## What a layer is
@@ -150,6 +150,22 @@ The frame of the work (`phoenix-laser frame`): the rectangle the head traces to 
 | `pilot_percent` | 0 | a weak power to make the frame visible, from 0 to 5 percent of full power and no more than `max_power_percent`; 0 keeps the laser off |
 
 The keys of `[frame]` are `feed_mm_min`, `laps`, `margin_mm` and `pilot_percent`.
+
+### `[focus]`
+
+The focus test (`phoenix-laser focus`): short lines side by side, each burnt with the head at another height (Z), to see where the beam is sharpest. `z_step_mm` is 0 until it is given (here or with `--z-step`) and the test is refused while it is 0: which way is down depends on the machine, and a head sent the wrong way can hit the material. The power of the test must not be over `max_power_percent`.
+
+| Key | Default | Meaning |
+|---|---|---|
+| `z_start_mm` | 0 | the height of the first line, from -100 to 100 |
+| `z_step_mm` | 0 | the change of height from a line to the next, from -20 to 20, and over all the lines at most 50 mm; 0 means it is not given |
+| `steps` | 9 | how many lines, from 2 to 30 |
+| `length_mm` | 10 | the length of each line, from 1 to 100 |
+| `spacing_mm` | 2 | the distance between two lines, from 0.5 to 20 |
+| `feed_mm_min` | 1000 | the speed of the lines, from 1 to 30000 |
+| `power_percent` | 30 | the power of the lines, from 0.001 to 100 percent of full power |
+
+The keys of `[focus]` are `z_start_mm`, `z_step_mm`, `steps`, `length_mm`, `spacing_mm`, `feed_mm_min` and `power_percent`.
 
 ### `[defaults]` and `[layer NAME]`
 

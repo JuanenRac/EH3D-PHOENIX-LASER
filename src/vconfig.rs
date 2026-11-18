@@ -251,6 +251,64 @@ impl FrameSettings {
     }
 }
 
+/// The focus test (`phoenix-laser focus`): a ladder of short lines burnt at different heights (Z) to find where the beam is sharpest.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct FocusSettings {
+    /// The height of the first line.
+    pub z_start_mm: f64,
+    /// How much the height changes from a line to the next. It is 0 until the person says it, and then the test is refused: which way is down depends on the machine.
+    pub z_step_mm: f64,
+    pub steps: u32,
+    pub length_mm: f64,
+    /// The distance between two lines.
+    pub spacing_mm: f64,
+    pub feed_mm_min: f64,
+    pub power_percent: f64,
+}
+
+impl Default for FocusSettings {
+    fn default() -> Self {
+        FocusSettings {
+            z_start_mm: 0.0,
+            z_step_mm: 0.0,
+            steps: 9,
+            length_mm: 10.0,
+            spacing_mm: 2.0,
+            feed_mm_min: 1000.0,
+            power_percent: 30.0,
+        }
+    }
+}
+
+impl FocusSettings {
+    /// The ranges. The limit of power is checked when the test is made, not here: a file with a low limit and no `[focus]` is still a good file.
+    pub fn validate(&self) -> Result<(), String> {
+        let range = |name: &str, v: f64, lo: f64, hi: f64| {
+            if v.is_finite() && (lo..=hi).contains(&v) {
+                Ok(())
+            } else {
+                Err(format!("{name} is {v}: it must be from {lo} to {hi}"))
+            }
+        };
+        range("focus z_start_mm", self.z_start_mm, -100.0, 100.0)?;
+        range("focus z_step_mm", self.z_step_mm, -20.0, 20.0)?;
+        range("focus length_mm", self.length_mm, 1.0, 100.0)?;
+        range("focus spacing_mm", self.spacing_mm, 0.5, 20.0)?;
+        range("focus feed_mm_min", self.feed_mm_min, 1.0, 30_000.0)?;
+        range("focus power_percent", self.power_percent, 0.001, 100.0)?;
+        if self.steps < 2 || self.steps > 30 {
+            return Err(format!(
+                "focus steps is {}: it must be from 2 to 30",
+                self.steps
+            ));
+        }
+        if self.z_step_mm.abs() * f64::from(self.steps - 1) > 50.0 {
+            return Err("the focus would move more than 50 mm over the test".to_string());
+        }
+        Ok(())
+    }
+}
+
 /// Where the lower left corner of the drawing goes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Align {
@@ -280,6 +338,7 @@ pub struct Settings {
     pub max_hatch_lines: usize,
     pub machine: Machine,
     pub frame: FrameSettings,
+    pub focus: FocusSettings,
     pub defaults: LayerParams,
     /// The settings of the layers that the file names, by name (lower case).
     pub layers: Vec<(String, LayerParams)>,
@@ -302,6 +361,7 @@ impl Default for Settings {
             max_hatch_lines: 100_000,
             machine: Machine::default(),
             frame: FrameSettings::default(),
+            focus: FocusSettings::default(),
             defaults: LayerParams::default(),
             layers: Vec::new(),
         }
@@ -365,6 +425,7 @@ impl Settings {
             return Err("two_opt_budget is too large".to_string());
         }
         self.frame.validate(m.max_power_percent)?;
+        self.focus.validate()?;
         self.defaults.validate(m.max_passes)?;
         if self.defaults.mode != LayerMode::Skip {
             crate::safety::check_power("power", self.defaults.power_percent, m.max_power_percent)
@@ -498,6 +559,16 @@ fn set_global(s: &mut Settings, section: &str, key: &str, value: &str) -> Result
             let x = s.machine.bed_mm.map_or(0.0, |b| b.0);
             s.machine.bed_mm = (v > 0.0 || x > 0.0).then_some((x, v));
         }
+        ("focus", "z_start_mm") => s.focus.z_start_mm = number(value)?,
+        ("focus", "z_step_mm") => s.focus.z_step_mm = number(value)?,
+        ("focus", "steps") => {
+            s.focus.steps =
+                u32::try_from(whole(value)?).map_err(|_| "steps is too large".to_string())?
+        }
+        ("focus", "length_mm") => s.focus.length_mm = number(value)?,
+        ("focus", "spacing_mm") => s.focus.spacing_mm = number(value)?,
+        ("focus", "feed_mm_min") => s.focus.feed_mm_min = number(value)?,
+        ("focus", "power_percent") => s.focus.power_percent = number(value)?,
         ("frame", "feed_mm_min") => s.frame.feed_mm_min = number(value)?,
         ("frame", "laps") => {
             s.frame.laps =
@@ -540,12 +611,12 @@ pub fn parse(text: &str) -> Result<Settings, String> {
             let (word, rest) = head.split_once(char::is_whitespace).unwrap_or((head, ""));
             let word = word.to_ascii_lowercase();
             section = match word.as_str() {
-                "limits" | "read" | "order" | "offset" | "hatch" | "machine" | "frame" | "defaults" if rest.trim().is_empty() => word,
+                "limits" | "read" | "order" | "offset" | "hatch" | "machine" | "frame" | "focus" | "defaults" if rest.trim().is_empty() => word,
                 "layer" if !rest.trim().is_empty() => {
                     named.push(rest.trim().to_lowercase());
                     format!("layer {}", rest.trim().to_lowercase())
                 }
-                _ => return Err(format!("line {line}: '[{head}]' is not a section (limits, read, order, offset, hatch, machine, frame, defaults or layer NAME)")),
+                _ => return Err(format!("line {line}: '[{head}]' is not a section (limits, read, order, offset, hatch, machine, frame, focus, defaults or layer NAME)")),
             };
             continue;
         }
@@ -796,27 +867,14 @@ mod tests {
     #[test]
     fn the_limit_of_power_is_full_power_unless_the_file_says_otherwise() {
         assert_eq!(Settings::default().machine.max_power_percent, 100.0);
-        let s = parse(
-            "[machine]
-max_power_percent = 30
-[defaults]
-power = 20
-",
-        )
-        .unwrap();
+        let s = parse("[machine]\nmax_power_percent = 30\n[defaults]\npower = 20\n").unwrap();
         assert_eq!(s.machine.max_power_percent, 30.0);
     }
 
     #[test]
     fn a_layer_over_the_limit_of_power_is_refused_and_names_the_layer() {
         let e = parse(
-            "[machine]
-max_power_percent = 30
-[defaults]
-power = 20
-[layer red]
-power = 31
-",
+            "[machine]\nmax_power_percent = 30\n[defaults]\npower = 20\n[layer red]\npower = 31\n",
         )
         .unwrap_err();
         assert!(
@@ -824,48 +882,23 @@ power = 31
             "{e}"
         );
         // at the limit it is accepted, and a skipped layer is not checked
+        parse("[machine]\nmax_power_percent = 30\n[defaults]\npower = 30\n").unwrap();
         parse(
-            "[machine]
-max_power_percent = 30
-[defaults]
-power = 30
-",
-        )
-        .unwrap();
-        parse(
-            "[machine]
-max_power_percent = 30
-[defaults]
-power = 20
-[layer a]
-mode = skip
-power = 90
-",
+            "[machine]\nmax_power_percent = 30\n[defaults]\npower = 20\n[layer a]\nmode = skip\npower = 90\n",
         )
         .unwrap();
     }
 
     #[test]
     fn the_defaults_over_the_limit_of_power_are_refused_too() {
-        let e = parse(
-            "[machine]
-max_power_percent = 30
-",
-        )
-        .unwrap_err();
+        let e = parse("[machine]\nmax_power_percent = 30\n").unwrap_err();
         assert!(e.contains("[defaults]"), "{e}");
     }
 
     #[test]
     fn the_limit_of_power_has_a_range() {
         for bad in ["0", "0.05", "100.5", "-1", "x"] {
-            let text = format!(
-                "[machine]
-max_power_percent = {bad}
-[defaults]
-power = 0.1
-"
-            );
+            let text = format!("[machine]\nmax_power_percent = {bad}\n[defaults]\npower = 0.1\n");
             assert!(parse(&text).is_err(), "{bad}");
         }
     }
@@ -875,15 +908,9 @@ power = 0.1
         let f = Settings::default().frame;
         assert_eq!((f.feed_mm_min, f.laps, f.margin_mm), (3000.0, 1, 0.0));
         assert_eq!(f.pilot_percent, 0.0);
-        let s = parse(
-            "[frame]
-feed_mm_min = 1200
-laps = 2
-margin_mm = 1.5
-pilot_percent = 2
-",
-        )
-        .unwrap();
+        let s =
+            parse("[frame]\nfeed_mm_min = 1200\nlaps = 2\nmargin_mm = 1.5\npilot_percent = 2\n")
+                .unwrap();
         assert_eq!(
             s.frame,
             FrameSettings {
@@ -898,50 +925,66 @@ pilot_percent = 2
     #[test]
     fn a_frame_setting_out_of_range_is_refused() {
         for text in [
-            "[frame]
-feed_mm_min = 0
-",
-            "[frame]
-feed_mm_min = 30001
-",
-            "[frame]
-laps = 0
-",
-            "[frame]
-laps = 21
-",
-            "[frame]
-margin_mm = -1
-",
-            "[frame]
-margin_mm = 101
-",
-            "[frame]
-pilot_percent = 5.1
-",
-            "[frame]
-pilot_percent = -1
-",
-            "[frame]
-laps = 1.5
-",
-            "[frame]
-speed = 5
-",
+            "[frame]\nfeed_mm_min = 0\n",
+            "[frame]\nfeed_mm_min = 30001\n",
+            "[frame]\nlaps = 0\n",
+            "[frame]\nlaps = 21\n",
+            "[frame]\nmargin_mm = -1\n",
+            "[frame]\nmargin_mm = 101\n",
+            "[frame]\npilot_percent = 5.1\n",
+            "[frame]\npilot_percent = -1\n",
+            "[frame]\nlaps = 1.5\n",
+            "[frame]\nspeed = 5\n",
         ] {
             assert!(parse(text).is_err(), "{text:?}");
         }
         // the pilot power obeys the limit of power of the machine
         let e = parse(
-            "[machine]
-max_power_percent = 2
-[defaults]
-power = 1
-[frame]
-pilot_percent = 3
-",
+            "[machine]\nmax_power_percent = 2\n[defaults]\npower = 1\n[frame]\npilot_percent = 3\n",
         )
         .unwrap_err();
         assert!(e.contains("pilot_percent"), "{e}");
+    }
+
+    #[test]
+    fn the_focus_test_needs_a_step_that_the_person_gives() {
+        let f = Settings::default().focus;
+        assert_eq!(f.z_step_mm, 0.0, "which way is down depends on the machine");
+        assert_eq!((f.steps, f.length_mm, f.spacing_mm), (9, 10.0, 2.0));
+        let s = parse(
+            "[focus]\nz_start_mm = 1\nz_step_mm = -0.5\nsteps = 5\nlength_mm = 8\nspacing_mm = 3\nfeed_mm_min = 800\npower_percent = 20\n",
+        )
+        .unwrap();
+        assert_eq!(
+            s.focus,
+            FocusSettings {
+                z_start_mm: 1.0,
+                z_step_mm: -0.5,
+                steps: 5,
+                length_mm: 8.0,
+                spacing_mm: 3.0,
+                feed_mm_min: 800.0,
+                power_percent: 20.0
+            }
+        );
+    }
+
+    #[test]
+    fn a_focus_setting_out_of_range_is_refused() {
+        for text in [
+            "[focus]\nz_start_mm = 101\n",
+            "[focus]\nz_step_mm = 21\n",
+            "[focus]\nz_step_mm = 6\nsteps = 30\n",
+            "[focus]\nsteps = 1\n",
+            "[focus]\nsteps = 31\n",
+            "[focus]\nlength_mm = 0.5\n",
+            "[focus]\nspacing_mm = 21\n",
+            "[focus]\nfeed_mm_min = 0\n",
+            "[focus]\npower_percent = 0\n",
+            "[focus]\npower_percent = 101\n",
+            "[focus]\nz = 1\n",
+        ] {
+            assert!(parse(text).is_err(), "{text:?}");
+        }
     }
 }
