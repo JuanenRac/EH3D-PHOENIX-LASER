@@ -123,6 +123,7 @@ pub enum Msg {
     Dither,
     DitherFs,
     DitherAtkinson,
+    DitherBayer,
     DitherThreshold,
     Threshold,
     Feed,
@@ -183,7 +184,7 @@ pub enum Msg {
 }
 
 impl Msg {
-    pub const ALL: [Msg; 92] = [
+    pub const ALL: [Msg; 93] = [
         Msg::Language,
         Msg::Fit,
         Msg::Cancel,
@@ -219,6 +220,7 @@ impl Msg {
         Msg::Dither,
         Msg::DitherFs,
         Msg::DitherAtkinson,
+        Msg::DitherBayer,
         Msg::DitherThreshold,
         Msg::Threshold,
         Msg::Feed,
@@ -630,6 +632,16 @@ impl Msg {
                 "Atkinson",
                 "Atkinson",
                 "Atkinson",
+            ],
+            Msg::DitherBayer => [
+                "Bayer",
+                "Bayer",
+                "Bayer",
+                "Bayer",
+                "Bayer",
+                "Bayer",
+                "Bayer",
+                "Bayer",
             ],
             Msg::DitherThreshold => [
                 "Threshold",

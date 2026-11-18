@@ -17,7 +17,7 @@
 
 ---
 
-**Honesty check - what actually runs today:** a Rust library and a command line program (`phoenix-laser`) with 323 tests that run on a computer: turns an image into dots by dithering and writes the G-code of a laser that burns line by line with dynamic power and overscan, reads SVG and DXF drawings and writes the G-code that cuts their contours (the inside ones first, the width of the beam taken into account, bridges, several passes) and engraves their shapes with lines, with the settings of each layer in a file, and a power-against-feed test grid. It has a window (built with `--features gui`) that opens a picture or a drawing, shows the path of the laser, lets the settings be changed and exports the G-code, but the window has not been looked at on a screen yet; it has not been tried on a machine and it has not been checked against a collection of real files.
+**Honesty check - what actually runs today:** a Rust library and a command line program (`phoenix-laser`) with 330 tests that run on a computer: turns an image into dots by dithering and writes the G-code of a laser that burns line by line with dynamic power and overscan, reads SVG and DXF drawings and writes the G-code that cuts their contours (the inside ones first, the width of the beam taken into account, bridges, several passes) and engraves their shapes with lines, with the settings of each layer in a file, and a power-against-feed test grid. It has a window (built with `--features gui`) that opens a picture or a drawing, shows the path of the laser, lets the settings be changed and exports the G-code, but the window has not been looked at on a screen yet; it has not been tried on a machine and it has not been checked against a collection of real files.
 
 ---
 
@@ -30,7 +30,7 @@
 |---|---|
 | Version | `0.0.6` |
 | Maturity | Functional |
-| Tests | 323 |
+| Tests | 330 |
 | Stack | Rust |
 | On real hardware | Not tried: nothing here has run on a machine |
 
@@ -46,7 +46,7 @@ Each line is one part of this repository and the light says how far it is today.
 |---|---|---|
 | Core | 🟡 | turns an image into dots by dithering and writes the G-code of a laser that burns line by line with dynamic power and overscan, reads SVG and DXF drawings and cuts or engraves them by layer (ordered contours, beam width, bridges, passes, hatch), and a power-against-feed test grid; tested on a computer with normal and damaged input, not with a collection of real files. |
 | Command line | 🟡 | `phoenix-laser` (`engrave`, `calibrate`, `info`, `cut`, `vector`, `layers`) runs the same functions as the library and prints the result; every error comes back as a message and a non-zero exit code. |
-| Tests | 🟡 | 323 tests pass (`cargo test`), with normal cases, edge cases and damaged input. |
+| Tests | 🟡 | 330 tests pass (`cargo test`), with normal cases, edge cases and damaged input. |
 | Security | 🟡 | Plain safe Rust (`forbid(unsafe_code)`): nothing panics on the files it is given and a bad value is an error with its reason; no independent review. |
 | Window | 🟠 | Written (egui, `--features gui`): open or drop a picture or an SVG or DXF drawing, see the path of the laser (the cut in one colour, the travel dim), edit the table of layers, a calibration grid, zoom and pan, estimate the time, export; its logic is tested, but it has not been built or looked at on a screen yet. |
 | Real hardware | 🔴 | Not tried: nothing here has been run on a machine. |
@@ -62,6 +62,7 @@ Each line is one part of this repository and the light says how far it is today.
 * **The drawings** (`src/svg.rs`, `src/dxf.rs`, `src/flatten.rs`, `src/vector.rs`): a safe subset of SVG (paths with all their commands, shapes, transforms, groups, units) and the entities of a DXF (lines, polylines with arcs, arcs, circles, splines, units) become shapes in millimetres; scripts, images, `use`, declared entities and anything unknown are skipped or refused, the size, the depth, the number of elements and of points are limited by the settings, and curves become straight pieces within a tolerance.
 * **Cutting and engraving** (`src/order.rs`, `src/offset.rs`, `src/cut.rs`): the shapes are grouped by layer (DXF) or colour (SVG); each group is cut (loose lines joined, the contours inside another one first, the shortest travel, the width of the beam taken off on the right side, bridges left uncut, several passes with the focus moving on) or engraved (closed shapes filled with lines at an angle, by the even-odd rule) with its own settings.
 * **The settings file** (`src/vconfig.rs`, `docs/vector-settings.md`): every value that is tuned (the limits of the readers, the machine, the settings of each layer) is in a plain text file that is checked line by line; none of it is in the code.
+* **Ordered dithering** (`src/dither.rs`): `--dither bayer` (also in the window) decides each dot by its own place and grey with an 8 x 8 Bayer matrix, so the pattern is regular and the same grey always burns the same dots; the tests check that each level of the matrix appears once and that the darkness of a grey is kept.
 * **The tone curve** (`src/tone.rs`): before the dots are made the grey levels can be stretched to the full range (`--auto-level`), given more or less contrast and brightness, bent with a gamma or inverted, with one table of 256 entries; with the default values the picture is not changed at all.
 * **A checked G-code:** the program of a drawing is checked line by line before it is given: no laser on during a rapid move or at no speed, no `S` above full power, no move outside of the bed, `M5` at the end; the file is never written over the drawing or the settings it comes from.
 
@@ -105,7 +106,7 @@ The library is `eh3d_phoenix_laser` (`use eh3d_phoenix_laser::...`); the command
 
 ```text
 phoenix-laser engrave IMAGE OUT.nc --width-mm 50 [--dot-mm 0.1] [--feed 3000] [--power 50] [--smax 1000]
-              [--dither fs|atkinson|threshold] [--threshold 128] [--overscan MM|auto] [--accel 1000] [--origin X,Y] [--dry-run]
+              [--dither fs|atkinson|threshold|bayer] [--threshold 128] [--overscan MM|auto] [--accel 1000] [--origin X,Y] [--dry-run]
               [--gamma 1] [--contrast 0] [--brightness 0] [--invert] [--auto-level]
 phoenix-laser calibrate OUT.nc --powers 20,40,60,80 --feeds 1000,2000,3000 [--smax 1000]
 phoenix-laser info IMAGE
@@ -139,7 +140,7 @@ To take a picture of the window without opening it by hand, run it with `--shot 
 
 ## 🧪 Testing
 
-The suite has 323 tests (`cargo test`, run on Windows and Linux in the CI). They check the normal cases, the edge cases and damaged input: empty files, garbage and cut files never panic. The CI also runs `cargo fmt --check`, `cargo clippy` with warnings as errors and `python -I tools/ci_validate.py`.
+The suite has 330 tests (`cargo test`, run on Windows and Linux in the CI). They check the normal cases, the edge cases and damaged input: empty files, garbage and cut files never panic. The CI also runs `cargo fmt --check`, `cargo clippy` with warnings as errors and `python -I tools/ci_validate.py`.
 
 ## 🏗️ Build & Release
 

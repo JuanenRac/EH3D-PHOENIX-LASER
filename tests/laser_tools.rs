@@ -103,3 +103,38 @@ fn the_tone_options_do_not_change_the_picture_when_they_are_left_out() {
     assert!(ok, "{err}");
     assert_eq!(plain, same);
 }
+
+#[test]
+fn the_ordered_dithering_engraves_a_picture() {
+    let out = tmp("bayer.nc");
+    let (ok, text, err) = run(&[
+        "engrave",
+        GRADIENT,
+        &out,
+        "--width-mm",
+        "16",
+        "--dot-mm",
+        "0.5",
+        "--dither",
+        "bayer",
+    ]);
+    assert!(ok, "{err}");
+    assert!(text.contains("dots"), "{text}");
+    let gcode = std::fs::read_to_string(&out).unwrap();
+    assert!(gcode.contains("M4 S0") && gcode.trim_end().ends_with("M2"));
+}
+
+#[test]
+fn a_method_of_dithering_that_does_not_exist_names_the_ones_that_do() {
+    let (ok, _, err) = run(&[
+        "engrave",
+        GRADIENT,
+        "--width-mm",
+        "16",
+        "--dry-run",
+        "--dither",
+        "dots",
+    ]);
+    assert!(!ok);
+    assert!(err.contains("fs, atkinson, threshold or bayer"), "{err}");
+}

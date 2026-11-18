@@ -26,7 +26,7 @@ use std::process::ExitCode;
 const HELP: &str = "phoenix-laser: laser engraving from an image
 
   phoenix-laser engrave IMAGE OUT.nc --width-mm 50 [--dot-mm 0.1] [--feed 3000] [--power 50] [--smax 1000]
-                [--dither fs|atkinson|threshold] [--threshold 128] [--overscan MM|auto] [--accel 1000] [--origin X,Y] [--dry-run]
+                [--dither fs|atkinson|threshold|bayer] [--threshold 128] [--overscan MM|auto] [--accel 1000] [--origin X,Y] [--dry-run]
                 [--gamma 1] [--contrast 0] [--brightness 0] [--invert] [--auto-level]
   phoenix-laser calibrate OUT.nc --powers 20,40,60,80 --feeds 1000,2000,3000 [--smax 1000]
   phoenix-laser info IMAGE
@@ -343,16 +343,10 @@ fn run(mut args: Vec<String>) -> Result<(), String> {
                 .transpose()?
                 .unwrap_or(128.0)
                 .clamp(0.0, 255.0) as u8;
-            let method = match flag(&mut args, "--dither")?.as_deref().unwrap_or("fs") {
-                "fs" => Method::FloydSteinberg,
-                "atkinson" => Method::Atkinson,
-                "threshold" => Method::Threshold(threshold),
-                other => {
-                    return Err(format!(
-                        "--dither '{other}' is not fs, atkinson or threshold"
-                    ))
-                }
-            };
+            let word = flag(&mut args, "--dither")?.unwrap_or_else(|| "fs".to_string());
+            let method = Method::from_word(&word, threshold).ok_or_else(|| {
+                format!("--dither '{word}' is not fs, atkinson, threshold or bayer")
+            })?;
             let tone = take_tone(&mut args, Tone::default())?;
             let dry_run = switch(&mut args, "--dry-run");
             let needed = if dry_run { 1 } else { 2 };

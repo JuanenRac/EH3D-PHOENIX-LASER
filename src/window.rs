@@ -68,16 +68,23 @@ pub enum Mode {
 pub enum Kind {
     FloydSteinberg,
     Atkinson,
+    Bayer,
     Threshold,
 }
 
 impl Kind {
-    pub const ALL: [Kind; 3] = [Kind::FloydSteinberg, Kind::Atkinson, Kind::Threshold];
+    pub const ALL: [Kind; 4] = [
+        Kind::FloydSteinberg,
+        Kind::Atkinson,
+        Kind::Bayer,
+        Kind::Threshold,
+    ];
 
     pub fn label(self) -> Msg {
         match self {
             Kind::FloydSteinberg => Msg::DitherFs,
             Kind::Atkinson => Msg::DitherAtkinson,
+            Kind::Bayer => Msg::DitherBayer,
             Kind::Threshold => Msg::DitherThreshold,
         }
     }
@@ -728,6 +735,7 @@ impl Window {
         Ok(match self.kind {
             Kind::FloydSteinberg => Method::FloydSteinberg,
             Kind::Atkinson => Method::Atkinson,
+            Kind::Bayer => Method::Bayer,
             Kind::Threshold => {
                 Method::Threshold(self.number(Key::Threshold)?.clamp(0.0, 255.0) as u8)
             }
@@ -1997,6 +2005,6 @@ mod tests {
                 && !Job::OpenImage.is_export()
                 && !Job::OpenConfig.is_export()
         );
-        assert_eq!(Kind::ALL.len(), 3);
+        assert_eq!(Kind::ALL.len(), 4);
     }
 }

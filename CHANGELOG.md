@@ -4,6 +4,7 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+- **Ordered dithering (Bayer):** `engrave --dither bayer` decides every dot by its own place and grey with an 8 x 8 Bayer matrix, so the pattern is regular and a grey burns the same dots every time; it is also in the list of dithering methods of the window, in the eight languages.
 - **Tone curve for a picture:** `engrave` takes `--gamma`, `--contrast`, `--brightness`, `--invert` and `--auto-level`, which change the grey levels with one table of 256 entries before the dots are made (`src/tone.rs`). The default values leave the picture exactly as it is, and a value out of range is an error that names it.
 - **The README says the maturity of the manifest:** the badge and the Maturity row of the eight READMEs read functional, as the manifest does, and the check of the status lights now fails when they differ.
 - **`engrave` and `calibrate` write their file the way `cut` does:** through a temporary file that replaces the output only when it is complete, so a full disk leaves no half program under the final name; `engrave` refuses an output that is the image it is made from; `--smax` of both takes a whole number only (1000.7 is an error instead of 1000).
