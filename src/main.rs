@@ -6,7 +6,7 @@ mod cli_args;
 
 use cli_args::{finish, flag, num, switch};
 use eh3d_phoenix_laser::calibrate::{focus_test, grid, Grid};
-use eh3d_phoenix_laser::cut::{layers as layer_list, plan};
+use eh3d_phoenix_laser::cut::{layers as layer_list, plan, Plan};
 use eh3d_phoenix_laser::dither::{dither, Method};
 use eh3d_phoenix_laser::dxf::read_dxf;
 use eh3d_phoenix_laser::energy::describe;
@@ -19,6 +19,7 @@ use eh3d_phoenix_laser::raster::{engrave, overscan_for, Params};
 use eh3d_phoenix_laser::safety;
 use eh3d_phoenix_laser::svg::read_svg;
 use eh3d_phoenix_laser::tone::Tone;
+use eh3d_phoenix_laser::trace;
 use eh3d_phoenix_laser::vconfig::{self, KerfSide, LayerMode, LayerParams, Settings};
 use eh3d_phoenix_laser::vector::Drawing;
 use eh3d_phoenix_laser::window::{same_file, write_atomic};
@@ -42,6 +43,7 @@ const HELP: &str = "phoenix-laser: laser engraving from an image
                 [--tabs N] [--tab-width MM] [--smax N] [--overscan MM] [--origin X,Y] [--bed X,Y] [--max-power P] [--max-speed MM/MIN] [--profile NAME] [--material NAME --materials FILE] [--dpi N] [--tolerance MM] [--dry-run]
   phoenix-laser vector DRAWING OUT.nc [the options of cut] [--angle DEG] [--spacing MM]
   phoenix-laser layers DRAWING [--config FILE] [--dpi N]
+  phoenix-laser trace IMAGE OUT.nc --width-mm W [--threshold 128] [--invert] [--simplify MM] [--min-area MM2] [--engrave] [the options of cut]
   phoenix-laser materials FILE
   phoenix-laser focus OUT.nc --z-step MM [--z-start MM] [--steps 9] [--length 10] [--spacing 2] [--feed 1000] [--power 30] [--smax 1000] [--max-power P] [--max-speed MM/MIN] [--config FILE] [--profile NAME]
   phoenix-laser frame OUT.nc --size W,H | --gcode PROGRAM.nc [--origin X,Y] [--margin MM] [--feed 3000] [--laps 1] [--bed X,Y] [--smax N]
@@ -56,6 +58,7 @@ The tone options change the grey levels before the dots are made: --gamma (0.1 t
 DRAWING is an SVG or a DXF file. cut follows the contours (the ones inside first), vector fills the closed shapes with lines and follows the open ones. Every layer (or colour, for an SVG) has its
 own settings in the file of --config (see the documentation); an option of the command line changes them for all the layers. Without --config, cut cuts everything and vector engraves everything.
 layers lists the layers of a drawing with what would be done with each.
+trace follows the outline of a picture (a PNG or a PGM of a logo, a silhouette or a stencil) instead of burning it dot by dot: grey levels under --threshold are ink (over it with --invert), the border is found with sub-pixel precision, simplified until no point is farther than --simplify mm from the line, and specks smaller than --min-area mm2 are dropped. The result is a layer called trace that is cut, or filled with lines with --engrave, with the settings of --config, the options of cut and every limit of the file ([trace] holds max_pixels, max_contours and max_segments).
 materials FILE lists the materials of a library: a plain text file with a [material NAME] section for each material and way of working (see the documentation). --material NAME takes the power, the speed, the passes and the rest that the library says for it, before the other options, which win; the library is --materials FILE or the file named by PHOENIX_LASER_MATERIALS.
 focus writes a focus test: short lines side by side, each burnt with the head at another height (Z); the sharpest and thinnest line shows where the beam is in focus. --z-step has no default because which way is down depends on the machine: check it before running the program, which moves Z. The usual values live in the [focus] section of --config.
 frame writes a program that traces the rectangle of the work with the laser OFF, to see where it will land: --size W,H from the corner --origin, or the box of what burns in --gcode PROGRAM.nc (its real place). --margin widens it. A --pilot power (a percent, at most max_pilot_percent of [frame], 5 unless the file says another, and at most the limit of power) turns the laser on weakly and only with --confirm-laser-on; the [frame] section of --config holds the usual values.
@@ -332,6 +335,51 @@ fn read_drawing(path: &str, s: &Settings) -> Result<(Vec<u8>, Drawing), String> 
     Ok((bytes, drawing))
 }
 
+/// Writes the plan of a drawing made from the file `input` (nothing is written when `out` is `None`, a dry run) and says what it holds. The output is never written over the file it is
+/// made from or over the settings, and the header names the file with its hash.
+fn emit_plan(
+    input: &str,
+    out: Option<&str>,
+    bytes: &[u8],
+    planned: &Plan,
+    settings: &Settings,
+    sources: &[String],
+) -> Result<(), String> {
+    match out {
+        None => print!("dry run, nothing written: "),
+        Some(out) => {
+            let out_path = Path::new(out);
+            if same_file(Path::new(input), out_path)
+                || sources.iter().any(|c| same_file(Path::new(c), out_path))
+            {
+                return Err(format!(
+                    "{out}: the output would be written over a file it is made from"
+                ));
+            }
+            let name = Path::new(input)
+                .file_name()
+                .map_or(input.to_string(), |n| n.to_string_lossy().into_owned());
+            let tools = format!("laser, S 0-{}, vector layers", settings.machine.s_max);
+            let head = header(&Header {
+                generator: "phoenix-laser",
+                version: env!("CARGO_PKG_VERSION"),
+                source: Some((&name, sha256_hex(bytes))),
+                tools: &tools,
+            });
+            write_atomic(out_path, &format!("{head}{}", planned.gcode))?;
+        }
+    }
+    for note in &planned.warnings {
+        eprintln!("note: {note}");
+    }
+    let st = &planned.stats;
+    println!(
+        "{} layers, {} paths, {:.0} mm cut, {:.0} mm engraved, {:.0} mm of travel, about {:.0} s",
+        st.layers, st.contours, st.cut_mm, st.engrave_mm, st.travel_mm, st.seconds
+    );
+    Ok(())
+}
+
 /// `cut` and `vector`: a drawing becomes the G-code of the laser.
 fn drawing_job(mut args: Vec<String>, default_mode: LayerMode) -> Result<(), String> {
     let dry_run = switch(&mut args, "--dry-run");
@@ -347,40 +395,87 @@ fn drawing_job(mut args: Vec<String>, default_mode: LayerMode) -> Result<(), Str
     finish(&args, 2)?;
     let (bytes, drawing) = read_drawing(&args[0], &settings)?;
     let planned = plan(&drawing, &settings)?;
-    if dry_run {
-        print!("dry run, nothing written: ");
-    } else {
-        // never over the drawing or the settings that it was made from
-        let out = Path::new(&args[1]);
-        if same_file(Path::new(&args[0]), out)
-            || sources.iter().any(|c| same_file(Path::new(c), out))
-        {
+    emit_plan(
+        &args[0],
+        (!dry_run).then(|| args[1].as_str()),
+        &bytes,
+        &planned,
+        &settings,
+        &sources,
+    )
+}
+
+/// `trace`: the contours of a picture become the G-code of the laser, cut (or engraved with `--engrave`) like the shapes of a drawing.
+fn trace_job(mut args: Vec<String>) -> Result<(), String> {
+    let dry_run = switch(&mut args, "--dry-run");
+    let engrave = switch(&mut args, "--engrave");
+    let width = flag(&mut args, "--width-mm")?
+        .map(|v| num(&v, "--width-mm"))
+        .transpose()?
+        .ok_or("--width-mm is needed")?;
+    let (mut settings, sources) = drawing_settings(
+        &mut args,
+        if engrave {
+            LayerMode::Engrave
+        } else {
+            LayerMode::Cut
+        },
+    )?;
+    if let Some(v) = flag(&mut args, "--threshold")? {
+        let t = num(&v, "--threshold")?;
+        if !(t.fract() == 0.0 && (0.0..=255.0).contains(&t)) {
             return Err(format!(
-                "{}: the output would be written over a file it is made from",
-                args[1]
+                "--threshold '{v}' is not a whole number from 0 to 255"
             ));
         }
-        let name = Path::new(&args[0])
-            .file_name()
-            .map_or(args[0].clone(), |n| n.to_string_lossy().into_owned());
-        let tools = format!("laser, S 0-{}, vector layers", settings.machine.s_max);
-        let head = header(&Header {
-            generator: "phoenix-laser",
-            version: env!("CARGO_PKG_VERSION"),
-            source: Some((&name, sha256_hex(&bytes))),
-            tools: &tools,
+        settings.trace.threshold = t as u8;
+    }
+    if switch(&mut args, "--invert") {
+        settings.trace.invert = true;
+    }
+    if let Some(v) = flag(&mut args, "--simplify")? {
+        settings.trace.simplify_mm = num(&v, "--simplify")?;
+    }
+    if let Some(v) = flag(&mut args, "--min-area")? {
+        settings.trace.min_area_mm2 = num(&v, "--min-area")?;
+    }
+    settings.validate()?;
+    let needed = if dry_run { 1 } else { 2 };
+    if args.len() < needed {
+        return Err(if dry_run {
+            "trace needs a picture".into()
+        } else {
+            "trace needs a picture and an output file".into()
         });
-        write_atomic(out, &format!("{head}{}", planned.gcode))?;
     }
-    for note in &planned.warnings {
-        eprintln!("note: {note}");
+    finish(&args, 2)?;
+    let meta = fs::metadata(&args[0]).map_err(|e| format!("{}: {e}", args[0]))?;
+    if meta.len() > settings.read.limits.max_file_bytes as u64 {
+        return Err(format!(
+            "{}: the file is larger than {} bytes (max_file_bytes)",
+            args[0], settings.read.limits.max_file_bytes
+        ));
     }
-    let st = &planned.stats;
-    println!(
-        "{} layers, {} paths, {:.0} mm cut, {:.0} mm engraved, {:.0} mm of travel, about {:.0} s",
-        st.layers, st.contours, st.cut_mm, st.engrave_mm, st.travel_mm, st.seconds
+    let bytes = fs::read(&args[0]).map_err(|e| format!("{}: {e}", args[0]))?;
+    let img = from_bytes(&bytes).map_err(|e| format!("{}: {e}", args[0]))?;
+    let drawing = trace::trace(&img, width, &settings.trace, settings.read.limits)?;
+    let planned = plan(&drawing, &settings)?;
+    let points: usize = drawing.shapes.iter().map(|s| s.pts.len()).sum();
+    print!(
+        "{} contours of {} points from {} x {} pixels; ",
+        drawing.shapes.len(),
+        points,
+        img.w,
+        img.h
     );
-    Ok(())
+    emit_plan(
+        &args[0],
+        (!dry_run).then(|| args[1].as_str()),
+        &bytes,
+        &planned,
+        &settings,
+        &sources,
+    )
 }
 
 /// `layers`: what is in a drawing and what would be done with it.
@@ -592,6 +687,7 @@ fn run(mut args: Vec<String>) -> Result<(), String> {
         "cut" => drawing_job(args, LayerMode::Cut),
         "vector" => drawing_job(args, LayerMode::Engrave),
         "layers" => layers_job(args),
+        "trace" => trace_job(args),
         "focus" => {
             let config = flag(&mut args, "--config")?;
             let mut settings = Settings::default();

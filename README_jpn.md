@@ -68,6 +68,7 @@
 * **素材ライブラリ**（`src/materials.rs`、`examples/materials.cfg`）：素材と加工方法ごとに合う値（`[material 名前]`：出力、速度、パス数、焦点ステップ、ビーム幅、ハッチ、ドットの大きさ、ディザリング、トーンカーブ）を 1 つのテキストファイルに書き、`--material 名前 --materials ファイル` で選びます。コマンドラインのオプションが優先し、出力の上限は両方に対して有効です。`phoenix-laser materials ファイル` でライブラリを一覧できます。
 * **出力の上限**（`src/safety.rs`、`[machine]` の `max_power_percent`、`--max-power`）：出力が上限を超えるプログラムは、レイヤーまたはオプションを示すエラーで拒否され、黙って下げられることはありません。ファイルかオプションが指定するまで上限は 100 % です。
 * **マシンプロファイル**（設定ファイルの `[profile NAME]`、`--profile NAME`）：2 台のマシンを持つ人や、レーザーモジュールを交換する人は、それぞれにプロファイルを持てます（ベッドの移動量、出力の上限、速度の上限、フルパワーの値、ワット数）。選んだプロファイルがマシンになり、`--max-speed` は `--max-power` と並んで働きます。上限を超える速度は拒否され、黙って下げられることはありません。
+* **画像からの輪郭**（`src/trace.rs`、設定ファイルの `[trace]`）：`phoenix-laser trace` は、ロゴやシルエットやステンシルを 1 ドットずつ焼く代わりに、その輪郭をたどります。グレーレベルをしきい値で分け、サブピクセル精度の marching squares で境界を見つけ、どの点も線から `simplify_mm` 以上離れなくなるまで単純化し、小さなゴミは捨てます。結果は図面の 1 つのレイヤーで、同じ設定と同じ検査で切断（または線で塗りつぶし）され、画像サイズ、境界の断片、輪郭、点の数はすべて制限されています。
 * **規則的ディザリング**（`src/dither.rs`）：`--dither bayer`（ウィンドウでも選べます）は 8 x 8 のベイヤー行列で、各ドットをその位置と灰色だけで決めます。模様は規則的で、同じ灰色は常に同じドットを焼きます。テストは行列の各レベルが 1 回ずつ現れることと、灰色の濃さが保たれることを確認します。
 * **トーンカーブ**（`src/tone.rs`）：ドットを作る前に、グレー階調を全範囲に伸ばす（`--auto-level`）、コントラストと明るさを変える、ガンマで曲げる、反転する、といった調整を 256 項目の 1 つの表で行います。既定値では画像はまったく変わりません。
 * **検証済みの G コード：**図面のプログラムは渡す前に1行ずつ検証されます。早送り中や速度なしでレーザーが点灯せず、`S` は全出力を超えず、ベッド外への移動はなく、最後は `M5` です。元の図面や設定の上にファイルが書かれることはありません。
@@ -126,6 +127,7 @@ phoenix-laser cut DRAWING OUT.nc [--config FILE] [--power P] [--speed MM/MIN] [-
               [--tabs N] [--tab-width MM] [--smax N] [--overscan MM] [--origin X,Y] [--bed X,Y] [--max-power P] [--max-speed MM/MIN] [--profile NAME] [--material NAME --materials FILE] [--dpi N] [--tolerance MM] [--dry-run]
 phoenix-laser vector DRAWING OUT.nc [the options of cut] [--angle DEG] [--spacing MM]
 phoenix-laser layers DRAWING [--config FILE] [--dpi N]
+phoenix-laser trace IMAGE OUT.nc --width-mm W [--threshold 128] [--invert] [--simplify MM] [--min-area MM2] [--engrave] [the options of cut]
 phoenix-laser materials FILE
 phoenix-laser focus OUT.nc --z-step MM [--z-start MM] [--steps 9] [--length 10] [--spacing 2] [--feed 1000] [--power 30] [--smax 1000] [--max-power P] [--max-speed MM/MIN] [--config FILE] [--profile NAME]
 phoenix-laser frame OUT.nc --size W,H | --gcode PROGRAM.nc [--origin X,Y] [--margin MM] [--feed 3000] [--laps 1] [--bed X,Y] [--smax N]
@@ -180,13 +182,14 @@ cargo run --release --features gui -- --shot screen.png examples/plate.svg   # a
 EH3D-PHOENIX-LASER/
 ├── src/
 │   ├── lib.rs                                   ライブラリ：各コマンドが使うもの
-│   ├── main.rs                                  コマンドライン：engrave、calibrate、info、cut、vector、layers
+│   ├── main.rs                                  コマンドライン：engrave、calibrate、info、cut、vector、trace、layers
 │   ├── calibrate.rs                             ロジックの一部
 │   ├── cli_args.rs                              コマンドライン引数：小さなツールすべてで同じファイル
 │   ├── dither.rs                                ロジックの一部
 │   ├── materials.rs                             素材ライブラリ：出力、速度、パス、ドット、トーン
 │   ├── preview.rs                               G-code のプレビュー：移動、時間、危険、経路の SVG
 │   ├── tone.rs                                  画像のトーンカーブ：ドット化の前のレベル、コントラスト、明るさ、ガンマ、反転
+│   ├── trace.rs                                 画像の輪郭：しきい値、marching squares、単純化したリング（制限付き）
 │   ├── gcode_out.rs                             G コードの数値の書き方とヘッダーを一つに
 │   ├── raster.rs                                ロジックの一部
 │   ├── safety.rs                                出力の上限と、作業範囲を示す間レーザーを消しておく規則

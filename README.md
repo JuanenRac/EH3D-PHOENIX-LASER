@@ -68,6 +68,7 @@ Each line is one part of this repository and the light says how far it is today.
 * **The library of materials** (`src/materials.rs`, `examples/materials.cfg`): what suits each material and way of working is written once in a plain text file (`[material NAME]`: power, speed, passes, focus step, beam width, hatch, dot size, dithering and tone curve) and chosen with `--material NAME --materials FILE`; the options of the command line win over it and the limit of power holds over both. `phoenix-laser materials FILE` lists the library.
 * **The limit of power** (`src/safety.rs`, `max_power_percent` in `[machine]`, `--max-power`): a program whose power is over the limit is refused with an error that names the layer or the option, never lowered without a word; the limit is 100 % until a file or an option says less.
 * **Machine profiles** (`[profile NAME]` in the settings file, `--profile NAME`): a person with two machines, or a laser module that is changed for another, keeps one profile for each (the travel of the bed, the limit of power, the limit of speed, the value of full power and the watts); the chosen profile is the machine, and `--max-speed` joins `--max-power`: a speed over the limit is refused, never lowered.
+* **Contours from a picture** (`src/trace.rs`, `[trace]` in the settings file): `phoenix-laser trace` follows the outline of a logo, a silhouette or a stencil instead of burning it dot by dot; the grey levels are split at a threshold, the border is found with sub-pixel marching squares, simplified until no point is farther than `simplify_mm` from the line, and the specks are dropped; the result is a layer of a drawing, cut (or filled with lines) with the same settings and the same checks, and the size of the picture, the pieces of border, the contours and the points are all limited.
 * **Ordered dithering** (`src/dither.rs`): `--dither bayer` (also in the window) decides each dot by its own place and grey with an 8 x 8 Bayer matrix, so the pattern is regular and the same grey always burns the same dots; the tests check that each level of the matrix appears once and that the darkness of a grey is kept.
 * **The tone curve** (`src/tone.rs`): before the dots are made the grey levels can be stretched to the full range (`--auto-level`), given more or less contrast and brightness, bent with a gamma or inverted, with one table of 256 entries; with the default values the picture is not changed at all.
 * **A checked G-code:** the program of a drawing is checked line by line before it is given: no laser on during a rapid move or at no speed, no `S` above full power, no move outside of the bed, `M5` at the end; the file is never written over the drawing or the settings it comes from.
@@ -126,6 +127,7 @@ phoenix-laser cut DRAWING OUT.nc [--config FILE] [--power P] [--speed MM/MIN] [-
               [--tabs N] [--tab-width MM] [--smax N] [--overscan MM] [--origin X,Y] [--bed X,Y] [--max-power P] [--max-speed MM/MIN] [--profile NAME] [--material NAME --materials FILE] [--dpi N] [--tolerance MM] [--dry-run]
 phoenix-laser vector DRAWING OUT.nc [the options of cut] [--angle DEG] [--spacing MM]
 phoenix-laser layers DRAWING [--config FILE] [--dpi N]
+phoenix-laser trace IMAGE OUT.nc --width-mm W [--threshold 128] [--invert] [--simplify MM] [--min-area MM2] [--engrave] [the options of cut]
 phoenix-laser materials FILE
 phoenix-laser focus OUT.nc --z-step MM [--z-start MM] [--steps 9] [--length 10] [--spacing 2] [--feed 1000] [--power 30] [--smax 1000] [--max-power P] [--max-speed MM/MIN] [--config FILE] [--profile NAME]
 phoenix-laser frame OUT.nc --size W,H | --gcode PROGRAM.nc [--origin X,Y] [--margin MM] [--feed 3000] [--laps 1] [--bed X,Y] [--smax N]
@@ -180,13 +182,14 @@ The version lives in `Cargo.toml` and in `eh3d.project.json`; each version has i
 EH3D-PHOENIX-LASER/
 ├── src/
 │   ├── lib.rs                                   the library: what every command uses
-│   ├── main.rs                                  the command line: engrave, calibrate, info, cut, vector and layers
+│   ├── main.rs                                  the command line: engrave, calibrate, info, cut, vector, trace and layers
 │   ├── calibrate.rs                             a part of the logic
 │   ├── cli_args.rs                              the arguments of the command line, the same file in every small utility
 │   ├── dither.rs                                a part of the logic
 │   ├── materials.rs                             the library of materials: power, speed, passes, dots and tone
 │   ├── preview.rs                               the preview of a G-code program: its moves, time, dangers and an SVG of the path
 │   ├── tone.rs                                  the tone curve of a picture: levels, contrast, brightness, gamma and inversion before the dots
+│   ├── trace.rs                                 the contours of a picture: threshold, marching squares and simplified rings, with limits
 │   ├── gcode_out.rs                             the one way a G-code number is written and the standard header
 │   ├── raster.rs                                a part of the logic
 │   ├── safety.rs                                the limit of power, and the rules that keep the laser off while the work is shown

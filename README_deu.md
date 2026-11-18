@@ -68,6 +68,7 @@ Jede Zeile ist ein Teil dieses Repositorys, und die Ampel sagt, wie weit er heut
 * **Die Materialbibliothek** (`src/materials.rs`, `examples/materials.cfg`): Was zu einem Material und einer Arbeitsweise passt, steht einmal in einer Textdatei (`[material NAME]`: Leistung, Geschwindigkeit, Durchgänge, Fokusschritt, Strahlbreite, Schraffur, Punktgröße, Dithering und Tonkurve) und wird mit `--material NAME --materials DATEI` gewählt; die Optionen der Kommandozeile gehen vor, und die Leistungsgrenze gilt über beiden. `phoenix-laser materials DATEI` listet die Bibliothek.
 * **Die Leistungsgrenze** (`src/safety.rs`, `max_power_percent` in `[machine]`, `--max-power`): Ein Programm, dessen Leistung über der Grenze liegt, wird mit einem Fehler abgelehnt, der die Ebene oder die Option nennt, und nie stillschweigend gesenkt; die Grenze ist 100 %, bis eine Datei oder eine Option weniger sagt.
 * **Maschinenprofile** (`[profile NAME]` in der Einstellungsdatei, `--profile NAME`): Wer zwei Maschinen hat oder ein Lasermodul gegen ein anderes tauscht, führt für jede ein Profil (Verfahrweg des Tischs, Leistungsgrenze, Geschwindigkeitsgrenze, Wert der vollen Leistung und Watt); das gewählte Profil ist die Maschine, und `--max-speed` steht neben `--max-power`: Eine Geschwindigkeit über der Grenze wird abgelehnt, nie gesenkt.
+* **Konturen aus einem Bild** (`src/trace.rs`, `[trace]` in der Einstellungsdatei): `phoenix-laser trace` folgt dem Umriss eines Logos, einer Silhouette oder einer Schablone, statt ihn Punkt für Punkt zu brennen; die Graustufen werden an einer Schwelle getrennt, der Rand wird mit Marching Squares auf Subpixel-Genauigkeit gefunden, vereinfacht, bis kein Punkt weiter als `simplify_mm` von der Linie liegt, und Flecken werden verworfen; das Ergebnis ist eine Ebene einer Zeichnung, die mit denselben Einstellungen und Prüfungen geschnitten (oder mit Linien gefüllt) wird, und Bildgröße, Randstücke, Konturen und Punkte sind alle begrenzt.
 * **Geordnetes Dithering** (`src/dither.rs`): `--dither bayer` (auch im Fenster) entscheidet jeden Punkt nach seinem Ort und seinem Grau mit einer 8-x-8-Bayer-Matrix, das Muster ist also regelmäßig und dasselbe Grau brennt immer dieselben Punkte; die Tests prüfen, dass jede Stufe der Matrix einmal vorkommt und die Dunkelheit eines Grautons erhalten bleibt.
 * **Die Tonkurve** (`src/tone.rs`): Vor der Punkterzeugung lassen sich die Graustufen auf den vollen Bereich dehnen (`--auto-level`), Kontrast und Helligkeit ändern, mit einem Gamma krümmen oder invertieren, mit einer einzigen Tabelle von 256 Einträgen; mit den Standardwerten bleibt das Bild völlig unverändert.
 * **Ein geprüfter G-Code:** Das Programm einer Zeichnung wird vor der Ausgabe Zeile für Zeile geprüft: kein Laser an bei einer Eilbewegung oder ohne Geschwindigkeit, kein `S` über voller Leistung, keine Bewegung außerhalb des Bettes, `M5` am Ende; die Datei wird nie über die Zeichnung oder die Einstellungen geschrieben, aus denen sie stammt.
@@ -126,6 +127,7 @@ phoenix-laser cut DRAWING OUT.nc [--config FILE] [--power P] [--speed MM/MIN] [-
               [--tabs N] [--tab-width MM] [--smax N] [--overscan MM] [--origin X,Y] [--bed X,Y] [--max-power P] [--max-speed MM/MIN] [--profile NAME] [--material NAME --materials FILE] [--dpi N] [--tolerance MM] [--dry-run]
 phoenix-laser vector DRAWING OUT.nc [the options of cut] [--angle DEG] [--spacing MM]
 phoenix-laser layers DRAWING [--config FILE] [--dpi N]
+phoenix-laser trace IMAGE OUT.nc --width-mm W [--threshold 128] [--invert] [--simplify MM] [--min-area MM2] [--engrave] [the options of cut]
 phoenix-laser materials FILE
 phoenix-laser focus OUT.nc --z-step MM [--z-start MM] [--steps 9] [--length 10] [--spacing 2] [--feed 1000] [--power 30] [--smax 1000] [--max-power P] [--max-speed MM/MIN] [--config FILE] [--profile NAME]
 phoenix-laser frame OUT.nc --size W,H | --gcode PROGRAM.nc [--origin X,Y] [--margin MM] [--feed 3000] [--laps 1] [--bed X,Y] [--smax N]
@@ -180,13 +182,14 @@ Die Version steht in `Cargo.toml` und in `eh3d.project.json`; jede Version hat i
 EH3D-PHOENIX-LASER/
 ├── src/
 │   ├── lib.rs                                   die Bibliothek: was jeder Befehl nutzt
-│   ├── main.rs                                  die Befehlszeile: engrave, calibrate, info, cut, vector und layers
+│   ├── main.rs                                  die Befehlszeile: engrave, calibrate, info, cut, vector, trace und layers
 │   ├── calibrate.rs                             ein Teil der Logik
 │   ├── cli_args.rs                              die Argumente der Kommandozeile, dieselbe Datei in jedem kleinen Werkzeug
 │   ├── dither.rs                                ein Teil der Logik
 │   ├── materials.rs                             die Materialbibliothek: Leistung, Geschwindigkeit, Durchgänge, Töne
 │   ├── preview.rs                               die Vorschau eines G-Codes: Bewegungen, Zeit, Gefahren und ein SVG des Weges
 │   ├── tone.rs                                  die Tonkurve eines Bildes: Stufen, Kontrast, Helligkeit, Gamma und Inversion vor den Punkten
+│   ├── trace.rs                                 die Konturen eines Bildes: Schwelle, Marching Squares und vereinfachte Ringe, mit Grenzen
 │   ├── gcode_out.rs                             die einzige Schreibweise einer G-Code-Zahl und der Standardkopf
 │   ├── raster.rs                                ein Teil der Logik
 │   ├── safety.rs                                die Leistungsgrenze und die Regeln, die den Laser beim Zeigen der Arbeit aus lassen

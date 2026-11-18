@@ -43,14 +43,14 @@
         {
           "name": "main.rs",
           "desc": {
-            "en": "the command line: engrave, calibrate, info, cut, vector and layers",
-            "es": "la línea de comandos: engrave, calibrate, info, cut, vector y layers",
-            "de": "die Befehlszeile: engrave, calibrate, info, cut, vector und layers",
-            "fr": "la ligne de commande : engrave, calibrate, info, cut, vector et layers",
-            "it": "la riga di comando: engrave, calibrate, info, cut, vector e layers",
-            "ja": "コマンドライン：engrave、calibrate、info、cut、vector、layers",
-            "zh": "命令行：engrave、calibrate、info、cut、vector 和 layers",
-            "pt": "a linha de comandos: engrave, calibrate, info, cut, vector e layers"
+            "en": "the command line: engrave, calibrate, info, cut, vector, trace and layers",
+            "es": "la línea de comandos: engrave, calibrate, info, cut, vector, trace y layers",
+            "de": "die Befehlszeile: engrave, calibrate, info, cut, vector, trace und layers",
+            "fr": "la ligne de commande : engrave, calibrate, info, cut, vector, trace et layers",
+            "it": "la riga di comando: engrave, calibrate, info, cut, vector, trace e layers",
+            "ja": "コマンドライン：engrave、calibrate、info、cut、vector、trace、layers",
+            "zh": "命令行：engrave、calibrate、info、cut、vector、trace 和 layers",
+            "pt": "a linha de comandos: engrave, calibrate, info, cut, vector, trace e layers"
           }
         },
         {
@@ -129,6 +129,19 @@
             "ja": "画像のトーンカーブ：ドット化の前のレベル、コントラスト、明るさ、ガンマ、反転",
             "zh": "图像的色调曲线：生成点阵前的色阶、对比度、亮度、伽马和反相",
             "pt": "a curva de tons de uma imagem: níveis, contraste, brilho, gama e inversão antes dos pontos"
+          }
+        },
+        {
+          "name": "trace.rs",
+          "desc": {
+            "en": "the contours of a picture: threshold, marching squares and simplified rings, with limits",
+            "es": "los contornos de una imagen: umbral, marching squares y anillos simplificados, con límites",
+            "de": "die Konturen eines Bildes: Schwelle, Marching Squares und vereinfachte Ringe, mit Grenzen",
+            "fr": "les contours d'une image : seuil, marching squares et anneaux simplifiés, avec limites",
+            "it": "i contorni di un'immagine: soglia, marching squares e anelli semplificati, con limiti",
+            "ja": "画像の輪郭：しきい値、marching squares、単純化したリング（制限付き）",
+            "zh": "图像的轮廓：阈值、marching squares 和简化的环，带有限制",
+            "pt": "os contornos de uma imagem: limiar, marching squares e anéis simplificados, com limites"
           }
         },
         {

@@ -393,6 +393,63 @@ impl FocusSettings {
     }
 }
 
+/// How a picture is followed for its contours (`phoenix-laser trace`).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct TraceSettings {
+    /// From 0 to 255: a grey level under it is ink (over it with `invert`).
+    pub threshold: u8,
+    /// The light parts are ink and the dark parts are paper.
+    pub invert: bool,
+    /// A point is dropped when the line stays within this distance (mm) without it; 0 keeps them all.
+    pub simplify_mm: f64,
+    /// A contour that encloses less than this (mm2) is a speck and is left out.
+    pub min_area_mm2: f64,
+    /// A picture with more pixels than this is reduced before it is followed.
+    pub max_pixels: usize,
+    /// A picture with more contours than this is an error.
+    pub max_contours: usize,
+    /// A picture with more pieces of border than this is an error.
+    pub max_segments: usize,
+}
+
+impl Default for TraceSettings {
+    fn default() -> Self {
+        TraceSettings {
+            threshold: 128,
+            invert: false,
+            simplify_mm: 0.02,
+            min_area_mm2: 0.05,
+            max_pixels: 4_000_000,
+            max_contours: 20_000,
+            max_segments: 2_000_000,
+        }
+    }
+}
+
+impl TraceSettings {
+    pub fn validate(&self) -> Result<(), String> {
+        let range = |name: &str, v: f64, lo: f64, hi: f64| {
+            if v.is_finite() && (lo..=hi).contains(&v) {
+                Ok(())
+            } else {
+                Err(format!("trace {name} is {v}: it must be from {lo} to {hi}"))
+            }
+        };
+        range("simplify_mm", self.simplify_mm, 0.0, 5.0)?;
+        range("min_area_mm2", self.min_area_mm2, 0.0, 1_000_000.0)?;
+        for (name, v, hi) in [
+            ("max_pixels", self.max_pixels, 25_000_000),
+            ("max_contours", self.max_contours, 1_000_000),
+            ("max_segments", self.max_segments, 50_000_000),
+        ] {
+            if v == 0 || v > hi {
+                return Err(format!("trace {name} is {v}: it must be from 1 to {hi}"));
+            }
+        }
+        Ok(())
+    }
+}
+
 /// Where the lower left corner of the drawing goes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Align {
@@ -429,6 +486,7 @@ pub struct Settings {
     pub base_machine: Machine,
     pub frame: FrameSettings,
     pub focus: FocusSettings,
+    pub trace: TraceSettings,
     pub defaults: LayerParams,
     /// The settings of the layers that the file names, by name (lower case).
     pub layers: Vec<(String, LayerParams)>,
@@ -455,6 +513,7 @@ impl Default for Settings {
             base_machine: Machine::default(),
             frame: FrameSettings::default(),
             focus: FocusSettings::default(),
+            trace: TraceSettings::default(),
             defaults: LayerParams::default(),
             layers: Vec::new(),
         }
@@ -550,6 +609,7 @@ impl Settings {
         }
         self.frame.validate(m.max_power_percent)?;
         self.focus.validate()?;
+        self.trace.validate()?;
         self.defaults.validate(m.max_passes)?;
         if self.defaults.mode != LayerMode::Skip {
             crate::safety::check_power("power", self.defaults.power_percent, m.max_power_percent)
@@ -697,6 +757,16 @@ fn set_global(s: &mut Settings, section: &str, key: &str, value: &str) -> Result
         ("focus", "spacing_mm") => s.focus.spacing_mm = number(value)?,
         ("focus", "feed_mm_min") => s.focus.feed_mm_min = number(value)?,
         ("focus", "power_percent") => s.focus.power_percent = number(value)?,
+        ("trace", "threshold") => {
+            s.trace.threshold = u8::try_from(whole(value)?)
+                .map_err(|_| "trace threshold must be from 0 to 255".to_string())?
+        }
+        ("trace", "invert") => s.trace.invert = switch(value)?,
+        ("trace", "simplify_mm") => s.trace.simplify_mm = number(value)?,
+        ("trace", "min_area_mm2") => s.trace.min_area_mm2 = number(value)?,
+        ("trace", "max_pixels") => s.trace.max_pixels = to_usize(whole(value)?)?,
+        ("trace", "max_contours") => s.trace.max_contours = to_usize(whole(value)?)?,
+        ("trace", "max_segments") => s.trace.max_segments = to_usize(whole(value)?)?,
         ("frame", "feed_mm_min") => s.frame.feed_mm_min = number(value)?,
         ("frame", "laps") => {
             s.frame.laps =
@@ -759,7 +829,7 @@ pub fn parse(text: &str) -> Result<Settings, String> {
             let (word, rest) = head.split_once(char::is_whitespace).unwrap_or((head, ""));
             let word = word.to_ascii_lowercase();
             section = match word.as_str() {
-                "limits" | "read" | "order" | "offset" | "hatch" | "machine" | "frame" | "focus" | "defaults" if rest.trim().is_empty() => word,
+                "limits" | "read" | "order" | "offset" | "hatch" | "machine" | "frame" | "focus" | "trace" | "defaults" if rest.trim().is_empty() => word,
                 "layer" if !rest.trim().is_empty() => {
                     named.push(rest.trim().to_lowercase());
                     format!("layer {}", rest.trim().to_lowercase())
@@ -768,7 +838,7 @@ pub fn parse(text: &str) -> Result<Settings, String> {
                     named_profiles.push(rest.trim().to_lowercase());
                     format!("profile {}", rest.trim().to_lowercase())
                 }
-                _ => return Err(format!("line {line}: '[{head}]' is not a section (limits, read, order, offset, hatch, machine, frame, focus, defaults, layer NAME or profile NAME)")),
+                _ => return Err(format!("line {line}: '[{head}]' is not a section (limits, read, order, offset, hatch, machine, frame, focus, trace, defaults, layer NAME or profile NAME)")),
             };
             continue;
         }
@@ -1221,6 +1291,47 @@ mod tests {
         parse("[machine]\nmax_speed_mm_min = 100\n[defaults]\nspeed = 100\n").unwrap();
         // a speed at the limit is allowed
         parse("[machine]\nmax_speed_mm_min = 900\n[defaults]\nspeed = 100\n[layer red]\nspeed = 900\n").unwrap();
+    }
+
+    #[test]
+    fn the_trace_settings_are_read_and_the_defaults_are_the_ones_of_the_example() {
+        assert_eq!(Settings::default().trace, TraceSettings::default());
+        let s = parse(
+            "[trace]\nthreshold = 90\ninvert = on\nsimplify_mm = 0.1\nmin_area_mm2 = 1\nmax_pixels = 1000\nmax_contours = 10\nmax_segments = 5000\n",
+        )
+        .unwrap();
+        assert_eq!(
+            s.trace,
+            TraceSettings {
+                threshold: 90,
+                invert: true,
+                simplify_mm: 0.1,
+                min_area_mm2: 1.0,
+                max_pixels: 1000,
+                max_contours: 10,
+                max_segments: 5000,
+            }
+        );
+    }
+
+    #[test]
+    fn a_trace_setting_out_of_range_is_refused() {
+        for text in [
+            "[trace]\nthreshold = 256\n",
+            "[trace]\nthreshold = -1\n",
+            "[trace]\nthreshold = 1.5\n",
+            "[trace]\ninvert = maybe\n",
+            "[trace]\nsimplify_mm = -0.1\n",
+            "[trace]\nsimplify_mm = 5.1\n",
+            "[trace]\nmin_area_mm2 = -1\n",
+            "[trace]\nmax_pixels = 0\n",
+            "[trace]\nmax_pixels = 25000001\n",
+            "[trace]\nmax_contours = 0\n",
+            "[trace]\nmax_segments = 50000001\n",
+            "[trace]\nspeed = 5\n",
+        ] {
+            assert!(parse(text).is_err(), "{text:?}");
+        }
     }
 
     #[test]

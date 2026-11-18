@@ -68,6 +68,7 @@ Chaque ligne est une partie de ce dépôt et le feu dit où elle en est aujourd'
 * **La bibliothèque de matériaux** (`src/materials.rs`, `examples/materials.cfg`) : ce qui convient à chaque matériau et manière de travailler s'écrit une fois dans un fichier texte (`[material NOM]` : puissance, vitesse, passes, pas de mise au point, largeur du faisceau, hachures, taille du point, tramage et courbe de tons) et se choisit avec `--material NOM --materials FICHIER` ; les options de la ligne de commande l'emportent et la limite de puissance vaut sur les deux. `phoenix-laser materials FICHIER` liste la bibliothèque.
 * **La limite de puissance** (`src/safety.rs`, `max_power_percent` dans `[machine]`, `--max-power`) : un programme dont la puissance dépasse la limite est refusé avec une erreur qui nomme le calque ou l'option, jamais abaissé sans le dire ; la limite est de 100 % tant qu'un fichier ou une option n'en dit pas moins.
 * **Profils de machine** (`[profile NAME]` dans le fichier de réglages, `--profile NAME`) : qui a deux machines, ou change le module laser pour un autre, garde un profil pour chacune (la course du plateau, la limite de puissance, la limite de vitesse, la valeur de pleine puissance et les watts) ; le profil choisi est la machine, et `--max-speed` accompagne `--max-power` : une vitesse au-delà de la limite est refusée, jamais abaissée.
+* **Contours à partir d'une image** (`src/trace.rs`, `[trace]` dans le fichier de réglages) : `phoenix-laser trace` suit le contour d'un logo, d'une silhouette ou d'un pochoir au lieu de le brûler point par point ; les niveaux de gris sont séparés par un seuil, le bord est trouvé par marching squares à précision sous-pixel, simplifié jusqu'à ce qu'aucun point ne soit à plus de `simplify_mm` de la ligne, et les taches sont écartées ; le résultat est un calque de dessin, découpé (ou rempli de lignes) avec les mêmes réglages et les mêmes vérifications, et la taille de l'image, les morceaux de bord, les contours et les points sont tous limités.
 * **Tramage ordonné** (`src/dither.rs`) : `--dither bayer` (aussi dans la fenêtre) décide chaque point selon sa place et son gris avec une matrice de Bayer 8 x 8, donc le motif est régulier et le même gris brûle toujours les mêmes points ; les tests vérifient que chaque niveau de la matrice apparaît une fois et que le noircissement d'un gris est conservé.
 * **La courbe de tons** (`src/tone.rs`) : avant de fabriquer les points, les niveaux de gris peuvent être étirés sur toute la plage (`--auto-level`), recevoir plus ou moins de contraste et de luminosité, être courbés par un gamma ou inversés, avec une seule table de 256 entrées ; avec les valeurs par défaut l'image n'est pas modifiée du tout.
 * **Un G-code vérifié :** le programme d'un dessin est vérifié ligne par ligne avant d'être livré : aucun laser allumé pendant un déplacement rapide ou sans vitesse, aucun `S` au-dessus de la pleine puissance, aucun déplacement hors du plateau, `M5` à la fin ; le fichier n'est jamais écrit sur le dessin ni sur les réglages dont il provient.
@@ -126,6 +127,7 @@ phoenix-laser cut DRAWING OUT.nc [--config FILE] [--power P] [--speed MM/MIN] [-
               [--tabs N] [--tab-width MM] [--smax N] [--overscan MM] [--origin X,Y] [--bed X,Y] [--max-power P] [--max-speed MM/MIN] [--profile NAME] [--material NAME --materials FILE] [--dpi N] [--tolerance MM] [--dry-run]
 phoenix-laser vector DRAWING OUT.nc [the options of cut] [--angle DEG] [--spacing MM]
 phoenix-laser layers DRAWING [--config FILE] [--dpi N]
+phoenix-laser trace IMAGE OUT.nc --width-mm W [--threshold 128] [--invert] [--simplify MM] [--min-area MM2] [--engrave] [the options of cut]
 phoenix-laser materials FILE
 phoenix-laser focus OUT.nc --z-step MM [--z-start MM] [--steps 9] [--length 10] [--spacing 2] [--feed 1000] [--power 30] [--smax 1000] [--max-power P] [--max-speed MM/MIN] [--config FILE] [--profile NAME]
 phoenix-laser frame OUT.nc --size W,H | --gcode PROGRAM.nc [--origin X,Y] [--margin MM] [--feed 3000] [--laps 1] [--bed X,Y] [--smax N]
@@ -180,13 +182,14 @@ La version se trouve dans `Cargo.toml` et `eh3d.project.json` ; chaque version a
 EH3D-PHOENIX-LASER/
 ├── src/
 │   ├── lib.rs                                   la bibliothèque : ce que chaque commande utilise
-│   ├── main.rs                                  la ligne de commande : engrave, calibrate, info, cut, vector et layers
+│   ├── main.rs                                  la ligne de commande : engrave, calibrate, info, cut, vector, trace et layers
 │   ├── calibrate.rs                             une partie de la logique
 │   ├── cli_args.rs                              les arguments de la ligne de commande, le même fichier dans chaque petit utilitaire
 │   ├── dither.rs                                une partie de la logique
 │   ├── materials.rs                             la bibliothèque de matériaux : puissance, vitesse, passes, tons
 │   ├── preview.rs                               l'aperçu d'un G-code : mouvements, temps, dangers et un SVG du parcours
 │   ├── tone.rs                                  la courbe de tons d'une image : niveaux, contraste, luminosité, gamma et inversion avant les points
+│   ├── trace.rs                                 les contours d'une image : seuil, marching squares et anneaux simplifiés, avec limites
 │   ├── gcode_out.rs                             la seule façon d'écrire un nombre de G-code et l'en-tête standard
 │   ├── raster.rs                                une partie de la logique
 │   ├── safety.rs                                la limite de puissance et les règles qui gardent le laser éteint pendant qu'on montre le travail

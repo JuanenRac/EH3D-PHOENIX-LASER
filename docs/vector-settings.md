@@ -17,7 +17,7 @@ key = value
 key = value
 ```
 
-Sections: `[limits]`, `[read]`, `[order]`, `[offset]`, `[hatch]`, `[machine]`, `[frame]`, `[focus]`, `[defaults]`, one `[layer NAME]` for each layer or colour and one `[profile NAME]` for each machine. `[defaults]` is what a layer gets that the file
+Sections: `[limits]`, `[read]`, `[order]`, `[offset]`, `[hatch]`, `[machine]`, `[frame]`, `[focus]`, `[trace]`, `[defaults]`, one `[layer NAME]` for each layer or colour and one `[profile NAME]` for each machine. `[defaults]` is what a layer gets that the file
 does not name, and also what every `[layer NAME]` starts from (wherever in the file `[defaults]` is written). The switches are `on` and `off`.
 
 ## What a layer is
@@ -183,6 +183,22 @@ The focus test (`phoenix-laser focus`): short lines side by side, each burnt wit
 | `power_percent` | 30 | the power of the lines, from 0.001 to 100 percent of full power |
 
 The keys of `[focus]` are `z_start_mm`, `z_step_mm`, `steps`, `length_mm`, `spacing_mm`, `feed_mm_min` and `power_percent`.
+
+### `[trace]`
+
+The contours of a picture (`phoenix-laser trace IMAGE OUT.nc --width-mm W`): the grey levels are split at `threshold` into ink and paper, the border between them is found with marching squares (the crossing of every edge is placed by the grey levels on both sides, so the line does not follow the steps of the pixels), the pieces of border are joined into closed rings and each ring is simplified until no point is farther than `simplify_mm` from the line. The rings become the shapes of one layer called `trace`, which is cut (or, with `--engrave`, filled with lines) with the settings of `[layer trace]` or `[defaults]`, the options of `cut` and every check of a drawing. A picture that asks for more than a limit of this section is an error that names the limit; nothing is left to run for a long time.
+
+| Key | Default | Meaning |
+|---|---|---|
+| `threshold` | 128 | from 0 to 255: a grey level under it is ink (over it with `invert`); `--threshold` overrides it |
+| `invert` | off | the light parts are ink and the dark parts are paper; `--invert` turns it on |
+| `simplify_mm` | 0.02 | a point is dropped when the line stays within this distance (0 to 5 mm) without it; 0 keeps them all; `--simplify` overrides it |
+| `min_area_mm2` | 0.05 | a contour that encloses less than this is a speck and is left out with a note (0 to 1000000); `--min-area` overrides it |
+| `max_pixels` | 4000000 | a picture with more pixels is reduced to fit before it is followed (1 to 25000000), with a note |
+| `max_contours` | 20000 | a picture with more contours is an error (1 to 1000000) |
+| `max_segments` | 2000000 | a picture with more pieces of border is an error (1 to 50000000): it is too detailed to follow its outline |
+
+The keys of `[trace]` are `threshold`, `invert`, `simplify_mm`, `min_area_mm2`, `max_pixels`, `max_contours` and `max_segments`.
 
 ### `[defaults]` and `[layer NAME]`
 

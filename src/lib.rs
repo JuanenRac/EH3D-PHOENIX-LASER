@@ -26,6 +26,7 @@ pub mod safety;
 pub mod shot;
 pub mod svg;
 pub mod tone;
+pub mod trace;
 pub mod vconfig;
 pub mod vector;
 pub mod viewport;

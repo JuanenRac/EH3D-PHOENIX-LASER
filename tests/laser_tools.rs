@@ -652,6 +652,174 @@ fn profiles_file(name: &str, extra: &str) -> String {
     cfg
 }
 
+/// A grey picture of `size` x `size` pixels as a PGM file: a dark disc of radius `r` on white, with a white hole of radius `hole` in the middle (0 for none).
+fn disc_picture(name: &str, size: usize, r: f64, hole: f64) -> String {
+    let path = tmp(name);
+    let c = size as f64 / 2.0;
+    let mut text = format!("P2\n{size} {size}\n255\n");
+    for y in 0..size {
+        for x in 0..size {
+            let d = (x as f64 - c).hypot(y as f64 - c);
+            text.push_str(if d <= r && (hole == 0.0 || d > hole) {
+                "0 "
+            } else {
+                "255 "
+            });
+        }
+        text.push('\n');
+    }
+    std::fs::write(&path, text).unwrap();
+    path
+}
+
+#[test]
+fn the_contours_of_a_picture_are_cut_like_the_shapes_of_a_drawing() {
+    let pic = disc_picture("trace-ring.pgm", 60, 20.0, 8.0);
+    let nc = tmp("trace-ring.nc");
+    let (ok, out, err) = run(&[
+        "trace",
+        &pic,
+        &nc,
+        "--width-mm",
+        "30",
+        "--power",
+        "60",
+        "--speed",
+        "300",
+    ]);
+    assert!(ok, "{err}");
+    assert!(
+        out.contains("2 contours") && out.contains("60 x 60 pixels"),
+        "{out}"
+    );
+    assert!(out.contains("1 layers, 2 paths"), "{out}");
+    let text = written(&nc);
+    assert!(
+        text.contains("; layer trace: cut, 60 %, 300 mm/min"),
+        "{text}"
+    );
+    assert!(
+        text.contains("trace-ring.pgm") && text.contains("S600"),
+        "{text}"
+    );
+    assert!(text.trim_end().ends_with("M5\nM2"), "{text}");
+    // the work starts at the origin
+    let (ok, out, err) = run(&["preview", &nc]);
+    assert!(ok, "{err}");
+    assert!(out.contains(" mm at 0.0,0.0"), "{out}");
+}
+
+#[test]
+fn a_picture_can_be_engraved_by_its_shape_and_counted_with_a_dry_run() {
+    let pic = disc_picture("trace-disc.pgm", 60, 20.0, 0.0);
+    let nc = tmp("trace-disc.nc");
+    let (ok, out, err) = run(&[
+        "trace",
+        &pic,
+        &nc,
+        "--width-mm",
+        "30",
+        "--engrave",
+        "--spacing",
+        "0.2",
+    ]);
+    assert!(ok, "{err}");
+    assert!(out.contains("1 contours"), "{out}");
+    let text = written(&nc);
+    assert!(text.contains("; layer trace: engrave"), "{text}");
+    // a dry run counts and writes nothing
+    let nothing = tmp("trace-dry.nc");
+    let _ = std::fs::remove_file(&nothing);
+    let (ok, out, err) = run(&["trace", &pic, "--width-mm", "30", "--dry-run"]);
+    assert!(ok, "{err}");
+    assert!(out.contains("dry run, nothing written"), "{out}");
+    assert!(!std::path::Path::new(&nothing).exists());
+}
+
+#[test]
+fn the_trace_options_pick_what_is_followed_and_a_picture_with_nothing_to_follow_is_an_error() {
+    let pic = disc_picture("trace-opts.pgm", 40, 10.0, 0.0);
+    let ok_with = |extra: &[&str]| {
+        let mut a = vec!["trace", pic.as_str(), "--width-mm", "20", "--dry-run"];
+        a.extend(extra);
+        run(&a)
+    };
+    assert!(ok_with(&[]).0);
+    // nothing is ink under a threshold of 0
+    let (ok, _, err) = ok_with(&["--threshold", "0"]);
+    assert!(!ok);
+    assert!(err.contains("no contour"), "{err}");
+    // the dark disc is the paper when inverted, and then the picture itself is the ink: a contour round the whole picture and the hole of the disc
+    let (ok, out, err) = ok_with(&["--invert"]);
+    assert!(ok, "{err}");
+    assert!(out.contains("2 contours"), "{out}");
+    // a speck limit above the size of the disc drops everything
+    let (ok, _, err) = ok_with(&["--min-area", "100000"]);
+    assert!(!ok);
+    assert!(err.contains("no contour"), "{err}");
+    for (bad, word) in [
+        (["--threshold", "256"], "--threshold"),
+        (["--threshold", "1.5"], "--threshold"),
+        (["--simplify", "-1"], "simplify_mm"),
+        (["--simplify", "9"], "simplify_mm"),
+    ] {
+        let (ok, _, err) = ok_with(&bad);
+        assert!(!ok, "{bad:?}");
+        assert!(err.contains(word), "{err}");
+    }
+    // the width is needed, and must be possible
+    let (ok, _, err) = run(&["trace", &pic, "--dry-run"]);
+    assert!(!ok);
+    assert!(err.contains("--width-mm"), "{err}");
+    let (ok, _, err) = run(&["trace", &pic, "--width-mm", "0", "--dry-run"]);
+    assert!(!ok);
+    assert!(err.contains("width"), "{err}");
+}
+
+#[test]
+fn the_limits_of_the_trace_come_from_the_settings_file_and_the_output_never_lands_on_its_sources() {
+    let pic = disc_picture("trace-limits.pgm", 40, 10.0, 0.0);
+    let cfg = tmp("trace-limits.cfg");
+    std::fs::write(&cfg, "[trace]\nmax_segments = 10\n").unwrap();
+    let (ok, _, err) = run(&[
+        "trace",
+        &pic,
+        "--width-mm",
+        "20",
+        "--dry-run",
+        "--config",
+        &cfg,
+    ]);
+    assert!(!ok);
+    assert!(err.contains("max_segments"), "{err}");
+    std::fs::write(&cfg, "[trace]\nthreshold = 0\n").unwrap();
+    let (ok, _, err) = run(&[
+        "trace",
+        &pic,
+        "--width-mm",
+        "20",
+        "--dry-run",
+        "--config",
+        &cfg,
+    ]);
+    assert!(!ok);
+    assert!(err.contains("no contour"), "{err}");
+    // the output is never the picture or the settings
+    let (ok, _, err) = run(&["trace", &pic, &pic, "--width-mm", "20"]);
+    assert!(!ok);
+    assert!(err.contains("written over"), "{err}");
+    std::fs::write(&cfg, "[trace]\nthreshold = 128\n").unwrap();
+    let (ok, _, err) = run(&["trace", &pic, &cfg, "--width-mm", "20", "--config", &cfg]);
+    assert!(!ok);
+    assert!(err.contains("written over"), "{err}");
+    // a file that is not a picture is an error that names it
+    let junk = tmp("trace-junk.pgm");
+    std::fs::write(&junk, "not a picture").unwrap();
+    let (ok, _, err) = run(&["trace", &junk, "--width-mm", "20", "--dry-run"]);
+    assert!(!ok);
+    assert!(err.contains("trace-junk.pgm"), "{err}");
+}
+
 #[test]
 fn a_profile_is_chosen_with_the_option_and_its_limits_hold_over_the_work() {
     let cfg = profiles_file("profiles.cfg", "");
