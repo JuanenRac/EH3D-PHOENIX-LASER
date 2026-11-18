@@ -46,6 +46,8 @@ struct App {
     /// The picture mode, while the window is there only to be photographed.
     shot: Option<ShotState>,
     dialog: Option<Dialog>,
+    /// The window that asks whether the laser may be turned on (a frame with a pilot power); `Some(true)` when the file is to be written once the answer is yes.
+    confirm: Option<bool>,
     fit_pending: bool,
     /// The place of the work under the pointer.
     cursor: Option<(f64, f64)>,
@@ -73,6 +75,7 @@ impl App {
             win,
             shot: None,
             dialog: None,
+            confirm: None,
             fit_pending,
             cursor: None,
         }
@@ -118,15 +121,23 @@ impl App {
                 if ui
                     .add_enabled(can, egui::Button::new(Msg::Compute.tr(lang)))
                     .clicked()
-                    && self.win.compute()
                 {
-                    self.fit_pending = true;
+                    if self.win.needs_confirmation() {
+                        // the laser is not lit until the person has said so
+                        self.confirm = Some(false);
+                    } else if self.win.compute() {
+                        self.fit_pending = true;
+                    }
                 }
                 if ui
                     .add_enabled(can, egui::Button::new(Msg::ExportGcode.tr(lang)))
                     .clicked()
                 {
-                    self.ask(Job::ExportGcode);
+                    if self.win.needs_confirmation() {
+                        self.confirm = Some(true);
+                    } else {
+                        self.ask(Job::ExportGcode);
+                    }
                 }
                 if ui
                     .add_enabled(self.win.has_work(), egui::Button::new(Msg::Fit.tr(lang)))
@@ -164,6 +175,7 @@ impl App {
                         }
                         Mode::Calibrate => self.calibration_group(ui),
                         Mode::Focus => self.focus_group(ui),
+                        Mode::Frame => self.frame_group(ui),
                         Mode::Cut => {
                             self.vector_group(ui);
                             self.material_group(ui);
@@ -254,6 +266,7 @@ impl App {
                     Mode::Calibrate => Msg::ModeCalibrate,
                     Mode::Cut => Msg::ModeCut,
                     Mode::Focus => Msg::ModeFocus,
+                    Mode::Frame => Msg::ModeFrame,
                 };
                 egui::ComboBox::from_id_salt("mode")
                     .selected_text(shown.tr(lang))
@@ -266,6 +279,7 @@ impl App {
                         );
                         ui.selectable_value(&mut mode, Mode::Cut, Msg::ModeCut.tr(lang));
                         ui.selectable_value(&mut mode, Mode::Focus, Msg::ModeFocus.tr(lang));
+                        ui.selectable_value(&mut mode, Mode::Frame, Msg::ModeFrame.tr(lang));
                     });
                 if mode != self.win.mode {
                     self.win.set_mode(mode);
@@ -360,6 +374,66 @@ impl App {
                     self.field_for(ui, key);
                 }
             });
+    }
+
+    /// The frame of the work: the margin, the laps, the speed and the pilot power. The laser stays off with a pilot power of 0; with more, the window asks first.
+    fn frame_group(&mut self, ui: &mut egui::Ui) {
+        let lang = self.win.lang;
+        egui::CollapsingHeader::new(self.heading(Msg::SectionFrame))
+            .default_open(true)
+            .show(ui, |ui| {
+                self.fields_of(ui, Section::Frame);
+                for key in [Key::MaxPower, Key::MaxSpeed] {
+                    self.field_for(ui, key);
+                }
+                if self.win.pilot_percent().is_some_and(|p| p > 0.0) {
+                    ui.label(
+                        egui::RichText::new(Msg::NeedConfirm.tr(lang))
+                            .color(DANGER)
+                            .small(),
+                    );
+                }
+            });
+    }
+
+    /// The question before the laser is turned on: the work is not made, and nothing is written, until the answer is yes.
+    fn confirm_window(&mut self, ctx: &egui::Context) {
+        let Some(then_write) = self.confirm else {
+            return;
+        };
+        let lang = self.win.lang;
+        let power = self.win.pilot_percent().unwrap_or(0.0).to_string();
+        let mut answer: Option<bool> = None;
+        egui::Window::new(Msg::ConfirmTitle.tr(lang))
+            .collapsible(false)
+            .resizable(false)
+            .show(ctx, |ui| {
+                ui.label(
+                    egui::RichText::new(fill(Msg::ConfirmText.tr(lang), &[&power])).color(DANGER),
+                );
+                ui.horizontal(|ui| {
+                    if ui.button(Msg::ConfirmYes.tr(lang)).clicked() {
+                        answer = Some(true);
+                    }
+                    if ui.button(Msg::Cancel.tr(lang)).clicked() {
+                        answer = Some(false);
+                    }
+                });
+            });
+        match answer {
+            Some(true) => {
+                self.confirm = None;
+                self.win.pilot_confirmed = true;
+                if self.win.compute() {
+                    self.fit_pending = true;
+                    if then_write {
+                        self.ask(Job::ExportGcode);
+                    }
+                }
+            }
+            Some(false) => self.confirm = None,
+            None => {}
+        }
     }
 
     /// The focus test: the lines, the heights and the power and speed they are burnt with. The step of the height has no default, and the test moves Z, which the person is told.
@@ -868,6 +942,7 @@ impl eframe::App for App {
         self.side_panel(ui);
         self.canvas(ui);
         self.dialog_window(&ctx);
+        self.confirm_window(&ctx);
         self.shot_tick(&ctx);
     }
 }

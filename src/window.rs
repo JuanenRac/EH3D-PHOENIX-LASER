@@ -6,15 +6,19 @@ use crate::calibrate::{focus_test, grid, Grid};
 use crate::cut::{layers as layer_list, plan as plan_cut};
 use crate::dither::{dither, Method};
 use crate::dxf::read_dxf;
+use crate::frame::{self, Frame};
 use crate::gcode_out::{header, sha256_hex, Header};
 use crate::image::{from_bytes, Gray};
 use crate::lang::{fill, Lang, Msg};
 use crate::materials::{self, Library, Material};
+use crate::preview;
 use crate::raster::{engrave, overscan_for, Params};
 use crate::safety;
 use crate::svg::read_svg;
 use crate::tone::Tone;
-use crate::vconfig::{self, FocusSettings, KerfSide, LayerMode, LayerParams, Settings};
+use crate::vconfig::{
+    self, FocusSettings, FrameSettings, KerfSide, LayerMode, LayerParams, Settings,
+};
 use crate::vector::{Drawing, ReadOptions};
 use crate::viewport::Viewport;
 use std::path::{Path, PathBuf};
@@ -70,6 +74,8 @@ pub enum Mode {
     Cut,
     /// The focus test: short lines side by side, each burnt with the head at another height.
     Focus,
+    /// The frame of the work: the rectangle that holds it, traced with the laser off (or, only when the person confirms it, with a weak pilot power).
+    Frame,
 }
 
 /// How a grey picture becomes dots.
@@ -139,6 +145,10 @@ pub enum Key {
     FocusSpacing,
     FocusFeed,
     FocusPower,
+    FrameMargin,
+    FramePilot,
+    FrameLaps,
+    FrameFeed,
 }
 
 /// The group of the side panel a setting belongs to.
@@ -149,6 +159,7 @@ pub enum Section {
     Calibration,
     Vector,
     Focus,
+    Frame,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -203,6 +214,10 @@ fn default_fields() -> Vec<Field> {
         f(Key::FocusSpacing, Msg::FocusSpacing, Section::Focus, "2"),
         f(Key::FocusFeed, Msg::Feed, Section::Focus, "1000"),
         f(Key::FocusPower, Msg::Power, Section::Focus, "30"),
+        f(Key::FrameMargin, Msg::Margin, Section::Frame, "0"),
+        f(Key::FramePilot, Msg::PilotPower, Section::Frame, "0"),
+        f(Key::FrameLaps, Msg::Laps, Section::Frame, "1"),
+        f(Key::FrameFeed, Msg::FrameFeed, Section::Frame, "3000"),
     ]
 }
 
@@ -484,6 +499,13 @@ pub enum Summary {
         lines: u32,
         length_mm: f64,
     },
+    /// The rectangle of the work; `pilot_percent` is 0 when the laser stays off.
+    Framed {
+        width_mm: f64,
+        height_mm: f64,
+        laps: u32,
+        pilot_percent: f64,
+    },
     Cut {
         layers: usize,
         paths: usize,
@@ -528,6 +550,8 @@ pub enum Status {
     Written(String),
     NeedImage,
     NeedVector,
+    /// The work would turn the laser on and the person has not confirmed it.
+    NeedConfirm,
     BadValue(Msg),
     SameFile(String),
     /// A library of materials was read: its name and how many materials it holds.
@@ -543,6 +567,7 @@ impl Status {
             self,
             Status::NeedImage
                 | Status::NeedVector
+                | Status::NeedConfirm
                 | Status::BadValue(_)
                 | Status::SameFile(_)
                 | Status::Failed(_)
@@ -612,6 +637,27 @@ impl Status {
                 Msg::FocusMade.tr(lang),
                 &[&lines.to_string(), &format!("{length_mm}")],
             ),
+            Status::Done(Summary::Framed {
+                width_mm,
+                height_mm,
+                laps,
+                pilot_percent,
+            }) => {
+                let (w, h, l) = (
+                    format!("{width_mm:.1}"),
+                    format!("{height_mm:.1}"),
+                    laps.to_string(),
+                );
+                if *pilot_percent > 0.0 {
+                    fill(
+                        Msg::FrameDonePilot.tr(lang),
+                        &[&w, &h, &l, &format!("{pilot_percent}")],
+                    )
+                } else {
+                    fill(Msg::FrameDone.tr(lang), &[&w, &h, &l])
+                }
+            }
+            Status::NeedConfirm => Msg::NeedConfirm.tr(lang).to_string(),
             Status::Written(name) => fill(Msg::Written.tr(lang), &[name]),
             Status::NeedImage => Msg::NeedImage.tr(lang).to_string(),
             Status::NeedVector => Msg::NeedVector.tr(lang).to_string(),
@@ -642,6 +688,10 @@ pub struct Window {
     pub materials_path: Option<PathBuf>,
     /// The name of the material that was applied last.
     pub material: Option<String>,
+    /// The work that the frame is made of: the picture or the drawing, whichever was opened or chosen last.
+    pub work_mode: Mode,
+    /// The person has confirmed that the frame may turn the laser on. Any change to the window takes the confirmation back, and so does writing the frame.
+    pub pilot_confirmed: bool,
     /// The overscan is worked out from the feed and the acceleration instead of being typed.
     pub overscan_auto: bool,
     pub picture: Option<Picture>,
@@ -676,6 +726,8 @@ impl Window {
             materials: None,
             materials_path: None,
             material: None,
+            work_mode: Mode::Engrave,
+            pilot_confirmed: false,
             overscan_auto: false,
             picture: None,
             vector: None,
@@ -701,12 +753,15 @@ impl Window {
     pub fn can_compute(&self) -> bool {
         match self.mode {
             Mode::Calibrate | Mode::Focus => true,
+            Mode::Frame => self.framed_mode().is_some(),
             Mode::Engrave => self.picture.is_some(),
             Mode::Cut => self.vector.is_some(),
         }
     }
 
     fn mark_stale(&mut self) {
+        // whatever changes, the laser is not lit unless the person says it again
+        self.pilot_confirmed = false;
         if self.done.is_some() {
             self.stale = true;
         }
@@ -725,6 +780,9 @@ impl Window {
     pub fn set_mode(&mut self, mode: Mode) {
         if self.mode != mode {
             self.mode = mode;
+            if matches!(mode, Mode::Engrave | Mode::Cut) {
+                self.work_mode = mode;
+            }
             self.mark_stale();
         }
     }
@@ -896,6 +954,7 @@ impl Window {
                 Some(p.path.with_file_name(format!("{stem}.nc")))
             }
             (_, Mode::Focus) => Some(PathBuf::from("focus.nc")),
+            (_, Mode::Frame) => Some(PathBuf::from("frame.nc")),
             _ => Some(PathBuf::from("calibration.nc")),
         }
     }
@@ -920,6 +979,7 @@ impl Window {
                     gray,
                 });
                 // what was worked out from the old picture is not valid any more
+                self.work_mode = Mode::Engrave;
                 if matches!(self.mode, Mode::Engrave | Mode::Cut) {
                     self.mode = Mode::Engrave;
                     self.warnings.clear();
@@ -1033,6 +1093,7 @@ impl Window {
                 });
                 self.rebuild_rows();
                 self.mode = Mode::Cut;
+                self.work_mode = Mode::Cut;
                 self.done = None;
                 self.segs.clear();
                 self.stale = false;
@@ -1088,6 +1149,11 @@ impl Window {
                 self.put(Key::FocusSpacing, t(s.focus.spacing_mm));
                 self.put(Key::FocusFeed, t(s.focus.feed_mm_min));
                 self.put(Key::FocusPower, t(s.focus.power_percent));
+                self.put(Key::FrameMargin, t(s.frame.margin_mm));
+                // a pilot power in the file is only a value to show: the laser still needs the confirmation of the person
+                self.put(Key::FramePilot, t(s.frame.pilot_percent));
+                self.put(Key::FrameLaps, s.frame.laps.to_string());
+                self.put(Key::FrameFeed, t(s.frame.feed_mm_min));
                 self.put(Key::MaxPower, t(s.machine.max_power_percent));
                 self.put(Key::MaxSpeed, t(s.machine.max_speed_mm_min));
                 self.put(Key::Gamma, t(s.tone.gamma));
@@ -1252,6 +1318,7 @@ impl Window {
             Mode::Calibrate => self.calibrate_job(),
             Mode::Cut => self.cut_job(),
             Mode::Focus => self.focus_job(),
+            Mode::Frame => self.frame_job(),
         };
         match made {
             Ok(done) => {
@@ -1259,7 +1326,7 @@ impl Window {
                 let (segs, cut) = passes_of(
                     &done.gcode,
                     done.s_max,
-                    matches!(self.mode, Mode::Cut | Mode::Focus),
+                    matches!(self.mode, Mode::Cut | Mode::Focus | Mode::Frame),
                 );
                 self.segs = segs;
                 self.truncated = cut;
@@ -1336,6 +1403,111 @@ impl Window {
         })
     }
 
+    /// The work that the frame is made of: the drawing when it was the last thing opened or chosen (or the only thing open), the picture otherwise.
+    pub fn framed_mode(&self) -> Option<Mode> {
+        match (
+            self.work_mode,
+            self.picture.is_some(),
+            self.vector.is_some(),
+        ) {
+            (Mode::Cut, _, true) | (_, false, true) => Some(Mode::Cut),
+            (_, true, _) => Some(Mode::Engrave),
+            _ => None,
+        }
+    }
+
+    /// The pilot power of the boxes of the frame (a percent), when the box holds a number.
+    pub fn pilot_percent(&self) -> Option<f64> {
+        self.number(Key::FramePilot).ok()
+    }
+
+    /// The frame would turn the laser on and the person has not confirmed it yet: the window asks, and nothing is worked out or written until the answer is yes.
+    pub fn needs_confirmation(&self) -> bool {
+        self.mode == Mode::Frame
+            && !self.pilot_confirmed
+            && self.pilot_percent().is_some_and(|p| p > 0.0)
+    }
+
+    /// The frame of the work that is open, worked out like `phoenix-laser frame --gcode`: the box of what burns, `margin` wider, traced `laps` times. The laser stays off unless the
+    /// pilot power is more than 0 *and* the person has confirmed it (`pilot_confirmed`); the pilot power obeys the cap of `[frame]` and the limit of power, and the frame must fit the bed
+    /// of the settings file when it has one.
+    fn frame_job(&self) -> Result<Done, Status> {
+        let work = match self.framed_mode() {
+            Some(Mode::Cut) => self.cut_job()?,
+            Some(_) => self.engrave_job()?,
+            None => return Err(Status::NeedImage),
+        };
+        let report = preview::analyse(&preview::read(&work.gcode), &preview::Options::default())
+            .map_err(Status::Failed)?;
+        let (lo, hi) = report
+            .burn_bounds
+            .or(report.bounds)
+            .ok_or_else(|| Status::Failed("the work has no move in the plane".to_string()))?;
+        let pilot_requested = self.number(Key::FramePilot)?;
+        let feed_mm_min = self.number(Key::FrameFeed)?;
+        let laps = self.whole(Key::FrameLaps, 0.0, 1000.0)?;
+        let margin_mm = self.number(Key::FrameMargin)?;
+        let (max_power, max_speed) = self.limits()?;
+        // the laser is not lit unless the person said so, and then only up to the cap and the limit of power
+        if pilot_requested > 0.0 && !self.pilot_confirmed {
+            return Err(Status::NeedConfirm);
+        }
+        let max_pilot_percent = self.settings.frame.max_pilot_percent;
+        let pilot = safety::pilot_percent(
+            pilot_requested,
+            self.pilot_confirmed,
+            max_power,
+            max_pilot_percent,
+        )
+        .map_err(Status::Failed)?;
+        let settings = FrameSettings {
+            feed_mm_min,
+            laps,
+            margin_mm,
+            pilot_percent: pilot,
+            max_pilot_percent,
+        };
+        settings.validate(max_power).map_err(Status::Failed)?;
+        safety::check_speed("the speed of the frame", settings.feed_mm_min, max_speed)
+            .map_err(Status::Failed)?;
+        let pilot_s = frame::pilot_value(work.s_max, pilot).map_err(Status::Failed)?;
+        let (lo, hi) = frame::grow(lo, hi, settings.margin_mm);
+        let gcode = frame::gcode(
+            &Frame {
+                lo,
+                hi,
+                feed_mm_min: settings.feed_mm_min,
+                laps: settings.laps,
+                s_max: work.s_max,
+                pilot_s,
+            },
+            self.settings.machine.bed_mm,
+        )
+        .map_err(Status::Failed)?;
+        let tools = if pilot_s > 0 {
+            format!(
+                "laser, S 0-{}, frame of the work with a pilot power of S{pilot_s}",
+                work.s_max
+            )
+        } else {
+            "laser OFF, frame of the work".to_string()
+        };
+        Ok(Done {
+            gcode,
+            source: None,
+            tools,
+            s_max: work.s_max,
+            line_mm: 0.1,
+            summary: Summary::Framed {
+                width_mm: hi.0 - lo.0,
+                height_mm: hi.1 - lo.1,
+                laps: settings.laps,
+                pilot_percent: pilot,
+            },
+            notes: work.notes,
+        })
+    }
+
     /// The focus test of the boxes of its group, worked out like `phoenix-laser focus`: its power and its speed obey the limits, and the step of the height has no default.
     fn focus_job(&self) -> Result<Done, Status> {
         let f = FocusSettings {
@@ -1399,6 +1571,11 @@ impl Window {
         if (self.done.is_none() || self.stale) && !self.compute() {
             return false;
         }
+        // a frame that lights the laser is written only with the confirmation of the person, every time
+        if self.needs_confirmation() {
+            self.status = Status::NeedConfirm;
+            return false;
+        }
         let inputs = [
             self.picture.as_ref().map(|p| &p.path),
             self.vector.as_ref().map(|v| &v.path),
@@ -1421,6 +1598,7 @@ impl Window {
         match write_atomic(path, &format!("{head}{}", done.gcode)) {
             Ok(()) => {
                 self.status = Status::Written(name_of(path));
+                self.pilot_confirmed = false;
                 true
             }
             Err(e) => {
@@ -2666,5 +2844,210 @@ mod tests {
             text_of(&plain, Key::FocusPower),
             format!("{}", d.power_percent)
         );
+    }
+
+    /// The frame that the command line writes for the same work, to compare with.
+    fn frame_of(w: &Window, margin: f64, laps: u32, pilot_s: u32) -> String {
+        let work = w.engrave_job().unwrap();
+        let r =
+            preview::analyse(&preview::read(&work.gcode), &preview::Options::default()).unwrap();
+        let (lo, hi) = r.burn_bounds.or(r.bounds).unwrap();
+        let (lo, hi) = frame::grow(lo, hi, margin);
+        frame::gcode(
+            &Frame {
+                lo,
+                hi,
+                feed_mm_min: 3000.0,
+                laps,
+                s_max: 1000,
+                pilot_s,
+            },
+            None,
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn the_frame_of_the_work_is_traced_with_the_laser_off_like_the_command_line_does() {
+        let (_s, mut w) = ready("frame");
+        w.set_mode(Mode::Frame);
+        assert!(w.can_compute());
+        assert!(!w.needs_confirmation());
+        assert!(w.compute());
+        let done = w.done.as_ref().unwrap();
+        assert_eq!(done.gcode, frame_of(&w, 0.0, 1, 0));
+        // nothing sets a power or turns the spindle on
+        assert!(!done.gcode.contains(" S") && !done.gcode.contains("M3"));
+        assert_eq!(done.tools, "laser OFF, frame of the work");
+        let Summary::Framed {
+            width_mm,
+            height_mm,
+            laps,
+            pilot_percent,
+        } = done.summary
+        else {
+            panic!("{:?}", done.summary)
+        };
+        assert!(width_mm > 0.0 && height_mm > 0.0);
+        assert_eq!((laps, pilot_percent), (1, 0.0));
+        assert!(w.status.text(Lang::En).ends_with("1 lap(s), laser off"));
+        assert!(w.status.text(Lang::De).ends_with("1 Runde(n), Laser aus"));
+        // the margin and the laps change the rectangle and the trace
+        set(&mut w, Key::FrameMargin, "2");
+        set(&mut w, Key::FrameLaps, "2");
+        assert!(w.compute());
+        assert_eq!(w.done.as_ref().unwrap().gcode, frame_of(&w, 2.0, 2, 0));
+        // the name offered and the header
+        assert_eq!(
+            w.suggested_output_for(Job::ExportGcode),
+            Some(PathBuf::from("frame.nc"))
+        );
+    }
+
+    #[test]
+    fn a_frame_that_lights_the_laser_needs_the_confirmation_of_the_person_every_time() {
+        let (s, mut w) = ready("frame-pilot");
+        w.set_mode(Mode::Frame);
+        set(&mut w, Key::FramePilot, "2");
+        // asking for a light is not enough: nothing is worked out, nothing is written
+        assert!(w.needs_confirmation());
+        assert!(!w.compute());
+        assert_eq!(w.status, Status::NeedConfirm);
+        assert!(w.status.is_problem());
+        assert!(w.done.is_none());
+        let out = s.0.join("frame.nc");
+        assert!(!w.export(&out));
+        assert!(!out.exists());
+        // the person confirms: the laser is lit weakly with M3 and turned off with M5 before the end
+        w.pilot_confirmed = true;
+        assert!(!w.needs_confirmation());
+        assert!(w.compute());
+        let done = w.done.as_ref().unwrap();
+        assert_eq!(done.gcode, frame_of(&w, 0.0, 1, 20));
+        assert!(done.gcode.contains("M3 S20\n") && done.gcode.contains("M5\nM2\n"));
+        assert!(done.tools.contains("pilot power of S20"));
+        assert!(w.status.text(Lang::En).ends_with("laser ON at 2 %"));
+        assert!(w.status.text(Lang::Pt).ends_with("laser LIGADO a 2 %"));
+        // the confirmation does not survive a change of any box...
+        set(&mut w, Key::FrameMargin, "1");
+        assert!(!w.pilot_confirmed && w.needs_confirmation() && w.stale);
+        w.pilot_confirmed = true;
+        assert!(w.compute());
+        // ...nor a change of mode...
+        w.set_mode(Mode::Engrave);
+        w.set_mode(Mode::Frame);
+        assert!(!w.pilot_confirmed && w.needs_confirmation());
+        // ...nor writing the file: the next one is confirmed again
+        w.pilot_confirmed = true;
+        assert!(w.export(&out));
+        assert!(!w.pilot_confirmed);
+        assert!(fs::read_to_string(&out).unwrap().contains("M3 S20\n"));
+        let again = s.0.join("again.nc");
+        assert!(!w.export(&again));
+        assert_eq!(w.status, Status::NeedConfirm);
+        assert!(!again.exists());
+    }
+
+    #[test]
+    fn the_pilot_power_of_the_frame_obeys_the_cap_the_limit_and_the_bed() {
+        let (s, mut w) = ready("frame-caps");
+        w.set_mode(Mode::Frame);
+        let confirm = |w: &mut Window| w.pilot_confirmed = true;
+        // the cap of [frame] is 5 % unless the settings file says another
+        set(&mut w, Key::FramePilot, "6");
+        confirm(&mut w);
+        assert!(!w.compute());
+        assert!(matches!(&w.status, Status::Failed(e) if e.contains("max_pilot_percent")));
+        let cfg = s.write(
+            "cap.cfg",
+            "[frame]\nmax_pilot_percent = 10\npilot_percent = 8\n",
+        );
+        assert!(w.load_config(&cfg));
+        // a pilot power in the file is only shown in the box: the laser still needs the confirmation
+        assert_eq!(text_of(&w, Key::FramePilot), "8");
+        assert!(w.needs_confirmation());
+        confirm(&mut w);
+        assert!(w.compute());
+        // the limit of power of the machine is over the cap
+        set(&mut w, Key::MaxPower, "5");
+        confirm(&mut w);
+        assert!(!w.compute());
+        assert!(matches!(&w.status, Status::Failed(e) if e.contains("max_power_percent")));
+        set(&mut w, Key::MaxPower, "100");
+        // a pilot power that rounds to nothing is an error and not a laser that stays off
+        set(&mut w, Key::FramePilot, "0.01");
+        confirm(&mut w);
+        assert!(!w.compute());
+        // a negative pilot power, a pilot power that is not a number
+        set(&mut w, Key::FramePilot, "-1");
+        confirm(&mut w);
+        assert!(!w.compute());
+        set(&mut w, Key::FramePilot, "dim");
+        assert!(!w.needs_confirmation());
+        assert!(!w.compute());
+        assert_eq!(w.status, Status::BadValue(Msg::PilotPower));
+        // the speed obeys the limit of speed
+        set(&mut w, Key::FramePilot, "0");
+        set(&mut w, Key::MaxSpeed, "1000");
+        assert!(!w.compute());
+        assert!(matches!(&w.status, Status::Failed(e) if e.contains("max_speed_mm_min")));
+        set(&mut w, Key::MaxSpeed, "30000");
+        // a frame that does not fit the bed of the settings file is refused
+        let small = s.write("bed.cfg", "[machine]\nbed_x_mm = 1\nbed_y_mm = 1\n");
+        assert!(w.load_config(&small));
+        set(&mut w, Key::FrameMargin, "2");
+        assert!(!w.compute());
+        assert!(matches!(&w.status, Status::Failed(e) if e.contains("outside of the bed")));
+        // laps and margin out of range
+        let (_s2, mut v) = ready("frame-laps");
+        v.set_mode(Mode::Frame);
+        set(&mut v, Key::FrameLaps, "0");
+        assert!(!v.compute());
+        set(&mut v, Key::FrameLaps, "21");
+        assert!(!v.compute());
+        set(&mut v, Key::FrameLaps, "1");
+        set(&mut v, Key::FrameMargin, "101");
+        assert!(!v.compute());
+    }
+
+    #[test]
+    fn the_frame_follows_the_picture_or_the_drawing_that_was_opened_last() {
+        let mut w = Window::new(Lang::En);
+        w.set_mode(Mode::Frame);
+        assert!(!w.can_compute());
+        assert_eq!(w.framed_mode(), None);
+        assert!(!w.compute());
+        assert_eq!(w.status, Status::NeedImage);
+        let s = Scratch::new("frame-which");
+        let pic = s.write("pic.pgm", PICTURE);
+        let part = s.write("part.svg", DRAWING);
+        // a drawing alone is framed as a drawing: the square of 20 mm
+        assert!(w.open_vector(&part));
+        w.set_mode(Mode::Frame);
+        assert_eq!(w.framed_mode(), Some(Mode::Cut));
+        assert!(w.compute());
+        let Summary::Framed {
+            width_mm,
+            height_mm,
+            ..
+        } = w.done.as_ref().unwrap().summary
+        else {
+            panic!()
+        };
+        assert!((width_mm - 20.0).abs() < 1e-6 && (height_mm - 20.0).abs() < 1e-6);
+        // a picture opened after it is the work now
+        assert!(w.open_image(&pic));
+        set(&mut w, Key::WidthMm, "0.8");
+        w.set_mode(Mode::Frame);
+        assert_eq!(w.framed_mode(), Some(Mode::Engrave));
+        assert!(w.compute());
+        let Summary::Framed { width_mm, .. } = w.done.as_ref().unwrap().summary else {
+            panic!()
+        };
+        assert!(width_mm < 2.0);
+        // choosing cutting again goes back to the drawing
+        w.set_mode(Mode::Cut);
+        w.set_mode(Mode::Frame);
+        assert_eq!(w.framed_mode(), Some(Mode::Cut));
     }
 }
