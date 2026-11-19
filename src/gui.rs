@@ -219,6 +219,16 @@ impl App {
                 Key::Overscan if self.win.overscan_auto => continue,
                 Key::Accel if !self.win.overscan_auto => continue,
                 Key::Threshold if self.win.kind != Kind::Threshold => continue,
+                // the grid is made from the two lists, or from a material and its ladder
+                Key::Powers | Key::Feeds if self.win.cal_material.is_some() => continue,
+                Key::CalSteps | Key::CalSpread | Key::CalMinPower | Key::CalMinFeed
+                    if self.win.cal_material.is_none() =>
+                {
+                    continue
+                }
+                Key::CalLabelMm if self.win.cal_material.is_none() || !self.win.cal_labels => {
+                    continue
+                }
                 _ => {}
             }
             let label = self.win.fields[i].label.tr(lang);
@@ -435,9 +445,47 @@ impl App {
     }
 
     fn calibration_group(&mut self, ui: &mut egui::Ui) {
+        let lang = self.win.lang;
         egui::CollapsingHeader::new(self.heading(Msg::SectionCalibration))
             .default_open(true)
             .show(ui, |ui| {
+                // the grid from a material of the library: its power and its speed are the middle of the ladder
+                let names = self.win.material_names();
+                if !names.is_empty() {
+                    ui.label(Msg::CalMaterial.tr(lang));
+                    let shown = self
+                        .win
+                        .cal_material
+                        .clone()
+                        .unwrap_or_else(|| Msg::NoMaterial.tr(lang).to_string());
+                    let mut chosen: Option<Option<String>> = None;
+                    egui::ComboBox::from_id_salt("cal-material")
+                        .selected_text(shown)
+                        .show_ui(ui, |ui| {
+                            let none = self.win.cal_material.is_none();
+                            if ui
+                                .selectable_label(none, Msg::NoMaterial.tr(lang))
+                                .clicked()
+                            {
+                                chosen = Some(None);
+                            }
+                            for n in &names {
+                                let current = self.win.cal_material.as_deref() == Some(n.as_str());
+                                if ui.selectable_label(current, n.as_str()).clicked() {
+                                    chosen = Some(Some(n.clone()));
+                                }
+                            }
+                        });
+                    if let Some(c) = chosen {
+                        self.win.set_cal_material(c.as_deref());
+                    }
+                    if self.win.cal_material.is_some() {
+                        let mut on = self.win.cal_labels;
+                        if ui.checkbox(&mut on, Msg::CalLabels.tr(lang)).changed() {
+                            self.win.set_cal_labels(on);
+                        }
+                    }
+                }
                 self.fields_of(ui, Section::Calibration);
                 // the full power value and the limits are the same settings as the ones of the laser
                 for key in [Key::SMax, Key::MaxPower, Key::MaxSpeed] {
@@ -475,7 +523,7 @@ impl App {
                 if ui.button(Msg::OpenGcode.tr(lang)).clicked() {
                     self.ask(Job::OpenGcode);
                 }
-                for key in [Key::SMax, Key::Accel] {
+                for key in [Key::SMax, Key::Accel, Key::VerifyOverscan] {
                     self.field_for(ui, key);
                 }
             });
@@ -487,6 +535,7 @@ impl App {
         if lines.is_empty() {
             return;
         }
+        let check = self.win.check_lines();
         egui::CollapsingHeader::new(self.heading(Msg::SectionPreview))
             .default_open(true)
             .show(ui, |ui| {
@@ -496,6 +545,16 @@ impl App {
                         text
                     } else {
                         text.color(DANGER).small()
+                    });
+                }
+                // the check of the program: green when it passes, red with what is wrong when it does not
+                let passes = self.win.check.as_ref().is_some_and(|v| v.passes());
+                for (k, line) in check.iter().enumerate() {
+                    let text = egui::RichText::new(line.as_str());
+                    ui.label(match (passes, k) {
+                        (true, _) => text.color(egui::Color32::from_rgb(0x4c, 0xc3, 0x7a)),
+                        (false, 0) => text.color(DANGER),
+                        (false, _) => text.color(DANGER).small(),
                     });
                 }
             });

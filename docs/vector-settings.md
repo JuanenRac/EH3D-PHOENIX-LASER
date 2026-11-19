@@ -216,7 +216,7 @@ The keys of `[tone]` are `gamma`, `contrast`, `brightness`, `invert` and `auto_l
 
 ### `[verify]`
 
-The check of a program (`phoenix-laser verify`). Work outside the bed is a failure. A program made by another program often runs the head a little past the bed with the laser off, which is the overscan of its hatch lines, so the person can say how far that is allowed; the option `--overscan-mm` of the command takes the place of this key.
+The check of a program (`phoenix-laser verify`). Work outside the bed is a failure. A program made by another program often runs the head a little past the bed with the laser off, which is the overscan of its hatch lines, so the person can say how far that is allowed; the option `--overscan-mm` of the command takes the place of this key. In the window, a G-code program that is opened to be seen is checked the same way and the key is the box "Overscan allowed past the bed (mm)" of that mode.
 
 | Key | Default | Meaning |
 |---|---|---|
@@ -236,6 +236,8 @@ The test grid made from a material (`phoenix-laser calibrate --material NAME --m
 | `label_mm` | 3 | the height of the figures, from 1 to 20 mm |
 | `min_power_percent` | 1 | the lowest power of the ladder, more than 0 up to 100 % of full power: the ladder is held at it and never goes under |
 | `min_feed_mm_min` | 10 | the lowest feed of the ladder, more than 0 up to 30000 mm/min |
+
+In the window, the calibration mode lists the materials of the library: with one picked the grid is made with this ladder and the keys are boxes of the side panel (the figures are a switch), and with none picked it is the grid of the two lists of boxes.
 
 The keys of `[calibrate]` are `steps`, `spread_percent`, `labels`, `label_mm`, `min_power_percent` and `min_feed_mm_min`.
 

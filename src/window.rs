@@ -2,7 +2,7 @@
 //! file to write and the status line. The window (`gui`) only draws this and passes on what the person does, so everything that can be decided is decided here, in code that is tested.
 //! The engraving is made with the same functions as the command line (`dither`, `engrave`, `grid`) and written with the same header.
 
-use crate::calibrate::{focus_test, grid, Grid};
+use crate::calibrate::{self, focus_test, grid, labelled_grid, ladder, Grid, Labels};
 use crate::cut::{layers as layer_list, plan as plan_cut};
 use crate::dither::{dither, Method};
 use crate::dxf::read_dxf;
@@ -18,9 +18,11 @@ use crate::svg::read_svg;
 use crate::tone::Tone;
 use crate::trace;
 use crate::vconfig::{
-    self, FocusSettings, FrameSettings, KerfSide, LayerMode, LayerParams, Settings, TraceSettings,
+    self, CalibrateSettings, FocusSettings, FrameSettings, KerfSide, LayerMode, LayerParams,
+    Settings, TraceSettings,
 };
 use crate::vector::{Drawing, ReadOptions};
+use crate::verify;
 use crate::viewport::Viewport;
 use std::path::{Path, PathBuf};
 
@@ -161,6 +163,12 @@ pub enum Key {
     TraceThreshold,
     TraceSimplify,
     TraceMinArea,
+    CalSteps,
+    CalSpread,
+    CalLabelMm,
+    CalMinPower,
+    CalMinFeed,
+    VerifyOverscan,
 }
 
 /// The group of the side panel a setting belongs to.
@@ -173,6 +181,7 @@ pub enum Section {
     Focus,
     Frame,
     Trace,
+    Verify,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -239,6 +248,22 @@ fn default_fields() -> Vec<Field> {
             "0.02",
         ),
         f(Key::TraceMinArea, Msg::TraceMinArea, Section::Trace, "0.05"),
+        f(Key::CalSteps, Msg::CalSteps, Section::Calibration, "5"),
+        f(Key::CalSpread, Msg::CalSpread, Section::Calibration, "40"),
+        f(Key::CalLabelMm, Msg::CalLabelMm, Section::Calibration, "3"),
+        f(
+            Key::CalMinPower,
+            Msg::CalMinPower,
+            Section::Calibration,
+            "1",
+        ),
+        f(Key::CalMinFeed, Msg::CalMinFeed, Section::Calibration, "10"),
+        f(
+            Key::VerifyOverscan,
+            Msg::VerifyOverscan,
+            Section::Verify,
+            "0",
+        ),
     ]
 }
 
@@ -806,6 +831,12 @@ pub struct Window {
     pub trace_invert: bool,
     /// The outline is filled with lines (engraved) instead of being cut.
     pub trace_engrave: bool,
+    /// The material the grid is spread around, when it is made from one instead of from the two lists.
+    pub cal_material: Option<String>,
+    /// The grid made from a material burns the power of each column and the feed of each row next to the squares.
+    pub cal_labels: bool,
+    /// What the check says about the program that is open (the preview mode only).
+    pub check: Option<verify::Verdict>,
     pub picture: Option<Picture>,
     /// The drawing that is open and the table of its layers.
     pub vector: Option<VectorFile>,
@@ -845,6 +876,9 @@ impl Window {
             overscan_auto: false,
             trace_invert: false,
             trace_engrave: false,
+            cal_material: None,
+            cal_labels: CalibrateSettings::default().labels,
+            check: None,
             picture: None,
             vector: None,
             rows: Vec::new(),
@@ -944,6 +978,32 @@ impl Window {
     pub fn set_trace_engrave(&mut self, on: bool) {
         if self.trace_engrave != on {
             self.trace_engrave = on;
+            self.mark_stale();
+        }
+    }
+
+    /// Makes the grid from a material of the library (`None` goes back to the two lists). A name that the library does not have is refused.
+    pub fn set_cal_material(&mut self, name: Option<&str>) -> bool {
+        let found = match name {
+            None => None,
+            Some(n) => match self.materials.as_ref().and_then(|l| l.find(n)) {
+                Some(m) => Some(m.name.clone()),
+                None => {
+                    self.status = Status::Failed(format!("there is no material '{}'", n.trim()));
+                    return false;
+                }
+            },
+        };
+        if self.cal_material != found {
+            self.cal_material = found;
+            self.mark_stale();
+        }
+        true
+    }
+
+    pub fn set_cal_labels(&mut self, on: bool) {
+        if self.cal_labels != on {
+            self.cal_labels = on;
             self.mark_stale();
         }
     }
@@ -1345,6 +1405,13 @@ impl Window {
                 self.put(Key::TraceSimplify, t(s.trace.simplify_mm));
                 self.put(Key::TraceMinArea, t(s.trace.min_area_mm2));
                 self.trace_invert = s.trace.invert;
+                self.put(Key::CalSteps, s.calibrate.steps.to_string());
+                self.put(Key::CalSpread, t(s.calibrate.spread_percent));
+                self.put(Key::CalLabelMm, t(s.calibrate.label_mm));
+                self.put(Key::CalMinPower, t(s.calibrate.min_power_percent));
+                self.put(Key::CalMinFeed, t(s.calibrate.min_feed_mm_min));
+                self.cal_labels = s.calibrate.labels;
+                self.put(Key::VerifyOverscan, t(s.verify.overscan_mm));
                 self.settings = s;
                 self.config_path = Some(path.to_path_buf());
                 self.rebuild_rows();
@@ -1541,6 +1608,11 @@ impl Window {
         match made {
             Ok(done) => {
                 self.warnings = done.notes.clone();
+                self.check = if self.mode == Mode::Preview {
+                    self.verdict_of(&done.gcode, done.s_max)
+                } else {
+                    None
+                };
                 self.report = preview::analyse(
                     &preview::read(&done.gcode),
                     &self.preview_options(done.s_max),
@@ -1718,10 +1790,50 @@ impl Window {
         lines
     }
 
+    /// How far past the bed the check lets the head go with the laser off (the box of the check), from 0 to the most `verify` allows.
+    fn verify_overscan(&self) -> Result<f64, Status> {
+        let v = self.number(Key::VerifyOverscan)?;
+        if (0.0..=verify::MAX_OVERSCAN_MM).contains(&v) {
+            Ok(v)
+        } else {
+            Err(Status::BadValue(Msg::VerifyOverscan))
+        }
+    }
+
+    /// What `verify` says about a program, with the limits of the window and the settings file and the overscan of its box.
+    fn verdict_of(&self, gcode: &str, s_max: u32) -> Option<verify::Verdict> {
+        let (max_power, max_speed) = self.limits().ok()?;
+        let m = &self.settings.machine;
+        let l = verify::Limits {
+            s_max,
+            max_power_percent: max_power,
+            max_speed_mm_min: max_speed,
+            bed_mm: m.bed_mm,
+            accel_mm_s2: self.preview_options(s_max).accel_mm_s2,
+            rapid_mm_min: m.rapid_mm_min,
+            overscan_mm: self.verify_overscan().ok()?,
+        };
+        verify::verify(gcode.as_bytes(), &l).ok()
+    }
+
+    /// The lines of the check of the program: whether it passes (with the start of its SHA-256) and, when it fails, what is wrong.
+    pub fn check_lines(&self) -> Vec<String> {
+        let Some(v) = &self.check else {
+            return Vec::new();
+        };
+        if v.passes() {
+            return vec![fill(Msg::VerifyPass.tr(self.lang), &[&v.sha256[..12]])];
+        }
+        let mut lines = vec![Msg::VerifyFail.tr(self.lang).to_string()];
+        lines.extend(v.problems.iter().take(4).cloned());
+        lines
+    }
+
     /// The G-code program that is open, counted and checked by the preview.
     fn preview_job(&self) -> Result<Done, Status> {
         let program = self.program.as_ref().ok_or(Status::NeedImage)?;
         let s_max = self.whole(Key::SMax, 1.0, 100_000.0)?;
+        self.verify_overscan()?;
         let r = preview::analyse(&preview::read(&program.text), &self.preview_options(s_max))
             .map_err(Status::Failed)?;
         if r.moves == 0 {
@@ -1883,30 +1995,103 @@ impl Window {
         })
     }
 
+    /// The settings of the grid made from a material, from the boxes of the window checked like the file of settings is.
+    fn calibrate_settings(&self) -> Result<CalibrateSettings, Status> {
+        let c = CalibrateSettings {
+            steps: self.whole(Key::CalSteps, 1.0, calibrate::MAX_CELLS as f64)?,
+            spread_percent: self.number(Key::CalSpread)?,
+            labels: self.cal_labels,
+            label_mm: self.number(Key::CalLabelMm)?,
+            min_power_percent: self.number(Key::CalMinPower)?,
+            min_feed_mm_min: self.number(Key::CalMinFeed)?,
+        };
+        c.validate().map_err(Status::Failed)?;
+        Ok(c)
+    }
+
+    /// The grid: from the two lists, or spread around the power and the speed of a material of the library (a ladder held between the lowest values and the limits, with the figures burnt
+    /// next to the squares when the switch is on), the same as `calibrate` does.
     fn calibrate_job(&self) -> Result<Done, Status> {
-        let powers = self.list(Key::Powers)?;
-        let feeds = self.list(Key::Feeds)?;
         let (max_power, max_speed) = self.limits()?;
-        for p in &powers {
-            safety::check_power("a power of the grid", *p, max_power).map_err(Status::Failed)?;
-        }
-        for f in &feeds {
-            safety::check_speed("a speed of the grid", *f, max_speed).map_err(Status::Failed)?;
-        }
         let g = Grid {
             s_max: self.whole(Key::SMax, 1.0, 100_000.0)?,
             ..Grid::default()
         };
-        let gcode = grid(&powers, &feeds, &g).map_err(Status::Failed)?;
+        let (gcode, squares, with_figures) = if let Some(name) = &self.cal_material {
+            let m = self
+                .materials
+                .as_ref()
+                .and_then(|l| l.find(name))
+                .ok_or_else(|| Status::Failed(format!("there is no material '{name}'")))?;
+            let c = self.calibrate_settings()?;
+            let centre_power = m
+                .power
+                .ok_or_else(|| Status::Failed(format!("the material {} has no power", m.name)))?;
+            safety::check_power("the power of the material", centre_power, max_power)
+                .map_err(Status::Failed)?;
+            let centre_feed = m
+                .speed
+                .ok_or_else(|| Status::Failed(format!("the material {} has no speed", m.name)))?;
+            safety::check_speed("the speed of the material", centre_feed, max_speed)
+                .map_err(Status::Failed)?;
+            let steps = c.steps as usize;
+            let powers = ladder(
+                centre_power,
+                steps,
+                c.spread_percent,
+                1,
+                c.min_power_percent.min(max_power),
+                max_power,
+            )
+            .map_err(Status::Failed)?;
+            let feeds = ladder(
+                centre_feed,
+                steps,
+                c.spread_percent,
+                0,
+                c.min_feed_mm_min.min(max_speed),
+                max_speed,
+            )
+            .map_err(Status::Failed)?;
+            let gcode = if c.labels {
+                let labels = Labels {
+                    height_mm: c.label_mm,
+                    power_percent: centre_power,
+                    feed_mm_min: centre_feed,
+                };
+                labelled_grid(&powers, &feeds, &g, &labels).map_err(Status::Failed)?
+            } else {
+                grid(&powers, &feeds, &g).map_err(Status::Failed)?
+            };
+            (gcode, powers.len() * feeds.len(), c.labels)
+        } else {
+            let powers = self.list(Key::Powers)?;
+            let feeds = self.list(Key::Feeds)?;
+            for p in &powers {
+                safety::check_power("a power of the grid", *p, max_power)
+                    .map_err(Status::Failed)?;
+            }
+            for f in &feeds {
+                safety::check_speed("a speed of the grid", *f, max_speed)
+                    .map_err(Status::Failed)?;
+            }
+            (
+                grid(&powers, &feeds, &g).map_err(Status::Failed)?,
+                powers.len() * feeds.len(),
+                false,
+            )
+        };
         Ok(Done {
             gcode,
             source: None,
-            tools: format!("laser, S 0-{}, grid of power against feed", g.s_max),
+            tools: format!(
+                "laser, S 0-{}, grid of power against feed{}",
+                g.s_max,
+                if with_figures { " with figures" } else { "" }
+            ),
             s_max: g.s_max,
             line_mm: g.line_spacing_mm,
-            summary: Summary::Calibrated {
-                squares: powers.len() * feeds.len(),
-            },
+            summary: Summary::Calibrated { squares },
             notes: Vec::new(),
         })
     }
@@ -3934,5 +4119,233 @@ mod tests {
             assert!(text.contains("diode") && text.contains("1000") && text.contains("6000"));
             assert!(!Msg::SectionMachine.tr(l).is_empty() && !Msg::NoProfile.tr(l).is_empty());
         }
+    }
+
+    const CAL_LIBRARY: &str =
+        "[material m]\npower = 50\nspeed = 1000\n[material only power]\npower = 30\n";
+
+    fn calibrating(tag: &str) -> (Scratch, Window) {
+        let s = Scratch::new(tag);
+        let lib = s.write("lib.cfg", CAL_LIBRARY);
+        let mut w = Window::new(Lang::En);
+        assert!(w.load_materials(&lib));
+        w.set_mode(Mode::Calibrate);
+        (s, w)
+    }
+
+    #[test]
+    fn the_grid_from_a_material_is_the_ladder_of_the_command_line_with_its_figures() {
+        let (_s, mut w) = calibrating("cal-material");
+        // no material: the two lists, as ever
+        assert!(w.cal_labels && w.cal_material.is_none());
+        assert!(w.compute());
+        assert!(!w.done.as_ref().unwrap().tools.contains("figures"));
+        // the name is found whatever its case, and the grid is spread around the material
+        assert!(w.set_cal_material(Some("M")));
+        assert_eq!(w.cal_material.as_deref(), Some("m"));
+        assert!(w.compute());
+        let powers = [30.0, 40.0, 50.0, 60.0, 70.0];
+        let feeds = [600.0, 800.0, 1000.0, 1200.0, 1400.0];
+        let labels = Labels {
+            height_mm: 3.0,
+            power_percent: 50.0,
+            feed_mm_min: 1000.0,
+        };
+        let expected = labelled_grid(&powers, &feeds, &Grid::default(), &labels).unwrap();
+        let done = w.done.as_ref().unwrap();
+        assert_eq!(done.gcode, expected);
+        assert_eq!(done.summary, Summary::Calibrated { squares: 25 });
+        assert!(done.tools.contains("with figures"));
+        // without the figures it is the plain grid
+        w.set_cal_labels(false);
+        assert!(w.compute());
+        let plain = grid(&powers, &feeds, &Grid::default()).unwrap();
+        assert_eq!(w.done.as_ref().unwrap().gcode, plain);
+        // the boxes of the ladder
+        set(&mut w, Key::CalSteps, "3");
+        set(&mut w, Key::CalSpread, "20");
+        assert!(w.compute());
+        assert_eq!(
+            w.done.as_ref().unwrap().summary,
+            Summary::Calibrated { squares: 9 }
+        );
+        // back to the lists
+        assert!(w.set_cal_material(None));
+        assert!(w.compute());
+        assert_eq!(
+            w.done.as_ref().unwrap().summary,
+            Summary::Calibrated { squares: 12 }
+        );
+    }
+
+    #[test]
+    fn a_material_that_is_not_in_the_library_or_has_no_speed_is_refused() {
+        let (_s, mut w) = calibrating("cal-refused");
+        assert!(w.set_cal_material(Some("m")));
+        assert!(!w.set_cal_material(Some("nothing")));
+        assert!(w.status.is_problem());
+        assert_eq!(w.cal_material.as_deref(), Some("m"));
+        assert!(w.set_cal_material(Some("only power")));
+        assert!(!w.compute());
+        assert!(matches!(&w.status, Status::Failed(e) if e.contains("has no speed")));
+        // a window with no library has no material to choose
+        let mut bare = Window::new(Lang::En);
+        assert!(!bare.set_cal_material(Some("m")));
+        assert!(bare.set_cal_material(None));
+    }
+
+    #[test]
+    fn the_ladder_of_the_window_obeys_the_limits_and_the_boxes_say_which_is_wrong() {
+        let (_s, mut w) = calibrating("cal-limits");
+        assert!(w.set_cal_material(Some("m")));
+        // held at the limit, never over it
+        set(&mut w, Key::MaxPower, "55");
+        set(&mut w, Key::MaxSpeed, "1100");
+        assert!(w.compute());
+        let labels = Labels {
+            height_mm: 3.0,
+            power_percent: 50.0,
+            feed_mm_min: 1000.0,
+        };
+        let expected = labelled_grid(
+            &[30.0, 40.0, 50.0, 55.0],
+            &[600.0, 800.0, 1000.0, 1100.0],
+            &Grid::default(),
+            &labels,
+        )
+        .unwrap();
+        assert_eq!(w.done.as_ref().unwrap().gcode, expected);
+        // a material over the limit is refused, never lowered
+        set(&mut w, Key::MaxPower, "40");
+        assert!(!w.compute());
+        assert!(matches!(&w.status, Status::Failed(e) if e.contains("the power of the material")));
+        set(&mut w, Key::MaxPower, "100");
+        set(&mut w, Key::MaxSpeed, "30000");
+        // the lowest values hold the ladder up
+        set(&mut w, Key::CalSpread, "90");
+        set(&mut w, Key::CalMinPower, "20");
+        set(&mut w, Key::CalMinFeed, "300");
+        assert!(w.compute());
+        let powers = ladder(50.0, 5, 90.0, 1, 20.0, 100.0).unwrap();
+        let feeds = ladder(1000.0, 5, 90.0, 0, 300.0, 30000.0).unwrap();
+        assert_eq!((powers[0], feeds[0]), (20.0, 300.0));
+        let labels = Labels {
+            height_mm: 3.0,
+            power_percent: 50.0,
+            feed_mm_min: 1000.0,
+        };
+        let expected = labelled_grid(&powers, &feeds, &Grid::default(), &labels).unwrap();
+        assert_eq!(w.done.as_ref().unwrap().gcode, expected);
+        // a box that is not valid says which
+        set(&mut w, Key::CalSteps, "13");
+        assert!(!w.compute());
+        assert_eq!(w.status, Status::BadValue(Msg::CalSteps));
+        set(&mut w, Key::CalSteps, "x");
+        assert!(!w.compute());
+        assert_eq!(w.status, Status::BadValue(Msg::CalSteps));
+        set(&mut w, Key::CalSteps, "5");
+        set(&mut w, Key::CalSpread, "91");
+        assert!(!w.compute());
+        assert!(matches!(&w.status, Status::Failed(e) if e.contains("spread_percent")));
+        set(&mut w, Key::CalSpread, "40");
+        set(&mut w, Key::CalMinPower, "0");
+        assert!(!w.compute());
+        assert!(matches!(&w.status, Status::Failed(e) if e.contains("min_power_percent")));
+        set(&mut w, Key::CalMinPower, "1");
+        set(&mut w, Key::CalLabelMm, "30");
+        assert!(!w.compute());
+        assert!(matches!(&w.status, Status::Failed(e) if e.contains("label_mm")));
+    }
+
+    #[test]
+    fn a_file_of_settings_fills_the_boxes_of_the_grid_and_of_the_check() {
+        let s = Scratch::new("cal-config");
+        let cfg = s.write(
+            "c.cfg",
+            "[calibrate]\nsteps = 3\nspread_percent = 25\nlabels = off\nlabel_mm = 4\nmin_power_percent = 5\nmin_feed_mm_min = 100\n[verify]\noverscan_mm = 2.5\n",
+        );
+        let mut w = Window::new(Lang::En);
+        assert!(w.load_config(&cfg));
+        assert!(!w.cal_labels);
+        for (key, text) in [
+            (Key::CalSteps, "3"),
+            (Key::CalSpread, "25"),
+            (Key::CalLabelMm, "4"),
+            (Key::CalMinPower, "5"),
+            (Key::CalMinFeed, "100"),
+            (Key::VerifyOverscan, "2.5"),
+        ] {
+            assert_eq!(text_of(&w, key), text);
+        }
+        // the defaults of the boxes are the defaults of the settings
+        let d = Window::new(Lang::En);
+        let c = CalibrateSettings::default();
+        assert_eq!(text_of(&d, Key::CalSteps), c.steps.to_string());
+        assert_eq!(text_of(&d, Key::CalSpread), format!("{}", c.spread_percent));
+        assert_eq!(text_of(&d, Key::CalLabelMm), format!("{}", c.label_mm));
+        assert_eq!(
+            text_of(&d, Key::CalMinPower),
+            format!("{}", c.min_power_percent)
+        );
+        assert_eq!(
+            text_of(&d, Key::CalMinFeed),
+            format!("{}", c.min_feed_mm_min)
+        );
+        assert_eq!(d.cal_labels, c.labels);
+        assert_eq!(
+            text_of(&d, Key::VerifyOverscan),
+            format!("{}", crate::verify::Limits::default().overscan_mm)
+        );
+    }
+
+    #[test]
+    fn the_program_that_is_open_is_checked_with_the_overscan_of_its_box() {
+        let s = Scratch::new("check-overscan");
+        let cfg = s.write("c.cfg", "[machine]\nbed_x_mm = 10\nbed_y_mm = 10\n");
+        let p = s.write(
+            "o.nc",
+            "G21\nG90\nF1000\nG0 X-2 Y5\nM3 S0\nG1 X0 Y5\nG1 X10 Y5 S300\nG1 X12 Y5 S0\nM5\nM2\n",
+        );
+        let mut w = Window::new(Lang::En);
+        assert!(w.load_config(&cfg));
+        assert!(w.check_lines().is_empty());
+        assert!(w.open_gcode(&p));
+        // nothing is allowed past the bed by default
+        let lines = w.check_lines();
+        assert_eq!(lines[0], "Check: it fails");
+        assert!(
+            lines.iter().any(|l| l.contains("outside of the bed")),
+            "{lines:?}"
+        );
+        assert!(!w.check.as_ref().unwrap().passes());
+        // the box allows what the other program does
+        set(&mut w, Key::VerifyOverscan, "2");
+        assert!(w.compute());
+        let lines = w.check_lines();
+        assert_eq!(lines.len(), 1, "{lines:?}");
+        let sha = w.check.as_ref().unwrap().sha256.clone();
+        assert_eq!(sha.len(), 64);
+        assert_eq!(
+            lines[0],
+            format!("Check: it passes (SHA-256 {}...)", &sha[..12])
+        );
+        // the other languages say it too
+        for l in Lang::ALL {
+            w.lang = l;
+            let line = w.check_lines().remove(0);
+            assert!(line.contains(&sha[..12]), "{line}");
+        }
+        w.lang = Lang::En;
+        // a value that is not allowed is refused and says which
+        for bad in ["-1", "100.5", "x", ""] {
+            set(&mut w, Key::VerifyOverscan, bad);
+            assert!(!w.compute(), "{bad}");
+            assert_eq!(w.status, Status::BadValue(Msg::VerifyOverscan));
+        }
+        // what is not a program that was opened has no check
+        set(&mut w, Key::VerifyOverscan, "0");
+        w.set_mode(Mode::Calibrate);
+        assert!(w.compute());
+        assert!(w.check.is_none() && w.check_lines().is_empty());
     }
 }
