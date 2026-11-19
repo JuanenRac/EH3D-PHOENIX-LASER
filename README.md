@@ -17,7 +17,7 @@
 
 ---
 
-**Honesty check - what actually runs today:** a Rust library and a command line program (`phoenix-laser`) with 526 tests that run on a computer: turns an image into dots by dithering and writes the G-code of a laser that burns line by line with dynamic power and overscan, reads SVG and DXF drawings and writes the G-code that cuts their contours (the inside ones first, the width of the beam taken into account, bridges, several passes) and engraves their shapes with lines, with the settings of each layer in a file, and a power-against-feed test grid. It has a window (built with `--features gui`) that opens a picture or a drawing, shows the path of the laser, lets the settings be changed and exports the G-code, but the window has not been looked at on a screen yet; it has not been tried on a machine and it has not been checked against a collection of real files.
+**Honesty check - what actually runs today:** a Rust library and a command line program (`phoenix-laser`) with 527 tests that run on a computer: turns an image into dots by dithering and writes the G-code of a laser that burns line by line with dynamic power and overscan, reads SVG and DXF drawings and writes the G-code that cuts their contours (the inside ones first, the width of the beam taken into account, bridges, several passes) and engraves their shapes with lines, with the settings of each layer in a file, and a power-against-feed test grid. It has a window (built with `--features gui`) that opens a picture or a drawing, shows the path of the laser, lets the settings be changed and exports the G-code, but the window has not been looked at on a screen yet; it has not been tried on a machine and it has not been checked against a collection of real files.
 
 ---
 
@@ -30,7 +30,7 @@
 |---|---|
 | Version | `0.0.9` |
 | Maturity | Functional |
-| Tests | 526 |
+| Tests | 527 |
 | Stack | Rust |
 | On real hardware | Not tried: nothing here has run on a machine |
 
@@ -46,7 +46,7 @@ Each line is one part of this repository and the light says how far it is today.
 |---|---|---|
 | Core | 🟡 | turns an image into dots by dithering and writes the G-code of a laser that burns line by line with dynamic power and overscan, reads SVG and DXF drawings and cuts or engraves them by layer (ordered contours, beam width, bridges, passes, hatch), and a power-against-feed test grid; tested on a computer with normal and damaged input, not with a collection of real files. |
 | Command line | 🟡 | `phoenix-laser` (`engrave`, `calibrate`, `info`, `cut`, `vector`, `layers`) runs the same functions as the library and prints the result; every error comes back as a message and a non-zero exit code. |
-| Tests | 🟡 | 526 tests pass (`cargo test`), with normal cases, edge cases and damaged input. |
+| Tests | 🟡 | 527 tests pass (`cargo test`), with normal cases, edge cases and damaged input. |
 | Security | 🟡 | Plain safe Rust (`forbid(unsafe_code)`): nothing panics on the files it is given and a bad value is an error with its reason; no independent review. |
 | Window | 🟠 | Written (egui, `--features gui`): open or drop a picture or an SVG or DXF drawing, see the path of the laser (the cut in one colour, the travel dim), edit the table of layers, a calibration grid, zoom and pan, estimate the time, export; its logic is tested, but it has not been built or looked at on a screen yet. |
 | Real hardware | 🔴 | Not tried: nothing here has been run on a machine. |
@@ -81,6 +81,7 @@ Each line is one part of this repository and the light says how far it is today.
 * **The grid from a material in the window** (`src/window.rs`, `[calibrate]` in the settings file): the calibration mode lists the materials of the library; with one picked, the grid is spread around its power and its speed with the same ladder as `phoenix-laser calibrate --material` (boxes for the steps, the spread and the lowest power and feed, held between them and the limits), and a switch burns the figures next to the squares with the height of its box. With none picked it is the grid of the two lists, as before.
 * **The check of the program in the window** (`src/window.rs`, `[verify]` in the settings file): a G-code program that is opened to be seen is also checked by `phoenix-laser verify` with the limits of the window and the bed of the settings file, and the side panel says whether it passes (with the start of its SHA-256) or what is wrong; a box holds the overscan that is allowed past the bed with the laser off (0 by default, up to 100 mm), and a program that burns outside of the bed fails whatever the box says.
 * **The check of a program** (`src/verify.rs`): `phoenix-laser verify PROGRAM.nc` reads a G-code program (this program's or another's) as text, never runs it, and gives the SHA-256 of the exact file, what it does and a verdict: it passes only under the limit of power and of speed of the machine, inside the bed (work outside it fails; `--overscan-mm` or `overscan_mm` in `[verify]` lets the head go that far past the bed with the laser off, as the overscan of another program does, and burning outside the bed always fails), with the laser off during every rapid move and a feed on every burning move. `--json` gives the report for another program to keep next to an authorisation bound to that hash, with the machine profile, the SHA-256 of the settings file the limits came from and the names of the checks that were made, and the exit code is 1 when it fails.
+* **A check that is tied to the program that was authorised** (`src/verify.rs`): `phoenix-laser verify PROGRAM.nc --expect-sha256 HASH` fails the program when its SHA-256 is not the 64 hex digits that were given, and says which one it has, so a program that was changed after it was looked at is not run by mistake; the failure is in the JSON report too.
 * **Ordered dithering** (`src/dither.rs`): `--dither bayer` (also in the window) decides each dot by its own place and grey with an 8 x 8 Bayer matrix, so the pattern is regular and the same grey always burns the same dots; the tests check that each level of the matrix appears once and that the darkness of a grey is kept.
 * **The tone curve** (`src/tone.rs`): before the dots are made the grey levels can be stretched to the full range (`--auto-level`), given more or less contrast and brightness, bent with a gamma or inverted, with one table of 256 entries; with the default values the picture is not changed at all.
 * **A checked G-code:** the program of a drawing is checked line by line before it is given: no laser on during a rapid move or at no speed, no `S` above full power, no move outside of the bed, `M5` at the end; the file is never written over the drawing or the settings it comes from.
@@ -146,7 +147,7 @@ phoenix-laser materials FILE
 phoenix-laser focus OUT.nc --z-step MM [--z-start MM] [--steps 9] [--length 10] [--spacing 2] [--feed 1000] [--power 30] [--smax 1000] [--max-power P] [--max-speed MM/MIN] [--config FILE] [--profile NAME]
 phoenix-laser frame OUT.nc --size W,H | --gcode PROGRAM.nc [--origin X,Y] [--margin MM] [--feed 3000] [--laps 1] [--bed X,Y] [--smax N]
               [--pilot P --confirm-laser-on] [--max-power P] [--max-speed MM/MIN] [--config FILE] [--profile NAME]
-phoenix-laser verify PROGRAM.nc [--config FILE] [--profile NAME] [--smax N] [--max-power P] [--max-speed MM/MIN] [--bed X,Y] [--overscan-mm MM] [--accel 1000] [--json]
+phoenix-laser verify PROGRAM.nc [--config FILE] [--profile NAME] [--smax N] [--max-power P] [--max-speed MM/MIN] [--bed X,Y] [--overscan-mm MM] [--accel 1000] [--expect-sha256 HASH] [--json]
 phoenix-laser preview PROGRAM.nc [OUT.svg] [--accel 1000] [--rapid 6000] [--smax N] [--bed X,Y] [--width-px 900] [--config FILE] [--profile NAME]
 phoenix-laser [gui] [FILE]                       the window (a build with --features gui); with no arguments it opens
 ```
@@ -174,7 +175,7 @@ To take a picture of the window without opening it by hand, run it with `--shot 
 
 ## 🧪 Testing
 
-The suite has 526 tests (`cargo test`, run on Windows and Linux in the CI). They check the normal cases, the edge cases and damaged input: empty files, garbage and cut files never panic. The CI also runs `cargo fmt --check`, `cargo clippy` with warnings as errors and `python -I tools/ci_validate.py`.
+The suite has 527 tests (`cargo test`, run on Windows and Linux in the CI). They check the normal cases, the edge cases and damaged input: empty files, garbage and cut files never panic. The CI also runs `cargo fmt --check`, `cargo clippy` with warnings as errors and `python -I tools/ci_validate.py`.
 
 ## 🏗️ Build & Release
 

@@ -1912,3 +1912,41 @@ fn the_cross_option_fills_an_engraved_layer_a_second_time() {
     assert!(!ok);
     assert!(err.contains("cannot be given together"), "{err}");
 }
+
+#[test]
+fn verify_fails_a_program_that_is_not_the_one_that_was_authorised() {
+    let nc = tmp("expect.nc");
+    let (ok, _, err) = run(&["text", &nc, "--text", "OK"]);
+    assert!(ok, "{err}");
+    let (ok, out, err) = run(&["verify", &nc]);
+    assert!(ok, "{out} {err}");
+    let hash = out
+        .lines()
+        .find_map(|l| l.strip_prefix("toolpath sha256: "))
+        .unwrap()
+        .trim()
+        .to_string();
+    assert_eq!(hash.len(), 64);
+    // the hash that was authorised, in any case, passes
+    let (ok, out, err) = run(&["verify", &nc, "--expect-sha256", &hash.to_uppercase()]);
+    assert!(ok, "{out} {err}");
+    assert!(!out.contains("authorised"), "{out}");
+    // another hash fails, says which one the program has, and shows in the JSON report
+    let other = "0".repeat(64);
+    let (ok, out, err) = run(&["verify", &nc, "--expect-sha256", &other]);
+    assert!(!ok);
+    assert!(out.contains("not the one that was authorised"), "{out}");
+    assert!(out.contains(&hash), "{out}");
+    assert!(err.contains("fails 1 check"), "{err}");
+    let (ok, out, _) = run(&["verify", &nc, "--expect-sha256", &other, "--json"]);
+    assert!(!ok);
+    assert!(out.contains("\"verdict\": \"fail\""), "{out}");
+    assert!(out.contains("not the one that was authorised"), "{out}");
+    // a value that is not a SHA-256 is refused before the program is read
+    let (g64, long) = ("g".repeat(64), "0".repeat(65));
+    for bad in ["", "abc", g64.as_str(), long.as_str()] {
+        let (ok, _, err) = run(&["verify", &nc, "--expect-sha256", bad]);
+        assert!(!ok, "{bad}");
+        assert!(err.contains("64 hex digits"), "{err}");
+    }
+}

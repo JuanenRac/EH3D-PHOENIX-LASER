@@ -54,7 +54,7 @@ const HELP: &str = "phoenix-laser: laser engraving from an image
   phoenix-laser frame OUT.nc --size W,H | --gcode PROGRAM.nc [--origin X,Y] [--margin MM] [--feed 3000] [--laps 1] [--bed X,Y] [--smax N]
                 [--pilot P --confirm-laser-on] [--max-power P] [--max-speed MM/MIN] [--config FILE] [--profile NAME]
   phoenix-laser preview PROGRAM.nc [OUT.svg] [--accel 1000] [--rapid 6000] [--smax N] [--bed X,Y] [--width-px 900] [--config FILE] [--profile NAME]
-  phoenix-laser verify PROGRAM.nc [--config FILE] [--profile NAME] [--smax N] [--max-power P] [--max-speed MM/MIN] [--bed X,Y] [--overscan-mm MM] [--accel 1000] [--json]
+  phoenix-laser verify PROGRAM.nc [--config FILE] [--profile NAME] [--smax N] [--max-power P] [--max-speed MM/MIN] [--bed X,Y] [--overscan-mm MM] [--accel 1000] [--expect-sha256 HASH] [--json]
   phoenix-laser [gui] [FILE]                     the window (a build with --features gui): with no arguments, with a file or with gui it opens; the commands above never open it
   phoenix-laser gui [FILE] --shot OUT.png [--size WxH] [--theme forge|dark|light] [--wait N] [--lang CODE] [--replace]   a picture of the window (a build with --features gui)
 
@@ -70,7 +70,7 @@ focus writes a focus test: short lines side by side, each burnt with the head at
 text burns TEXT with a font of strokes of the program (capitals, figures, space and . , - + / : ! ? ( ) = _ '; lower case is burnt as capitals, a new line starts a row, and a character the font has not is refused): --height-mm is the height of a capital (at most max_height_mm, 100 unless the file says another), --spacing and --line-spacing are the gaps between letters and rows as a percent of the height, --passes burns the whole text that many times, and --origin X,Y is the lower left corner. A text of more than max_chars characters, a power or a speed over the limit, or work that would go outside of the bed (--bed X,Y or the machine of --config) is refused, never cut down; the [text] section of --config holds the usual values.
 frame writes a program that traces the rectangle of the work with the laser OFF, to see where it will land: --size W,H from the corner --origin, or the box of what burns in --gcode PROGRAM.nc (its real place). --margin widens it. A --pilot power (a percent, at most max_pilot_percent of [frame], 5 unless the file says another, and at most the limit of power) turns the laser on weakly and only with --confirm-laser-on; the [frame] section of --config holds the usual values.
 preview reads a G-code program (this program's or another's) and says what it would do: moves, burnt and travelled length, the box, the powers, a time that counts the corners (--accel in mm/s2) and what looks dangerous (the laser on during a rapid move, a burning move with no feed, S above --smax, work outside --bed, no end); with OUT.svg it also draws the path. It only reads text.
-verify reads a G-code program as text (it never runs it) and says its SHA-256, what it does and whether it passes: under the limit of power and of speed, inside the bed (--overscan-mm lets the head go that far past the bed with the laser off, as the overscan of another program does; burning outside the bed always fails, and [verify] overscan_mm of --config sets the same), with the laser off during every rapid move and a feed on every burning move; --json gives the report for another program to keep, and the exit code is 1 when it fails.
+verify reads a G-code program as text (it never runs it) and says its SHA-256, what it does and whether it passes: under the limit of power and of speed, inside the bed (--overscan-mm lets the head go that far past the bed with the laser off, as the overscan of another program does; burning outside the bed always fails, and [verify] overscan_mm of --config sets the same), with the laser off during every rapid move and a feed on every burning move; --expect-sha256 HASH ties the check to a program that was authorised: when the SHA-256 of the file is not that one (64 hex digits) the program fails, so a program that was changed after it was looked at is not run by mistake; --json gives the report for another program to keep, and the exit code is 1 when it fails.
 calibrate with --material takes the powers and the feeds from the library: a ladder of --steps values (5) from --spread percent (40) below to the same above the power and the speed of the material, held between the limits and given once each, unless --powers or --feeds give a list; the power of each column is burnt below it and the feed of each row on its left, at the power and the speed of the material, so the squares can be read on the material: with --material they come by default and --no-labels takes them away, and --labels asks for them with lists too (--label-mm is the height of the figures; [calibrate] of --config holds the usual values, and also the lowest power and feed of the ladder, min_power_percent and min_feed_mm_min).
 --max-power is the limit of power, a percent of full power (100 when nothing says another): a program whose power is more than the limit is refused, never lowered. engrave and calibrate also read the limit and --smax from the [machine] section of the file of --config, and engrave the tone curve from its [tone] section (a material and the tone options win over it). --max-speed is the limit of speed (mm/min, 30000 when nothing says another) and works the same way: a feed over it is refused, never lowered.
 A [profile NAME] section of the file of --config describes a machine and laser (its travel, its limit of power and of speed, its S and its watts); --profile NAME (or profile = NAME in [machine]) makes it the machine, over [machine] and under the options of the command line.";
@@ -1273,6 +1273,17 @@ fn run(mut args: Vec<String>) -> Result<(), String> {
             if let Some(v) = flag(&mut args, "--overscan-mm")? {
                 l.overscan_mm = num(&v, "--overscan-mm")?;
             }
+            // the SHA-256 of the program that was authorised, when the person gives it
+            let expected = match flag(&mut args, "--expect-sha256")? {
+                Some(v) => {
+                    let want = v.trim().to_ascii_lowercase();
+                    if want.len() != 64 || !want.bytes().all(|b| b.is_ascii_hexdigit()) {
+                        return Err("--expect-sha256 needs the 64 hex digits of a SHA-256".into());
+                    }
+                    Some(want)
+                }
+                None => None,
+            };
             finish(&args, 1)?;
             let input = args.first().ok_or("verify needs a G-code file")?;
             let meta = fs::metadata(input).map_err(|e| format!("{input}: {e}"))?;
@@ -1282,7 +1293,13 @@ fn run(mut args: Vec<String>) -> Result<(), String> {
                 ));
             }
             let bytes = fs::read(input).map_err(|e| format!("{input}: {e}"))?;
-            let v = verify::verify(&bytes, &l)?;
+            let mut v = verify::verify(&bytes, &l)?;
+            if let Some(want) = expected.filter(|w| *w != v.sha256) {
+                v.problems.push(format!(
+                    "the program is not the one that was authorised: its SHA-256 is {}, not {want}",
+                    v.sha256
+                ));
+            }
             if json {
                 // the profile and the settings file the limits came from are part of the record
                 let provenance = verify::Provenance {

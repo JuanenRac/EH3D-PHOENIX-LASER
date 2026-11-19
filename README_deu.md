@@ -17,7 +17,7 @@
 
 ---
 
-**Ehrlichkeitscheck - was heute wirklich läuft:** eine Rust-Bibliothek und ein Kommandozeilenprogramm (`phoenix-laser`) mit 526 Tests, die auf einem Computer laufen: wandelt ein Bild per Dithering in Punkte um und schreibt den G-Code eines Lasers, der Zeile für Zeile mit dynamischer Leistung und Überlauf brennt, liest SVG- und DXF-Zeichnungen und schreibt den G-Code, der ihre Konturen schneidet (die inneren zuerst, mit Strahlbreite, Stegen und mehreren Durchgängen) und ihre Formen mit Linien graviert, mit den Einstellungen jeder Ebene in einer Datei, sowie ein Testraster Leistung gegen Vorschub. Es hat ein Fenster (mit `--features gui` gebaut), das ein Bild oder eine Zeichnung öffnet, den Weg des Lasers zeigt, die Einstellungen ändern lässt und den G-Code exportiert, aber das Fenster wurde noch nicht auf einem Bildschirm angesehen; es wurde nicht an einer Maschine erprobt und nicht mit einer Sammlung echter Dateien geprüft.
+**Ehrlichkeitscheck - was heute wirklich läuft:** eine Rust-Bibliothek und ein Kommandozeilenprogramm (`phoenix-laser`) mit 527 Tests, die auf einem Computer laufen: wandelt ein Bild per Dithering in Punkte um und schreibt den G-Code eines Lasers, der Zeile für Zeile mit dynamischer Leistung und Überlauf brennt, liest SVG- und DXF-Zeichnungen und schreibt den G-Code, der ihre Konturen schneidet (die inneren zuerst, mit Strahlbreite, Stegen und mehreren Durchgängen) und ihre Formen mit Linien graviert, mit den Einstellungen jeder Ebene in einer Datei, sowie ein Testraster Leistung gegen Vorschub. Es hat ein Fenster (mit `--features gui` gebaut), das ein Bild oder eine Zeichnung öffnet, den Weg des Lasers zeigt, die Einstellungen ändern lässt und den G-Code exportiert, aber das Fenster wurde noch nicht auf einem Bildschirm angesehen; es wurde nicht an einer Maschine erprobt und nicht mit einer Sammlung echter Dateien geprüft.
 
 ---
 
@@ -30,7 +30,7 @@
 |---|---|
 | Version | `0.0.9` |
 | Reifegrad | Funktionsfähig |
-| Tests | 526 |
+| Tests | 527 |
 | Technologie-Stack | Rust |
 | Auf echter Hardware | Nicht erprobt: nichts davon lief an einer Maschine |
 
@@ -46,7 +46,7 @@ Jede Zeile ist ein Teil dieses Repositorys, und die Ampel sagt, wie weit er heut
 |---|---|---|
 | Kern | 🟡 | wandelt ein Bild per Dithering in Punkte um und schreibt den G-Code eines Lasers, der Zeile für Zeile mit dynamischer Leistung und Überlauf brennt, liest SVG- und DXF-Zeichnungen und schneidet oder graviert sie ebenenweise (geordnete Konturen, Strahlbreite, Stege, Durchgänge, Schraffur) sowie ein Testraster Leistung gegen Vorschub; auf einem Computer mit normalen und beschädigten Eingaben getestet, nicht mit einer Sammlung echter Dateien. |
 | Kommandozeile | 🟡 | `phoenix-laser` (`engrave`, `calibrate`, `info`, `cut`, `vector`, `layers`) führt dieselben Funktionen wie die Bibliothek aus und gibt das Ergebnis aus; jeder Fehler kommt als Meldung und mit einem Exit-Code ungleich null zurück. |
-| Tests | 🟡 | 526 Tests bestehen (`cargo test`), mit Normalfällen, Grenzfällen und beschädigten Eingaben. |
+| Tests | 🟡 | 527 Tests bestehen (`cargo test`), mit Normalfällen, Grenzfällen und beschädigten Eingaben. |
 | Sicherheit | 🟡 | Reines sicheres Rust (`forbid(unsafe_code)`): nichts gerät bei den übergebenen Dateien in Panik und ein schlechter Wert ist ein Fehler mit Begründung; keine unabhängige Prüfung. |
 | Fenster | 🟠 | Geschrieben (egui, `--features gui`): ein Bild oder eine SVG- oder DXF-Zeichnung öffnen oder ablegen, den Weg des Lasers sehen (der Schnitt in einer Farbe, der Leerweg abgeschwächt), die Ebenentabelle bearbeiten, ein Kalibrierraster, Zoom und Verschieben, die Zeit schätzen, exportieren; die Logik ist getestet, aber das Fenster wurde noch nicht gebaut oder auf einem Bildschirm angesehen. |
 | Echte Hardware | 🔴 | Nicht erprobt: nichts davon wurde an einer Maschine ausgeführt. |
@@ -81,6 +81,7 @@ Jede Zeile ist ein Teil dieses Repositorys, und die Ampel sagt, wie weit er heut
 * **Das Raster aus einem Material im Fenster** (`src/window.rs`, `[calibrate]` in der Einstellungsdatei): der Kalibriermodus listet die Materialien der Bibliothek auf; ist eines gewählt, wird das Raster mit derselben Leiter wie bei `phoenix-laser calibrate --material` um seine Leistung und seinen Vorschub gelegt (Felder für die Stufen, die Spreizung und die niedrigste Leistung und den niedrigsten Vorschub, zwischen diesen und den Grenzen gehalten), und ein Schalter brennt die Zahlen mit der Höhe ihres Feldes neben die Quadrate. Ohne Auswahl ist es das Raster der beiden Listen wie bisher.
 * **Die Prüfung des Programms im Fenster** (`src/window.rs`, `[verify]` in der Einstellungsdatei): ein G-Code-Programm, das zum Ansehen geöffnet wird, wird auch von `phoenix-laser verify` mit den Grenzen des Fensters und dem Bett der Einstellungsdatei geprüft, und die Seitenleiste sagt, ob es besteht (mit dem Anfang seines SHA-256) oder was falsch ist; ein Feld hält den Überlauf, der mit ausgeschaltetem Laser über das Bett hinaus erlaubt ist (standardmäßig 0, bis 100 mm), und ein Programm, das außerhalb des Betts brennt, besteht nicht, was auch immer das Feld sagt.
 * **Die Prüfung eines Programms** (`src/verify.rs`): `phoenix-laser verify PROGRAMM.nc` liest ein G-Code-Programm (dieses oder ein fremdes) als Text, führt es nie aus und liefert den SHA-256 der genauen Datei, was sie tut und ein Urteil: Es besteht nur unter der Leistungs- und Geschwindigkeitsgrenze der Maschine, innerhalb des Tisches (Arbeit außerhalb fällt durch; `--overscan-mm` oder `overscan_mm` in `[verify]` erlaubt dem Kopf, mit ausgeschaltetem Laser so weit über den Tisch hinauszufahren, wie es der Überlauf eines anderen Programms tut, und Brennen außerhalb des Tisches fällt immer durch), mit ausgeschaltetem Laser bei jeder Eilbewegung und einem Vorschub bei jeder brennenden Bewegung. `--json` liefert den Bericht, den ein anderes Programm neben einer an diesen Hash gebundenen Freigabe aufbewahren kann, mit dem Maschinenprofil, dem SHA-256 der Einstellungsdatei, aus der die Grenzen stammen, und den Namen der durchgeführten Prüfungen, und der Exit-Code ist 1, wenn es durchfällt.
+* **Eine Prüfung, die an das genehmigte Programm gebunden ist** (`src/verify.rs`): `phoenix-laser verify PROGRAMM.nc --expect-sha256 HASH` lässt das Programm durchfallen, wenn sein SHA-256 nicht die angegebenen 64 Hexziffern sind, und nennt den, den es hat, sodass ein nach der Ansicht geändertes Programm nicht versehentlich ausgeführt wird; der Fehler steht auch im JSON-Bericht.
 * **Geordnetes Dithering** (`src/dither.rs`): `--dither bayer` (auch im Fenster) entscheidet jeden Punkt nach seinem Ort und seinem Grau mit einer 8-x-8-Bayer-Matrix, das Muster ist also regelmäßig und dasselbe Grau brennt immer dieselben Punkte; die Tests prüfen, dass jede Stufe der Matrix einmal vorkommt und die Dunkelheit eines Grautons erhalten bleibt.
 * **Die Tonkurve** (`src/tone.rs`): Vor der Punkterzeugung lassen sich die Graustufen auf den vollen Bereich dehnen (`--auto-level`), Kontrast und Helligkeit ändern, mit einem Gamma krümmen oder invertieren, mit einer einzigen Tabelle von 256 Einträgen; mit den Standardwerten bleibt das Bild völlig unverändert.
 * **Ein geprüfter G-Code:** Das Programm einer Zeichnung wird vor der Ausgabe Zeile für Zeile geprüft: kein Laser an bei einer Eilbewegung oder ohne Geschwindigkeit, kein `S` über voller Leistung, keine Bewegung außerhalb des Bettes, `M5` am Ende; die Datei wird nie über die Zeichnung oder die Einstellungen geschrieben, aus denen sie stammt.
@@ -146,7 +147,7 @@ phoenix-laser materials FILE
 phoenix-laser focus OUT.nc --z-step MM [--z-start MM] [--steps 9] [--length 10] [--spacing 2] [--feed 1000] [--power 30] [--smax 1000] [--max-power P] [--max-speed MM/MIN] [--config FILE] [--profile NAME]
 phoenix-laser frame OUT.nc --size W,H | --gcode PROGRAM.nc [--origin X,Y] [--margin MM] [--feed 3000] [--laps 1] [--bed X,Y] [--smax N]
               [--pilot P --confirm-laser-on] [--max-power P] [--max-speed MM/MIN] [--config FILE] [--profile NAME]
-phoenix-laser verify PROGRAM.nc [--config FILE] [--profile NAME] [--smax N] [--max-power P] [--max-speed MM/MIN] [--bed X,Y] [--overscan-mm MM] [--accel 1000] [--json]
+phoenix-laser verify PROGRAM.nc [--config FILE] [--profile NAME] [--smax N] [--max-power P] [--max-speed MM/MIN] [--bed X,Y] [--overscan-mm MM] [--accel 1000] [--expect-sha256 HASH] [--json]
 phoenix-laser preview PROGRAM.nc [OUT.svg] [--accel 1000] [--rapid 6000] [--smax N] [--bed X,Y] [--width-px 900] [--config FILE] [--profile NAME]
 phoenix-laser [gui] [FILE]                       the window (a build with --features gui); with no arguments it opens
 ```
@@ -174,7 +175,7 @@ Um ein Bild des Fensters aufzunehmen, ohne es von Hand zu öffnen, starten Sie e
 
 ## 🧪 Tests
 
-Die Suite hat 526 Tests (`cargo test`, in der CI unter Windows und Linux). Sie prüfen Normalfälle, Grenzfälle und beschädigte Eingaben: leere Dateien, Datenmüll und abgeschnittene Dateien lösen nie eine Panik aus. Die CI führt außerdem `cargo fmt --check`, `cargo clippy` mit Warnungen als Fehlern und `python -I tools/ci_validate.py` aus.
+Die Suite hat 527 Tests (`cargo test`, in der CI unter Windows und Linux). Sie prüfen Normalfälle, Grenzfälle und beschädigte Eingaben: leere Dateien, Datenmüll und abgeschnittene Dateien lösen nie eine Panik aus. Die CI führt außerdem `cargo fmt --check`, `cargo clippy` mit Warnungen als Fehlern und `python -I tools/ci_validate.py` aus.
 
 ## 🏗️ Build und Veröffentlichung
 
