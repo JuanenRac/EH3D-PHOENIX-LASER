@@ -194,6 +194,60 @@ fn the_program_the_engraving_writes_passes_its_own_check() {
 }
 
 #[test]
+fn verify_allows_the_overscan_of_another_program_only_as_far_as_it_is_told() {
+    // the head runs 2 mm past a bed of 10 x 10 mm on both sides with the laser off, and burns inside
+    let nc = tmp("verify-overscan.nc");
+    std::fs::write(
+        &nc,
+        "G21\nG90\nF1000\nG0 X-2 Y5\nM3 S0\nG1 X0 Y5\nG1 X10 Y5 S300\nG1 X12 Y5 S0\nM5\nM2\n",
+    )
+    .unwrap();
+    let (ok, out, _) = run(&["verify", &nc, "--smax", "1000", "--bed", "10,10"]);
+    assert!(!ok);
+    assert!(out.contains("goes outside of the bed"), "{out}");
+    let (ok, out, err) = run(&[
+        "verify",
+        &nc,
+        "--bed",
+        "10,10",
+        "--overscan-mm",
+        "2",
+        "--json",
+    ]);
+    assert!(ok, "{out} {err}");
+    assert!(out.contains("\"overscan_mm\": 2}"), "{out}");
+    let (ok, _, _) = run(&["verify", &nc, "--bed", "10,10", "--overscan-mm", "1.5"]);
+    assert!(!ok);
+    // the settings file says it too, and the option wins over it
+    let cfg = tmp("verify-overscan.cfg");
+    std::fs::write(
+        &cfg,
+        "[machine]\nbed_x_mm = 10\nbed_y_mm = 10\n[verify]\noverscan_mm = 2\n",
+    )
+    .unwrap();
+    let (ok, out, err) = run(&["verify", &nc, "--config", &cfg]);
+    assert!(ok, "{out} {err}");
+    let (ok, _, _) = run(&["verify", &nc, "--config", &cfg, "--overscan-mm", "0"]);
+    assert!(!ok);
+    // burning outside the bed fails whatever the allowance
+    let burns = tmp("verify-burns.nc");
+    std::fs::write(
+        &burns,
+        "G21\nG90\nF1000\nG0 X0 Y5\nM3 S300\nG1 X11 Y5\nM5\nM2\n",
+    )
+    .unwrap();
+    let (ok, out, _) = run(&["verify", &burns, "--bed", "10,10", "--overscan-mm", "100"]);
+    assert!(!ok);
+    assert!(out.contains("burns outside of the bed"), "{out}");
+    // an allowance that is not possible is an error
+    for bad in ["-1", "101", "x"] {
+        let (ok, _, err) = run(&["verify", &nc, "--overscan-mm", bad]);
+        assert!(!ok, "{bad}");
+        assert!(!err.contains("panicked"), "{err}");
+    }
+}
+
+#[test]
 fn inverting_the_picture_changes_what_burns() {
     let (plain, flipped) = (tmp("plain.nc"), tmp("flipped.nc"));
     let base = [

@@ -4,6 +4,9 @@
 //! gives its SHA-256 (the hash of the exact file, so that an authorisation can be bound to it and any change afterwards is seen), what it does (moves, burnt and travelled length, time, the
 //! box, the highest power and speed) and a verdict: the program passes only when it stays under the limit of power and of speed of the machine, inside its bed, with the laser off during
 //! every rapid move and a feed on every burning move. Everything else it finds is a note. The report is plain text or JSON, so that another program can keep it.
+//!
+//! Work outside the bed is a failure. A program from another program often runs the head a little past the bed with the laser off (the overscan of its hatch lines), so the person can say how
+//! far that is allowed (`overscan_mm`, 0 by default): the head may go that far past the bed with the laser off, and anything that burns outside the bed fails whatever the allowance.
 
 use crate::gcode_out::sha256_hex;
 use crate::preview::{analyse, read, Options};
@@ -24,6 +27,8 @@ pub struct Limits {
     pub accel_mm_s2: f64,
     /// The speed of the moves with the laser off, mm/min.
     pub rapid_mm_min: f64,
+    /// How far (mm) the head may go past the bed with the laser off, as the overscan of another program does. Burning outside the bed always fails.
+    pub overscan_mm: f64,
 }
 
 impl Default for Limits {
@@ -35,9 +40,13 @@ impl Default for Limits {
             bed_mm: None,
             accel_mm_s2: 1000.0,
             rapid_mm_min: 6000.0,
+            overscan_mm: 0.0,
         }
     }
 }
+
+/// The most the head may be allowed to go past the bed (mm).
+pub const MAX_OVERSCAN_MM: f64 = 100.0;
 
 /// What was found in a program.
 #[derive(Debug, Clone, PartialEq)]
@@ -88,6 +97,12 @@ pub fn verify(bytes: &[u8], l: &Limits) -> Result<Verdict, String> {
     if l.s_max == 0 || l.s_max > 100_000 {
         return Err(format!("s_max is {}: it must be from 1 to 100000", l.s_max));
     }
+    if !(l.overscan_mm.is_finite() && (0.0..=MAX_OVERSCAN_MM).contains(&l.overscan_mm)) {
+        return Err(format!(
+            "overscan_mm is {}: it must be from 0 to {MAX_OVERSCAN_MM}",
+            l.overscan_mm
+        ));
+    }
     let program = read(&String::from_utf8_lossy(bytes));
     let report = analyse(
         &program,
@@ -95,13 +110,38 @@ pub fn verify(bytes: &[u8], l: &Limits) -> Result<Verdict, String> {
             accel_mm_s2: l.accel_mm_s2,
             rapid_mm_min: l.rapid_mm_min,
             s_max: Some(l.s_max),
-            bed_mm: l.bed_mm,
+            // the bed is judged here, where the allowance for the overscan of another program can be given
+            bed_mm: None,
         },
     )?;
     let mut problems: Vec<String> = Vec::new();
     let mut notes: Vec<String> = Vec::new();
     if report.moves == 0 {
         problems.push("the program has no move in the plane".to_string());
+    }
+    if let (Some((bx, by)), Some((lo, hi))) = (l.bed_mm, report.bounds) {
+        // how far a box goes past the edges of the bed (0 when it is inside)
+        let past = |(lo, hi): (Pt, Pt)| (-lo.0).max(-lo.1).max(hi.0 - bx).max(hi.1 - by).max(0.0);
+        let all_past = past((lo, hi));
+        let burn_past = report.burn_bounds.map_or(0.0, past);
+        let place = format!(
+            "{:.1},{:.1} to {:.1},{:.1} mm on a bed of {bx} x {by} mm",
+            lo.0, lo.1, hi.0, hi.1
+        );
+        if burn_past > 1e-6 {
+            problems.push(format!("the work burns outside of the bed: {place}"));
+        } else if all_past > l.overscan_mm + 1e-6 {
+            problems.push(if l.overscan_mm > 0.0 {
+                format!("the work goes outside of the bed by {all_past:.1} mm, more than the {} mm allowed for the overscan: {place}", l.overscan_mm)
+            } else {
+                format!("the work goes outside of the bed: {place}")
+            });
+        } else if all_past > 1e-6 {
+            notes.push(format!(
+                "the head goes up to {all_past:.1} mm past the bed with the laser off (the overscan allowed is {} mm)",
+                l.overscan_mm
+            ));
+        }
     }
     for n in &report.notes {
         if is_problem(n) {
@@ -184,7 +224,7 @@ impl Verdict {
             .bed_mm
             .map_or("null".to_string(), |(x, y)| format!("[{x}, {y}]"));
         format!(
-            "{{\n  \"toolpath_sha256\": {},\n  \"bytes\": {},\n  \"verdict\": {},\n  \"moves\": {},\n  \"burn_mm\": {},\n  \"travel_mm\": {},\n  \"seconds\": {},\n  \"bounds_mm\": {},\n  \"max_s\": {},\n  \"max_power_percent\": {},\n  \"max_feed_mm_min\": {},\n  \"limits\": {{\"s_max\": {}, \"max_power_percent\": {}, \"max_speed_mm_min\": {}, \"bed_mm\": {}}},\n  \"problems\": {},\n  \"notes\": {}\n}}\n",
+            "{{\n  \"toolpath_sha256\": {},\n  \"bytes\": {},\n  \"verdict\": {},\n  \"moves\": {},\n  \"burn_mm\": {},\n  \"travel_mm\": {},\n  \"seconds\": {},\n  \"bounds_mm\": {},\n  \"max_s\": {},\n  \"max_power_percent\": {},\n  \"max_feed_mm_min\": {},\n  \"limits\": {{\"s_max\": {}, \"max_power_percent\": {}, \"max_speed_mm_min\": {}, \"bed_mm\": {}, \"overscan_mm\": {}}},\n  \"problems\": {},\n  \"notes\": {}\n}}\n",
             json_string(&self.sha256),
             self.bytes,
             json_string(if self.passes() { "pass" } else { "fail" }),
@@ -200,6 +240,7 @@ impl Verdict {
             l.max_power_percent,
             l.max_speed_mm_min,
             bed,
+            l.overscan_mm,
             json_list(&self.problems),
             json_list(&self.notes),
         )
@@ -414,5 +455,90 @@ mod tests {
         let bad = verify(b"nothing", &Limits::default()).unwrap();
         let t = bad.text();
         assert!(t.contains("problem: the program has no move") && t.ends_with("verdict: FAIL\n"));
+    }
+
+    /// A program from another program: the head runs 2 mm past the bed on both sides with the laser off, and burns inside the bed.
+    const OVERSCAN: &str =
+        "G21\nG90\nF1000\nG0 X-2 Y5\nM3 S0\nG1 X0 Y5\nG1 X10 Y5 S300\nG1 X12 Y5 S0\nM5\nM2\n";
+
+    fn bed10(overscan_mm: f64) -> Limits {
+        Limits {
+            bed_mm: Some((10.0, 10.0)),
+            overscan_mm,
+            ..Limits::default()
+        }
+    }
+
+    #[test]
+    fn the_overscan_of_another_program_is_allowed_only_as_far_as_the_person_says() {
+        // nothing is allowed by default
+        let v = verify(OVERSCAN.as_bytes(), &bed10(0.0)).unwrap();
+        assert!(!v.passes());
+        assert!(
+            v.problems
+                .iter()
+                .any(|p| p.contains("goes outside of the bed")),
+            "{:?}",
+            v.problems
+        );
+        // exactly as far as it goes
+        let v = verify(OVERSCAN.as_bytes(), &bed10(2.0)).unwrap();
+        assert!(v.passes(), "{:?}", v.problems);
+        assert!(
+            v.notes
+                .iter()
+                .any(|n| n.contains("2.0 mm past the bed with the laser off")),
+            "{:?}",
+            v.notes
+        );
+        // a little less is a failure that says the allowance
+        let v = verify(OVERSCAN.as_bytes(), &bed10(1.9)).unwrap();
+        assert!(
+            v.problems
+                .iter()
+                .any(|p| p.contains("more than the 1.9 mm allowed")),
+            "{:?}",
+            v.problems
+        );
+        // a program inside the bed has nothing to say about it
+        let v = verify(GOOD.as_bytes(), &bed10(5.0)).unwrap();
+        assert!(v.passes() && !v.notes.iter().any(|n| n.contains("past the bed")));
+    }
+
+    #[test]
+    fn burning_outside_the_bed_fails_whatever_the_allowance() {
+        let burns = "G21\nG90\nF1000\nG0 X0 Y5\nM3 S300\nG1 X11 Y5\nM5\nM2\n";
+        for allowance in [0.0, 2.0, MAX_OVERSCAN_MM] {
+            let v = verify(burns.as_bytes(), &bed10(allowance)).unwrap();
+            assert!(!v.passes(), "{allowance}");
+            assert!(
+                v.problems
+                    .iter()
+                    .any(|p| p.contains("burns outside of the bed")),
+                "{:?}",
+                v.problems
+            );
+        }
+        // the corner of the bed itself is inside
+        let edge = "G21\nG90\nF1000\nG0 X0 Y0\nM3 S300\nG1 X10 Y10\nM5\nM2\n";
+        assert!(verify(edge.as_bytes(), &bed10(0.0)).unwrap().passes());
+        // with no bed there is nothing to be outside of
+        let v = verify(OVERSCAN.as_bytes(), &Limits::default()).unwrap();
+        assert!(v.passes());
+    }
+
+    #[test]
+    fn an_allowance_that_is_not_possible_is_an_error_and_the_report_says_it() {
+        for bad in [-0.1, MAX_OVERSCAN_MM + 0.1, f64::NAN, f64::INFINITY] {
+            assert!(verify(GOOD.as_bytes(), &bed10(bad)).is_err(), "{bad}");
+        }
+        let l = bed10(2.0);
+        let v = verify(OVERSCAN.as_bytes(), &l).unwrap();
+        let j = v.json(&l);
+        assert!(
+            j.contains("\"bed_mm\": [10, 10], \"overscan_mm\": 2}"),
+            "{j}"
+        );
+        assert!(j.contains("\"verdict\": \"pass\""));
     }
 }

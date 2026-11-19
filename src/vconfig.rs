@@ -394,6 +394,27 @@ impl FocusSettings {
     }
 }
 
+/// The check of a program (`phoenix-laser verify`).
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct VerifySettings {
+    /// How far (mm) the head may go past the bed with the laser off, as the overscan of another program does: 0 allows none. Burning outside the bed always fails.
+    pub overscan_mm: f64,
+}
+
+impl VerifySettings {
+    pub fn validate(&self) -> Result<(), String> {
+        let max = crate::verify::MAX_OVERSCAN_MM;
+        if self.overscan_mm.is_finite() && (0.0..=max).contains(&self.overscan_mm) {
+            Ok(())
+        } else {
+            Err(format!(
+                "verify overscan_mm is {}: it must be from 0 to {max}",
+                self.overscan_mm
+            ))
+        }
+    }
+}
+
 /// How a picture is followed for its contours (`phoenix-laser trace`).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct TraceSettings {
@@ -488,6 +509,7 @@ pub struct Settings {
     pub frame: FrameSettings,
     pub focus: FocusSettings,
     pub trace: TraceSettings,
+    pub verify: VerifySettings,
     /// The tone curve of a picture before it becomes dots (`phoenix-laser engrave` and the window).
     pub tone: Tone,
     pub defaults: LayerParams,
@@ -517,6 +539,7 @@ impl Default for Settings {
             frame: FrameSettings::default(),
             focus: FocusSettings::default(),
             trace: TraceSettings::default(),
+            verify: VerifySettings::default(),
             tone: Tone::default(),
             defaults: LayerParams::default(),
             layers: Vec::new(),
@@ -614,6 +637,7 @@ impl Settings {
         self.frame.validate(m.max_power_percent)?;
         self.focus.validate()?;
         self.trace.validate()?;
+        self.verify.validate()?;
         self.tone.validate()?;
         self.defaults.validate(m.max_passes)?;
         if self.defaults.mode != LayerMode::Skip {
@@ -767,6 +791,7 @@ fn set_global(s: &mut Settings, section: &str, key: &str, value: &str) -> Result
         ("tone", "brightness") => s.tone.brightness = number(value)?,
         ("tone", "invert") => s.tone.invert = switch(value)?,
         ("tone", "auto_level") => s.tone.auto_level = switch(value)?,
+        ("verify", "overscan_mm") => s.verify.overscan_mm = number(value)?,
         ("trace", "threshold") => {
             s.trace.threshold = u8::try_from(whole(value)?)
                 .map_err(|_| "trace threshold must be from 0 to 255".to_string())?
@@ -839,7 +864,7 @@ pub fn parse(text: &str) -> Result<Settings, String> {
             let (word, rest) = head.split_once(char::is_whitespace).unwrap_or((head, ""));
             let word = word.to_ascii_lowercase();
             section = match word.as_str() {
-                "limits" | "read" | "order" | "offset" | "hatch" | "machine" | "frame" | "focus" | "trace" | "tone" | "defaults" if rest.trim().is_empty() => word,
+                "limits" | "read" | "order" | "offset" | "hatch" | "machine" | "frame" | "focus" | "trace" | "tone" | "verify" | "defaults" if rest.trim().is_empty() => word,
                 "layer" if !rest.trim().is_empty() => {
                     named.push(rest.trim().to_lowercase());
                     format!("layer {}", rest.trim().to_lowercase())
@@ -848,7 +873,7 @@ pub fn parse(text: &str) -> Result<Settings, String> {
                     named_profiles.push(rest.trim().to_lowercase());
                     format!("profile {}", rest.trim().to_lowercase())
                 }
-                _ => return Err(format!("line {line}: '[{head}]' is not a section (limits, read, order, offset, hatch, machine, frame, focus, trace, tone, defaults, layer NAME or profile NAME)")),
+                _ => return Err(format!("line {line}: '[{head}]' is not a section (limits, read, order, offset, hatch, machine, frame, focus, trace, tone, verify, defaults, layer NAME or profile NAME)")),
             };
             continue;
         }
@@ -1440,5 +1465,22 @@ mod tests {
         ] {
             assert!(parse(text).is_err(), "{text:?}");
         }
+    }
+
+    #[test]
+    fn the_overscan_that_verify_allows_is_read_and_the_default_is_none() {
+        assert_eq!(Settings::default().verify, VerifySettings::default());
+        assert_eq!(VerifySettings::default().overscan_mm, 0.0);
+        let s = parse("[verify]\noverscan_mm = 3.5\n").unwrap();
+        assert_eq!(s.verify.overscan_mm, 3.5);
+        for text in [
+            "[verify]\noverscan_mm = -1\n",
+            "[verify]\noverscan_mm = 100.5\n",
+            "[verify]\noverscan_mm = x\n",
+            "[verify]\nspeed = 5\n",
+        ] {
+            assert!(parse(text).is_err(), "{text:?}");
+        }
+        assert!(parse("[verify]\noverscan_mm = 100\n").is_ok());
     }
 }

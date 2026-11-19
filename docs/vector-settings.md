@@ -17,7 +17,7 @@ key = value
 key = value
 ```
 
-Sections: `[limits]`, `[read]`, `[order]`, `[offset]`, `[hatch]`, `[machine]`, `[frame]`, `[focus]`, `[trace]`, `[tone]`, `[defaults]`, one `[layer NAME]` for each layer or colour and one `[profile NAME]` for each machine. `[defaults]` is what a layer gets that the file
+Sections: `[limits]`, `[read]`, `[order]`, `[offset]`, `[hatch]`, `[machine]`, `[frame]`, `[focus]`, `[trace]`, `[tone]`, `[verify]`, `[defaults]`, one `[layer NAME]` for each layer or colour and one `[profile NAME]` for each machine. `[defaults]` is what a layer gets that the file
 does not name, and also what every `[layer NAME]` starts from (wherever in the file `[defaults]` is written). The switches are `on` and `off`.
 
 ## What a layer is
@@ -213,6 +213,16 @@ The tone curve of a picture before it becomes dots. It is the starting point of 
 | `auto_level` | off | the darkest level of the picture becomes black and the lightest becomes white |
 
 The keys of `[tone]` are `gamma`, `contrast`, `brightness`, `invert` and `auto_level`.
+
+### `[verify]`
+
+The check of a program (`phoenix-laser verify`). Work outside the bed is a failure. A program made by another program often runs the head a little past the bed with the laser off, which is the overscan of its hatch lines, so the person can say how far that is allowed; the option `--overscan-mm` of the command takes the place of this key.
+
+| Key | Default | Meaning |
+|---|---|---|
+| `overscan_mm` | 0 | how far (mm) the head may go past the bed with the laser off, from 0 to 100; 0 allows none. A move that burns outside the bed fails whatever this says |
+
+The only key of `[verify]` is `overscan_mm`.
 
 ### `[defaults]` and `[layer NAME]`
 
