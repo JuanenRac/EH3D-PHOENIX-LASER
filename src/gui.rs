@@ -191,6 +191,7 @@ impl App {
                         Mode::Text => self.text_group(ui),
                         Mode::Qr => self.qr_group(ui),
                         Mode::Marks => self.marks_group(ui),
+                        Mode::Barcode => self.barcode_group(ui),
                         Mode::Trace => {
                             self.trace_group(ui);
                             self.laser_group(ui);
@@ -301,6 +302,7 @@ impl App {
                     Mode::Text => Msg::ModeText,
                     Mode::Qr => Msg::ModeQr,
                     Mode::Marks => Msg::ModeMarks,
+                    Mode::Barcode => Msg::ModeBarcode,
                 };
                 egui::ComboBox::from_id_salt("mode")
                     .selected_text(shown.tr(lang))
@@ -319,6 +321,7 @@ impl App {
                         ui.selectable_value(&mut mode, Mode::Text, Msg::ModeText.tr(lang));
                         ui.selectable_value(&mut mode, Mode::Qr, Msg::ModeQr.tr(lang));
                         ui.selectable_value(&mut mode, Mode::Marks, Msg::ModeMarks.tr(lang));
+                        ui.selectable_value(&mut mode, Mode::Barcode, Msg::ModeBarcode.tr(lang));
                     });
                 if mode != self.win.mode {
                     self.win.set_mode(mode);
@@ -721,6 +724,36 @@ impl App {
                     self.win.set_qr_invert(invert);
                 }
                 self.fields_of(ui, Section::Qr);
+                for key in [
+                    Key::SMax,
+                    Key::OriginX,
+                    Key::OriginY,
+                    Key::MaxPower,
+                    Key::MaxSpeed,
+                    Key::LaserWatts,
+                ] {
+                    self.field_for(ui, key);
+                }
+            });
+    }
+
+    /// The barcode mode: the data to burn, the switch of the mirror image and the keys of `[barcode]` (the width of the narrowest bar, the height, the distance between the lines, the power, the speed, the passes and the limits).
+    fn barcode_group(&mut self, ui: &mut egui::Ui) {
+        let lang = self.win.lang;
+        egui::CollapsingHeader::new(self.heading(Msg::ModeBarcode))
+            .default_open(true)
+            .show(ui, |ui| {
+                ui.label(Msg::BarcodeData.tr(lang));
+                let mut data = self.win.barcode_data.clone();
+                let edit = egui::TextEdit::singleline(&mut data).desired_width(f32::INFINITY);
+                if ui.add(edit).changed() {
+                    self.win.set_barcode_data(data);
+                }
+                let mut mirror = self.win.barcode_mirror;
+                if ui.checkbox(&mut mirror, Msg::Mirror.tr(lang)).changed() {
+                    self.win.set_barcode_mirror(mirror);
+                }
+                self.fields_of(ui, Section::Barcode);
                 for key in [
                     Key::SMax,
                     Key::OriginX,

@@ -278,10 +278,16 @@ pub enum Msg {
     MarksHeight,
     MarksArm,
     MarksCross,
+    ModeBarcode,
+    BarcodeMade,
+    BarcodeData,
+    BarcodeModuleMm,
+    BarcodeHeightMm,
+    BarcodeMaxWidth,
 }
 
 impl Msg {
-    pub const ALL: [Msg; 190] = [
+    pub const ALL: [Msg; 196] = [
         Msg::Language,
         Msg::Fit,
         Msg::Cancel,
@@ -472,6 +478,12 @@ impl Msg {
         Msg::MarksHeight,
         Msg::MarksArm,
         Msg::MarksCross,
+        Msg::ModeBarcode,
+        Msg::BarcodeMade,
+        Msg::BarcodeData,
+        Msg::BarcodeModuleMm,
+        Msg::BarcodeHeightMm,
+        Msg::BarcodeMaxWidth,
     ];
 
     /// The words in the order English, Spanish, German, French, Italian, Japanese, Chinese, Portuguese.
@@ -2376,6 +2388,66 @@ impl Msg {
                 "中央に十字",
                 "中心十字",
                 "Cruz ao centro",
+            ],
+            Msg::ModeBarcode => [
+                "Code 128 barcode",
+                "Código de barras Code 128",
+                "Strichcode Code 128",
+                "Code-barres Code 128",
+                "Codice a barre Code 128",
+                "Code 128 バーコード",
+                "Code 128 条形码",
+                "Código de barras Code 128",
+            ],
+            Msg::BarcodeMade => [
+                "Barcode: {0} characters, set {1}, {2} x {3} mm",
+                "Código de barras: {0} caracteres, juego {1}, {2} x {3} mm",
+                "Strichcode: {0} Zeichen, Zeichensatz {1}, {2} x {3} mm",
+                "Code-barres : {0} caractères, jeu {1}, {2} x {3} mm",
+                "Codice a barre: {0} caratteri, set {1}, {2} x {3} mm",
+                "バーコード：{0} 文字、セット {1}、{2} x {3} mm",
+                "条形码：{0} 个字符，字符集 {1}，{2} x {3} mm",
+                "Código de barras: {0} carateres, conjunto {1}, {2} x {3} mm",
+            ],
+            Msg::BarcodeData => [
+                "Data to burn (printable characters)",
+                "Datos a grabar (caracteres imprimibles)",
+                "Zu brennende Daten (druckbare Zeichen)",
+                "Données à graver (caractères imprimables)",
+                "Dati da incidere (caratteri stampabili)",
+                "焼き付けるデータ（印字可能な文字）",
+                "要烧刻的数据（可打印字符）",
+                "Dados a gravar (carateres imprimíveis)",
+            ],
+            Msg::BarcodeModuleMm => [
+                "Narrowest bar (mm)",
+                "Barra más estrecha (mm)",
+                "Schmalster Balken (mm)",
+                "Barre la plus étroite (mm)",
+                "Barra più stretta (mm)",
+                "最も細いバー（mm）",
+                "最窄条宽（mm）",
+                "Barra mais estreita (mm)",
+            ],
+            Msg::BarcodeHeightMm => [
+                "Height of the bars (mm)",
+                "Altura de las barras (mm)",
+                "Höhe der Balken (mm)",
+                "Hauteur des barres (mm)",
+                "Altezza delle barre (mm)",
+                "バーの高さ（mm）",
+                "条高（mm）",
+                "Altura das barras (mm)",
+            ],
+            Msg::BarcodeMaxWidth => [
+                "Widest barcode (mm)",
+                "Ancho máximo del código (mm)",
+                "Breitester Strichcode (mm)",
+                "Largeur maximale du code (mm)",
+                "Larghezza massima del codice (mm)",
+                "最大のバーコード幅（mm）",
+                "条形码最大宽度（mm）",
+                "Largura máxima do código (mm)",
             ],
         }
     }

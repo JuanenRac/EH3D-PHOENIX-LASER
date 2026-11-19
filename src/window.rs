@@ -2,6 +2,7 @@
 //! file to write and the status line. The window (`gui`) only draws this and passes on what the person does, so everything that can be decided is decided here, in code that is tested.
 //! The engraving is made with the same functions as the command line (`dither`, `engrave`, `grid`) and written with the same header.
 
+use crate::barcode;
 use crate::calibrate::{self, focus_grid, focus_test, grid, labelled_grid, ladder, Grid, Labels};
 use crate::cut::{layers as layer_list, plan as plan_cut};
 use crate::dither::{dither, Method};
@@ -20,8 +21,9 @@ use crate::text;
 use crate::tone::Tone;
 use crate::trace;
 use crate::vconfig::{
-    self, CalibrateSettings, FocusSettings, FrameSettings, KerfSide, LayerMode, LayerParams,
-    MarksSettings, QrEcc, QrSettings, Settings, TextAlign, TextSettings, TraceSettings,
+    self, BarcodeSettings, CalibrateSettings, FocusSettings, FrameSettings, KerfSide, LayerMode,
+    LayerParams, MarksSettings, QrEcc, QrSettings, Settings, TextAlign, TextSettings,
+    TraceSettings,
 };
 use crate::vector::{Drawing, ReadOptions};
 use crate::verify;
@@ -95,6 +97,8 @@ pub enum Mode {
     Qr,
     /// The positioning marks: an L at each corner of a rectangle of a size that is typed, burnt at a low power.
     Marks,
+    /// Some data burnt as a Code 128 barcode, filling its bars.
+    Barcode,
 }
 
 /// How a grey picture becomes dots.
@@ -207,6 +211,16 @@ pub enum Key {
     MarksPower,
     MarksSpeed,
     MarksPasses,
+    BarcodeModule,
+    BarcodeHeight,
+    BarcodeLine,
+    BarcodePower,
+    BarcodeSpeed,
+    BarcodePasses,
+    BarcodeMaxChars,
+    BarcodeMaxWidth,
+    BarcodeMaxLines,
+    BarcodeMaxMinutes,
 }
 
 /// The group of the side panel a setting belongs to.
@@ -223,6 +237,7 @@ pub enum Section {
     Text,
     Qr,
     Marks,
+    Barcode,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -243,6 +258,7 @@ fn default_fields() -> Vec<Field> {
     let d = TextSettings::default();
     let qd = QrSettings::default();
     let kd = MarksSettings::default();
+    let bd = BarcodeSettings::default();
     let t = |v: f64| format!("{v}");
     vec![
         f(Key::WidthMm, Msg::WidthMm, Section::Image, "50"),
@@ -283,6 +299,66 @@ fn default_fields() -> Vec<Field> {
         f(Key::FocusFeed, Msg::Feed, Section::Focus, "1000"),
         f(Key::FocusPower, Msg::Power, Section::Focus, "30"),
         f(Key::FocusPowers, Msg::FocusPowers, Section::Focus, ""),
+        f(
+            Key::BarcodeModule,
+            Msg::BarcodeModuleMm,
+            Section::Barcode,
+            &t(bd.module_mm),
+        ),
+        f(
+            Key::BarcodeHeight,
+            Msg::BarcodeHeightMm,
+            Section::Barcode,
+            &t(bd.height_mm),
+        ),
+        f(
+            Key::BarcodeLine,
+            Msg::QrLineMm,
+            Section::Barcode,
+            &t(bd.line_mm),
+        ),
+        f(
+            Key::BarcodePower,
+            Msg::Power,
+            Section::Barcode,
+            &t(bd.power_percent),
+        ),
+        f(
+            Key::BarcodeSpeed,
+            Msg::Feed,
+            Section::Barcode,
+            &t(bd.speed_mm_min),
+        ),
+        f(
+            Key::BarcodePasses,
+            Msg::Passes,
+            Section::Barcode,
+            &bd.passes.to_string(),
+        ),
+        f(
+            Key::BarcodeMaxChars,
+            Msg::TextMaxChars,
+            Section::Barcode,
+            &bd.max_chars.to_string(),
+        ),
+        f(
+            Key::BarcodeMaxWidth,
+            Msg::BarcodeMaxWidth,
+            Section::Barcode,
+            &t(bd.max_width_mm),
+        ),
+        f(
+            Key::BarcodeMaxLines,
+            Msg::QrMaxLines,
+            Section::Barcode,
+            &bd.max_lines.to_string(),
+        ),
+        f(
+            Key::BarcodeMaxMinutes,
+            Msg::MaxMinutes,
+            Section::Barcode,
+            &t(bd.max_minutes),
+        ),
         f(Key::MarksWidth, Msg::MarksWidth, Section::Marks, "50"),
         f(Key::MarksHeight, Msg::MarksHeight, Section::Marks, "50"),
         f(Key::MarksArm, Msg::MarksArm, Section::Marks, &t(kd.arm_mm)),
@@ -792,6 +868,13 @@ pub enum Summary {
         height_mm: f64,
         strokes: usize,
     },
+    /// A Code 128 barcode burnt by filling its bars.
+    BarcodeMade {
+        chars: usize,
+        set: char,
+        width_mm: f64,
+        height_mm: f64,
+    },
     /// The positioning marks of a rectangle.
     MarksMade {
         width_mm: f64,
@@ -965,6 +1048,20 @@ impl Status {
                     &strokes.to_string(),
                 ],
             ),
+            Status::Done(Summary::BarcodeMade {
+                chars,
+                set,
+                width_mm,
+                height_mm,
+            }) => fill(
+                Msg::BarcodeMade.tr(lang),
+                &[
+                    &chars.to_string(),
+                    &set.to_string(),
+                    &format!("{width_mm:.1}"),
+                    &format!("{height_mm:.1}"),
+                ],
+            ),
             Status::Done(Summary::MarksMade {
                 width_mm,
                 height_mm,
@@ -1133,6 +1230,9 @@ pub struct Window {
     pub text_align: TextAlign,
     /// The positioning marks have a cross in the middle too.
     pub marks_cross: bool,
+    /// The data that the barcode mode burns, and whether it is burnt as a mirror image.
+    pub barcode_data: String,
+    pub barcode_mirror: bool,
 }
 
 impl Window {
@@ -1178,6 +1278,8 @@ impl Window {
             text_mirror: false,
             text_align: TextAlign::Left,
             marks_cross: MarksSettings::default().centre_cross,
+            barcode_data: String::new(),
+            barcode_mirror: BarcodeSettings::default().mirror,
         }
     }
 
@@ -1196,7 +1298,9 @@ impl Window {
     /// Whether the G-code can be worked out now.
     pub fn can_compute(&self) -> bool {
         match self.mode {
-            Mode::Calibrate | Mode::Focus | Mode::Text | Mode::Qr | Mode::Marks => true,
+            Mode::Calibrate | Mode::Focus | Mode::Text | Mode::Qr | Mode::Marks | Mode::Barcode => {
+                true
+            }
             Mode::Frame => self.framed_mode().is_some(),
             Mode::Preview => self.program.is_some(),
             Mode::Engrave => self.picture.is_some(),
@@ -1259,6 +1363,21 @@ impl Window {
     pub fn set_qr_mirror(&mut self, on: bool) {
         if self.qr_mirror != on {
             self.qr_mirror = on;
+            self.mark_stale();
+        }
+    }
+
+    /// Writes the data that the barcode mode burns.
+    pub fn set_barcode_data(&mut self, data: String) {
+        if self.barcode_data != data {
+            self.barcode_data = data;
+            self.mark_stale();
+        }
+    }
+
+    pub fn set_barcode_mirror(&mut self, on: bool) {
+        if self.barcode_mirror != on {
+            self.barcode_mirror = on;
             self.mark_stale();
         }
     }
@@ -1503,6 +1622,7 @@ impl Window {
             (_, Mode::Text) => Some(PathBuf::from("text.nc")),
             (_, Mode::Qr) => Some(PathBuf::from("qr.nc")),
             (_, Mode::Marks) => Some(PathBuf::from("marks.nc")),
+            (_, Mode::Barcode) => Some(PathBuf::from("barcode.nc")),
             (_, Mode::Frame) => Some(PathBuf::from("frame.nc")),
             _ => Some(PathBuf::from("calibration.nc")),
         }
@@ -1788,6 +1908,17 @@ impl Window {
                 self.put(Key::MarksSpeed, t(s.marks.speed_mm_min));
                 self.put(Key::MarksPasses, s.marks.passes.to_string());
                 self.marks_cross = s.marks.centre_cross;
+                self.put(Key::BarcodeModule, t(s.barcode.module_mm));
+                self.put(Key::BarcodeHeight, t(s.barcode.height_mm));
+                self.put(Key::BarcodeLine, t(s.barcode.line_mm));
+                self.put(Key::BarcodePower, t(s.barcode.power_percent));
+                self.put(Key::BarcodeSpeed, t(s.barcode.speed_mm_min));
+                self.put(Key::BarcodePasses, s.barcode.passes.to_string());
+                self.put(Key::BarcodeMaxChars, s.barcode.max_chars.to_string());
+                self.put(Key::BarcodeMaxWidth, t(s.barcode.max_width_mm));
+                self.put(Key::BarcodeMaxLines, s.barcode.max_lines.to_string());
+                self.put(Key::BarcodeMaxMinutes, t(s.barcode.max_minutes));
+                self.barcode_mirror = s.barcode.mirror;
                 self.qr_ecc = s.qr.ecc;
                 self.qr_invert = s.qr.invert;
                 self.qr_mirror = s.qr.mirror;
@@ -2003,6 +2134,7 @@ impl Window {
             Mode::Text => self.text_job(),
             Mode::Qr => self.qr_job(),
             Mode::Marks => self.marks_job(),
+            Mode::Barcode => self.barcode_job(),
         };
         match made {
             Ok(done) => {
@@ -2030,6 +2162,7 @@ impl Window {
                             | Mode::Text
                             | Mode::Qr
                             | Mode::Marks
+                            | Mode::Barcode
                     ),
                 );
                 self.segs = segs;
@@ -2493,6 +2626,50 @@ impl Window {
     /// Whether the box of the powers of the focus grid holds anything: then the grid is burnt and the box of the single power is not used.
     pub fn focus_powers_given(&self) -> bool {
         !self.field(Key::FocusPowers).text.trim().is_empty()
+    }
+
+    /// The Code 128 barcode of the window burnt like `phoenix-laser barcode`: the boxes of its group are the settings of `[barcode]`, the lower left corner is the origin of the machine, and the limits of
+    /// power, speed and bed hold over it. Data that is not printable text or is too long, a barcode wider than the limit, a fill of too many moves, a burning that takes too long or work outside of the bed
+    /// is refused and nothing is made.
+    fn barcode_job(&self) -> Result<Done, Status> {
+        let b = BarcodeSettings {
+            module_mm: self.number(Key::BarcodeModule)?,
+            height_mm: self.number(Key::BarcodeHeight)?,
+            line_mm: self.number(Key::BarcodeLine)?,
+            power_percent: self.number(Key::BarcodePower)?,
+            speed_mm_min: self.number(Key::BarcodeSpeed)?,
+            passes: self.whole(Key::BarcodePasses, 1.0, 20.0)?,
+            max_chars: self.whole(Key::BarcodeMaxChars, 1.0, 80.0)?,
+            max_width_mm: self.number(Key::BarcodeMaxWidth)?,
+            max_lines: self.whole(Key::BarcodeMaxLines, 1.0, 1_000_000.0)?,
+            max_minutes: self.number(Key::BarcodeMaxMinutes)?,
+            mirror: self.barcode_mirror,
+        };
+        let s_max = self.whole(Key::SMax, 1.0, 100_000.0)?;
+        let (max_power, max_speed) = self.limits()?;
+        let m = qr::Machine {
+            s_max,
+            max_power_percent: max_power,
+            max_speed_mm_min: max_speed,
+            bed_mm: self.settings.machine.bed_mm,
+        };
+        let origin = (self.number(Key::OriginX)?, self.number(Key::OriginY)?);
+        let (gcode, code) =
+            barcode::program(&self.barcode_data, origin, &b, &m).map_err(Status::Failed)?;
+        Ok(Done {
+            gcode,
+            source: None,
+            tools: format!("laser, S 0-{s_max}, Code 128 barcode filled with lines"),
+            s_max,
+            line_mm: b.line_mm,
+            summary: Summary::BarcodeMade {
+                chars: self.barcode_data.len(),
+                set: code.set(),
+                width_mm: barcode::width_modules(&code) as f64 * b.module_mm,
+                height_mm: b.height_mm,
+            },
+            notes: Vec::new(),
+        })
     }
 
     /// The positioning marks of the window burnt like `phoenix-laser marks`: the boxes of its group are the settings of `[marks]` and the size of the rectangle, whose lower left corner is the
@@ -4900,6 +5077,243 @@ hatch_cross = on
                 assert!(!m.tr(l).is_empty());
             }
             assert!(w.status.text(l).contains("50.0"), "{}", w.status.text(l));
+        }
+    }
+
+    #[test]
+    fn the_barcode_mode_burns_the_data_like_the_command_and_says_what_it_made() {
+        let mut w = Window::new(Lang::En);
+        w.set_mode(Mode::Barcode);
+        assert!(w.can_compute());
+        // the boxes start from the settings of [barcode]
+        let d = BarcodeSettings::default();
+        assert_eq!(text_of(&w, Key::BarcodeModule), d.module_mm.to_string());
+        assert_eq!(text_of(&w, Key::BarcodeMaxChars), d.max_chars.to_string());
+        assert_eq!(
+            text_of(&w, Key::BarcodeMaxMinutes),
+            d.max_minutes.to_string()
+        );
+        assert_eq!(w.barcode_mirror, d.mirror);
+        // no data: nothing to encode
+        assert!(!w.compute());
+        assert!(
+            matches!(&w.status, Status::Failed(e) if e.contains("data of the barcode is empty")),
+            "{:?}",
+            w.status
+        );
+        w.set_barcode_data("EH3D-42".to_string());
+        assert!(w.compute());
+        let m = qr::Machine {
+            s_max: 1000,
+            max_power_percent: 100.0,
+            max_speed_mm_min: 30_000.0,
+            bed_mm: None,
+        };
+        let (g, code) = barcode::program("EH3D-42", (0.0, 0.0), &d, &m).unwrap();
+        let done = w.done.as_ref().unwrap();
+        assert_eq!(done.gcode, g);
+        let width = barcode::width_modules(&code) as f64 * d.module_mm;
+        assert_eq!(
+            done.summary,
+            Summary::BarcodeMade {
+                chars: 7,
+                set: 'B',
+                width_mm: width,
+                height_mm: 10.0
+            }
+        );
+        assert_eq!(
+            w.status.text(Lang::En),
+            format!("Barcode: 7 characters, set B, {width:.1} x 10.0 mm")
+        );
+        assert!(w
+            .status
+            .text(Lang::Pt)
+            .starts_with("Código de barras: 7 carateres, conjunto B"));
+        // figures only go in the other set
+        w.set_barcode_data("123456".to_string());
+        assert!(w.stale);
+        assert!(w.compute());
+        assert!(matches!(
+            w.done.as_ref().unwrap().summary,
+            Summary::BarcodeMade { set: 'C', .. }
+        ));
+        // the mirror image is the one the command burns with --mirror
+        w.set_barcode_data("EH3D-42".to_string());
+        w.set_barcode_mirror(true);
+        assert!(w.stale);
+        assert!(w.compute());
+        let mirrored = BarcodeSettings { mirror: true, ..d };
+        assert_eq!(
+            w.done.as_ref().unwrap().gcode,
+            barcode::program("EH3D-42", (0.0, 0.0), &mirrored, &m)
+                .unwrap()
+                .0
+        );
+        // the bars are drawn, inside the width of the barcode, and the program is written with the header of the command line
+        assert!(w.segs.iter().any(|s| s.burn));
+        let (lo, hi) = w.bounds().unwrap();
+        assert!(lo.0 >= -1e-9 && hi.0 <= width + 1e-9 && hi.1 <= 10.0 + 1e-9);
+        assert_eq!(
+            w.suggested_output_for(Job::ExportGcode),
+            Some(PathBuf::from("barcode.nc"))
+        );
+        let s = Scratch::new("barcode-export");
+        let out = s.0.join("barcode.nc");
+        assert!(w.export(&out));
+        let text = fs::read_to_string(&out).unwrap();
+        assert!(text.contains("; tools: laser, S 0-1000, Code 128 barcode filled with lines"));
+        assert!(text.ends_with("M2\n"));
+        // the data is never in a comment of the program
+        w.set_barcode_data("A) (B".to_string());
+        assert!(w.compute());
+        assert!(!w.done.as_ref().unwrap().gcode.contains("A) (B"));
+        // the origin of the machine moves the barcode
+        set(&mut w, Key::OriginX, "10");
+        set(&mut w, Key::OriginY, "5");
+        assert!(w.compute());
+        let (lo, _) = w.bounds().unwrap();
+        assert!(lo.0 >= 0.0);
+        assert!(w
+            .segs
+            .iter()
+            .filter(|s| s.burn)
+            .all(|s| s.x0 >= 10.0 - 1e-9 && s.y0 >= 5.0 - 1e-9));
+    }
+
+    #[test]
+    fn the_barcode_mode_refuses_what_does_not_fit_or_is_over_a_limit_and_names_the_box() {
+        let mut w = Window::new(Lang::En);
+        w.set_mode(Mode::Barcode);
+        w.set_barcode_data("AB12".to_string());
+        assert!(w.compute());
+        // more characters than the box allows
+        set(&mut w, Key::BarcodeMaxChars, "3");
+        assert!(!w.compute());
+        assert!(matches!(&w.status, Status::Failed(e) if e.contains("max_chars")));
+        set(&mut w, Key::BarcodeMaxChars, "20");
+        // a barcode wider than the limit
+        set(&mut w, Key::BarcodeMaxWidth, "20");
+        assert!(!w.compute());
+        assert!(matches!(&w.status, Status::Failed(e) if e.contains("max_width_mm")));
+        set(&mut w, Key::BarcodeMaxWidth, "150");
+        // a burning that takes too long, and a fill of too many moves
+        set(&mut w, Key::BarcodeMaxMinutes, "1");
+        set(&mut w, Key::BarcodeSpeed, "10");
+        assert!(!w.compute());
+        assert!(
+            matches!(&w.status, Status::Failed(e) if e.contains("max_minutes")),
+            "{:?}",
+            w.status
+        );
+        set(&mut w, Key::BarcodeSpeed, "1000");
+        set(&mut w, Key::BarcodeMaxMinutes, "240");
+        set(&mut w, Key::BarcodeMaxLines, "5");
+        assert!(!w.compute());
+        assert!(
+            matches!(&w.status, Status::Failed(e) if e.contains("max_lines")),
+            "{:?}",
+            w.status
+        );
+        set(&mut w, Key::BarcodeMaxLines, "100000");
+        // the limits of the machine hold over the power and the speed
+        set(&mut w, Key::MaxPower, "10");
+        assert!(!w.compute());
+        assert!(matches!(&w.status, Status::Failed(e) if e.contains("the power of the barcode")));
+        set(&mut w, Key::MaxPower, "100");
+        set(&mut w, Key::MaxSpeed, "500");
+        assert!(!w.compute());
+        assert!(matches!(&w.status, Status::Failed(e) if e.contains("the speed of the barcode")));
+        set(&mut w, Key::MaxSpeed, "30000");
+        // work outside of the bed
+        w.settings.machine.bed_mm = Some((10.0, 10.0));
+        assert!(!w.compute());
+        assert!(matches!(&w.status, Status::Failed(e) if e.contains("outside of the bed")));
+        w.settings.machine.bed_mm = None;
+        assert!(w.compute());
+        // a character that is not printable is refused, and the data is not cut
+        for data in ["a\tb", "caf\u{e9}", ""] {
+            w.set_barcode_data(data.to_string());
+            assert!(!w.compute(), "{data:?}");
+            assert!(matches!(&w.status, Status::Failed(_)), "{data:?}");
+        }
+        w.set_barcode_data("AB12".to_string());
+        // a box that is not a number or not a whole number says which one
+        for (key, text, label) in [
+            (Key::BarcodeModule, "", Msg::BarcodeModuleMm),
+            (Key::BarcodeHeight, "x", Msg::BarcodeHeightMm),
+            (Key::BarcodeLine, "0,1", Msg::QrLineMm),
+            (Key::BarcodePasses, "2.5", Msg::Passes),
+            (Key::BarcodePasses, "21", Msg::Passes),
+            (Key::BarcodeMaxChars, "81", Msg::TextMaxChars),
+            (Key::BarcodeMaxLines, "0", Msg::QrMaxLines),
+            (Key::BarcodeMaxWidth, "-", Msg::BarcodeMaxWidth),
+        ] {
+            let before = text_of(&w, key);
+            set(&mut w, key, text);
+            assert!(!w.compute(), "{key:?} {text}");
+            assert_eq!(w.status, Status::BadValue(label), "{key:?} {text}");
+            set(&mut w, key, &before);
+        }
+        // a module out of its range and a line wider than the module are refused by the checks of the file
+        for (key, text, reason) in [
+            (Key::BarcodeModule, "0.05", "barcode module_mm"),
+            (Key::BarcodeModule, "6", "barcode module_mm"),
+            (Key::BarcodeLine, "0.5", "barcode line_mm"),
+            (Key::BarcodeHeight, "0.5", "barcode height_mm"),
+        ] {
+            let before = text_of(&w, key);
+            set(&mut w, key, text);
+            assert!(!w.compute(), "{key:?} {text}");
+            assert!(
+                matches!(&w.status, Status::Failed(e) if e.contains(reason)),
+                "{key:?} {text}: {:?}",
+                w.status
+            );
+            set(&mut w, key, &before);
+        }
+    }
+
+    #[test]
+    fn a_file_of_settings_fills_the_boxes_of_the_barcode_and_the_words_speak_every_language() {
+        let s = Scratch::new("barcode-config");
+        let cfg = s.write(
+            "b.cfg",
+            "[barcode]\nmodule_mm = 0.5\nheight_mm = 12\nline_mm = 0.25\npower_percent = 35\nspeed_mm_min = 1500\npasses = 2\nmax_chars = 30\nmax_width_mm = 200\nmax_lines = 5000\nmax_minutes = 30\nmirror = on\n",
+        );
+        let mut w = Window::new(Lang::En);
+        assert!(w.load_config(&cfg));
+        for (key, text) in [
+            (Key::BarcodeModule, "0.5"),
+            (Key::BarcodeHeight, "12"),
+            (Key::BarcodeLine, "0.25"),
+            (Key::BarcodePower, "35"),
+            (Key::BarcodeSpeed, "1500"),
+            (Key::BarcodePasses, "2"),
+            (Key::BarcodeMaxChars, "30"),
+            (Key::BarcodeMaxWidth, "200"),
+            (Key::BarcodeMaxLines, "5000"),
+            (Key::BarcodeMaxMinutes, "30"),
+        ] {
+            assert_eq!(text_of(&w, key), text, "{key:?}");
+        }
+        assert!(w.barcode_mirror);
+        w.set_mode(Mode::Barcode);
+        w.set_barcode_data("OK".to_string());
+        assert!(w.compute());
+        let g = &w.done.as_ref().unwrap().gcode;
+        assert!(g.contains("S350 F1500"), "{g}");
+        for l in Lang::ALL {
+            for m in [
+                Msg::ModeBarcode,
+                Msg::BarcodeData,
+                Msg::BarcodeModuleMm,
+                Msg::BarcodeHeightMm,
+                Msg::BarcodeMaxWidth,
+            ] {
+                assert!(!m.tr(l).is_empty());
+            }
+            assert!(w.status.text(l).contains("12.0"), "{}", w.status.text(l));
         }
     }
 
