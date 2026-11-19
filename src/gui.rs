@@ -173,6 +173,7 @@ impl App {
                     ui.add_space(4.0);
                     self.picture_group(ui);
                     self.mode_group(ui);
+                    self.machine_group(ui);
                     match self.win.mode {
                         Mode::Engrave => {
                             self.dots_group(ui);
@@ -300,6 +301,39 @@ impl App {
                     });
                 if mode != self.win.mode {
                     self.win.set_mode(mode);
+                }
+            });
+    }
+
+    /// The machine profiles of the settings file: the list to take one from, which sets the full-power value and the limits of the boxes. Nothing is shown when the file has none.
+    fn machine_group(&mut self, ui: &mut egui::Ui) {
+        let lang = self.win.lang;
+        let names = self.win.profile_names();
+        if names.is_empty() {
+            return;
+        }
+        egui::CollapsingHeader::new(self.heading(Msg::SectionMachine))
+            .default_open(true)
+            .show(ui, |ui| {
+                let shown = self
+                    .win
+                    .settings
+                    .profile
+                    .clone()
+                    .unwrap_or_else(|| Msg::NoProfile.tr(lang).to_string());
+                let mut chosen: Option<String> = None;
+                egui::ComboBox::from_id_salt("profile")
+                    .selected_text(shown)
+                    .show_ui(ui, |ui| {
+                        for n in &names {
+                            let current = self.win.settings.profile.as_deref() == Some(n.as_str());
+                            if ui.selectable_label(current, n.as_str()).clicked() {
+                                chosen = Some(n.clone());
+                            }
+                        }
+                    });
+                if let Some(n) = chosen {
+                    self.win.apply_profile(&n);
                 }
             });
     }

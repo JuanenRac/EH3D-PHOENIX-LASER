@@ -617,6 +617,13 @@ pub enum Status {
     MaterialsLoaded(String, usize),
     /// A material was applied to the boxes of the window.
     MaterialApplied(String),
+    /// A machine profile was chosen: its name, its full-power value and its limits of power and speed.
+    ProfileApplied {
+        name: String,
+        s_max: u32,
+        max_power: f64,
+        max_speed: f64,
+    },
     Failed(String),
 }
 
@@ -750,6 +757,20 @@ impl Status {
                 fill(Msg::MaterialsLoaded.tr(lang), &[name, &n.to_string()])
             }
             Status::MaterialApplied(name) => fill(Msg::MaterialApplied.tr(lang), &[name]),
+            Status::ProfileApplied {
+                name,
+                s_max,
+                max_power,
+                max_speed,
+            } => fill(
+                Msg::ProfileApplied.tr(lang),
+                &[
+                    name,
+                    &s_max.to_string(),
+                    &format!("{max_power}"),
+                    &format!("{max_speed}"),
+                ],
+            ),
             Status::Failed(e) => fill(Msg::Failed.tr(lang), &[e]),
         }
     }
@@ -1374,6 +1395,38 @@ impl Window {
         {
             self.load_materials(&p);
         }
+    }
+
+    /// The names of the machine profiles of the settings file, in the order of the file.
+    pub fn profile_names(&self) -> Vec<String> {
+        self.settings
+            .profiles
+            .iter()
+            .map(|p| p.name.clone())
+            .collect()
+    }
+
+    /// Makes a machine profile of the settings file the machine, like `--profile` does: its values win over `[machine]`, and the boxes of the full-power value and of the two limits take
+    /// them (the person can still change a box afterwards, and the limits hold over what the boxes say). A profile that the file does not have changes nothing.
+    pub fn apply_profile(&mut self, name: &str) -> bool {
+        let mut s = self.settings.clone();
+        if let Err(e) = s.apply_profile(name).and_then(|()| s.validate()) {
+            self.status = Status::Failed(e);
+            return false;
+        }
+        let m = s.machine;
+        self.put(Key::SMax, m.s_max.to_string());
+        self.put(Key::MaxPower, format!("{}", m.max_power_percent));
+        self.put(Key::MaxSpeed, format!("{}", m.max_speed_mm_min));
+        self.status = Status::ProfileApplied {
+            name: s.profile.clone().unwrap_or_default(),
+            s_max: m.s_max,
+            max_power: m.max_power_percent,
+            max_speed: m.max_speed_mm_min,
+        };
+        self.settings = s;
+        self.mark_stale();
+        true
     }
 
     /// The names of the materials of the library, in the order of the file.
@@ -3760,5 +3813,126 @@ mod tests {
             assert!(!Msg::ModeTrace.tr(l).is_empty() && !Msg::SectionTrace.tr(l).is_empty());
         }
         assert_ne!(done.text(Lang::De), done.text(Lang::En));
+    }
+
+    /// Two machines in one file: a diode laser that is chosen by the file, and a CO2 laser that leaves out the travel and the speed.
+    const TWO_MACHINES: &str = "[machine]\ns_max = 255\nbed_x_mm = 100\nbed_y_mm = 100\nprofile = Diode\n\
+        [profile diode]\ntravel_x_mm = 400\ntravel_y_mm = 300\nmax_power_percent = 80\nmax_speed_mm_min = 6000\ns_max = 1000\nlaser_watts = 10\n\
+        [profile CO2]\ns_max = 100\nmax_power_percent = 90\n";
+
+    #[test]
+    fn the_profile_of_the_settings_file_is_the_machine_and_the_boxes_show_it() {
+        let s = Scratch::new("profile-file");
+        let cfg = s.write("m.cfg", TWO_MACHINES);
+        let mut w = Window::new(Lang::En);
+        assert!(w.profile_names().is_empty());
+        assert!(w.load_config(&cfg));
+        assert_eq!(w.profile_names(), vec!["diode", "co2"]);
+        assert_eq!(w.settings.profile.as_deref(), Some("diode"));
+        assert_eq!(text_of(&w, Key::SMax), "1000");
+        assert_eq!(text_of(&w, Key::MaxPower), "80");
+        assert_eq!(text_of(&w, Key::MaxSpeed), "6000");
+        assert_eq!(w.settings.machine.bed_mm, Some((400.0, 300.0)));
+    }
+
+    #[test]
+    fn choosing_a_profile_sets_the_boxes_and_the_limits_hold_over_them() {
+        let s = Scratch::new("profile-choose");
+        let cfg = s.write("m.cfg", TWO_MACHINES);
+        let (_s2, mut w) = ready("profile-choose-w");
+        assert!(w.load_config(&cfg));
+        set(&mut w, Key::Power, "90");
+        // the diode laser stops at 80 %
+        assert!(!w.compute());
+        assert!(
+            matches!(&w.status, Status::Failed(e) if e.contains("max_power_percent")),
+            "{:?}",
+            w.status
+        );
+        // the CO2 laser leaves out the travel and the speed: the machine section decides, never the diode before it
+        assert!(w.apply_profile(" CO2 "));
+        assert_eq!(
+            w.status,
+            Status::ProfileApplied {
+                name: "co2".to_string(),
+                s_max: 100,
+                max_power: 90.0,
+                max_speed: 30_000.0,
+            }
+        );
+        assert_eq!(text_of(&w, Key::SMax), "100");
+        assert_eq!(text_of(&w, Key::MaxPower), "90");
+        assert_eq!(text_of(&w, Key::MaxSpeed), "30000");
+        assert_eq!(w.settings.machine.bed_mm, Some((100.0, 100.0)));
+        assert!(w.compute());
+        // and back: the limits of the diode hold again
+        assert!(w.apply_profile("diode"));
+        assert_eq!(text_of(&w, Key::MaxPower), "80");
+        assert!(!w.compute());
+        set(&mut w, Key::Power, "70");
+        assert!(w.compute());
+    }
+
+    #[test]
+    fn a_profile_that_is_not_in_the_file_changes_nothing_and_says_which_there_are() {
+        let s = Scratch::new("profile-none");
+        let cfg = s.write("m.cfg", TWO_MACHINES);
+        let mut w = Window::new(Lang::En);
+        assert!(w.load_config(&cfg));
+        let before = (
+            text_of(&w, Key::SMax),
+            text_of(&w, Key::MaxPower),
+            w.settings.profile.clone(),
+        );
+        assert!(!w.apply_profile("plasma"));
+        assert!(
+            matches!(&w.status, Status::Failed(e) if e.contains("plasma") && e.contains("diode") && e.contains("co2")),
+            "{:?}",
+            w.status
+        );
+        assert_eq!(
+            before,
+            (
+                text_of(&w, Key::SMax),
+                text_of(&w, Key::MaxPower),
+                w.settings.profile.clone()
+            )
+        );
+        // a window with no file has no profile to choose
+        let mut bare = Window::new(Lang::En);
+        assert!(!bare.apply_profile("diode"));
+        assert!(bare.status.is_problem());
+    }
+
+    #[test]
+    fn choosing_a_profile_makes_the_work_stale_and_takes_the_confirmation_back() {
+        let s = Scratch::new("profile-stale");
+        let cfg = s.write("m.cfg", TWO_MACHINES);
+        let (_s2, mut w) = ready("profile-stale-w");
+        assert!(w.load_config(&cfg));
+        assert!(w.compute());
+        w.pilot_confirmed = true;
+        assert!(w.apply_profile("co2"));
+        assert!(w.stale);
+        assert!(!w.pilot_confirmed);
+    }
+
+    #[test]
+    fn the_words_of_the_machine_profile_speak_every_language() {
+        let done = Status::ProfileApplied {
+            name: "diode".to_string(),
+            s_max: 1000,
+            max_power: 80.0,
+            max_speed: 6000.0,
+        };
+        assert_eq!(
+            done.text(Lang::En),
+            "Machine profile diode: S 1000, power up to 80 %, speed up to 6000 mm/min"
+        );
+        for l in Lang::ALL {
+            let text = done.text(l);
+            assert!(text.contains("diode") && text.contains("1000") && text.contains("6000"));
+            assert!(!Msg::SectionMachine.tr(l).is_empty() && !Msg::NoProfile.tr(l).is_empty());
+        }
     }
 }

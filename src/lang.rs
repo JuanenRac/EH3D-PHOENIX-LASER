@@ -227,10 +227,13 @@ pub enum Msg {
     TraceInk,
     TraceEngrave,
     TraceMade,
+    SectionMachine,
+    NoProfile,
+    ProfileApplied,
 }
 
 impl Msg {
-    pub const ALL: [Msg; 139] = [
+    pub const ALL: [Msg; 142] = [
         Msg::Language,
         Msg::Fit,
         Msg::Cancel,
@@ -370,6 +373,9 @@ impl Msg {
         Msg::TraceInk,
         Msg::TraceEngrave,
         Msg::TraceMade,
+        Msg::SectionMachine,
+        Msg::NoProfile,
+        Msg::ProfileApplied,
     ];
 
     /// The words in the order English, Spanish, German, French, Italian, Japanese, Chinese, Portuguese.
@@ -1764,6 +1770,36 @@ impl Msg {
                 "輪郭：{1} 点の輪郭 {0} 個、切断 {2} mm、彫刻 {3} mm、{4} 秒",
                 "轮廓：{0} 条轮廓共 {1} 个点，切割 {2} mm，雕刻 {3} mm，{4} 秒",
                 "Contorno: {0} contornos de {1} pontos, {2} mm cortados, {3} mm gravados, {4} s",
+            ],
+            Msg::SectionMachine => [
+                "Machine",
+                "Máquina",
+                "Maschine",
+                "Machine",
+                "Macchina",
+                "マシン",
+                "机器",
+                "Máquina",
+            ],
+            Msg::NoProfile => [
+                "(no profile)",
+                "(sin perfil)",
+                "(kein Profil)",
+                "(aucun profil)",
+                "(nessun profilo)",
+                "（プロファイルなし）",
+                "（无配置）",
+                "(sem perfil)",
+            ],
+            Msg::ProfileApplied => [
+                "Machine profile {0}: S {1}, power up to {2} %, speed up to {3} mm/min",
+                "Perfil de máquina {0}: S {1}, potencia hasta {2} %, velocidad hasta {3} mm/min",
+                "Maschinenprofil {0}: S {1}, Leistung bis {2} %, Geschwindigkeit bis {3} mm/min",
+                "Profil de machine {0} : S {1}, puissance jusqu'à {2} %, vitesse jusqu'à {3} mm/min",
+                "Profilo macchina {0}: S {1}, potenza fino a {2} %, velocità fino a {3} mm/min",
+                "マシンプロファイル {0}：S {1}、パワー最大 {2} %、速度最大 {3} mm/min",
+                "机器配置 {0}：S {1}，功率最高 {2} %，速度最高 {3} mm/min",
+                "Perfil de máquina {0}: S {1}, potência até {2} %, velocidade até {3} mm/min",
             ],
         }
     }
