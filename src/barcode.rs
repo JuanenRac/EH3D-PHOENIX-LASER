@@ -201,8 +201,12 @@ pub fn program(
     if m.s_max == 0 || m.s_max > 100_000 {
         return Err("s_max must be from 1 to 100000".to_string());
     }
-    if !(origin.0.is_finite() && origin.1.is_finite()) {
-        return Err("the origin of the barcode is not a number".to_string());
+    if !(origin.0.is_finite()
+        && origin.1.is_finite()
+        && origin.0.abs() <= 100_000.0
+        && origin.1.abs() <= 100_000.0)
+    {
+        return Err("the origin of the barcode is not a number from -100000 to 100000".to_string());
     }
     let bytes = data.as_bytes();
     if bytes.len() > b.max_chars as usize {
@@ -556,6 +560,9 @@ mod tests {
             .unwrap_err()
             .contains("one step"));
         assert!(program("EH3D", (f64::NAN, 0.0), &settings(), &m).is_err());
+        assert!(program("EH3D", (1e12, 0.0), &settings(), &m)
+            .unwrap_err()
+            .contains("-100000"));
         assert!(program("", (0.0, 0.0), &settings(), &m).is_err());
     }
 

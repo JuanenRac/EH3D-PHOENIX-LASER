@@ -111,3 +111,53 @@ fn the_help_runs() {
     let (ok, out, _) = run(&["help".to_string()], "help");
     assert!(ok && out.contains("phoenix-laser"), "{out}");
 }
+
+#[test]
+fn every_command_of_the_help_has_its_line_in_the_eight_readmes() {
+    let (ok, help, _) = run(&["help".to_string()], "commands");
+    assert!(ok);
+    let mut commands: Vec<String> = help
+        .lines()
+        .filter_map(|l| l.strip_prefix("  phoenix-laser "))
+        .filter_map(|rest| rest.split_whitespace().next())
+        .filter(|w| w.chars().all(|c| c.is_ascii_lowercase()) && *w != "gui")
+        .map(str::to_string)
+        .collect();
+    commands.dedup();
+    for needed in [
+        "engrave",
+        "calibrate",
+        "text",
+        "qr",
+        "barcode",
+        "marks",
+        "frame",
+        "focus",
+        "preview",
+        "verify",
+    ] {
+        assert!(
+            commands.iter().any(|c| c == needed),
+            "{needed} is not in the help: {commands:?}"
+        );
+    }
+    for name in [
+        "README.md",
+        "README_spa.md",
+        "README_deu.md",
+        "README_fra.md",
+        "README_ita.md",
+        "README_jpn.md",
+        "README_zho.md",
+        "README_por.md",
+    ] {
+        let text = read(name);
+        for c in &commands {
+            let line = format!("phoenix-laser {c} ");
+            assert!(
+                text.lines().any(|l| l.starts_with(&line)),
+                "{name} has no line for the command {c}"
+            );
+        }
+    }
+}
