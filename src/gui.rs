@@ -188,6 +188,7 @@ impl App {
                             self.vector_group(ui);
                             self.material_group(ui);
                         }
+                        Mode::Text => self.text_group(ui),
                         Mode::Trace => {
                             self.trace_group(ui);
                             self.laser_group(ui);
@@ -293,6 +294,7 @@ impl App {
                     Mode::Frame => Msg::ModeFrame,
                     Mode::Preview => Msg::ModePreview,
                     Mode::Trace => Msg::ModeTrace,
+                    Mode::Text => Msg::ModeText,
                 };
                 egui::ComboBox::from_id_salt("mode")
                     .selected_text(shown.tr(lang))
@@ -308,6 +310,7 @@ impl App {
                         ui.selectable_value(&mut mode, Mode::Frame, Msg::ModeFrame.tr(lang));
                         ui.selectable_value(&mut mode, Mode::Preview, Msg::ModePreview.tr(lang));
                         ui.selectable_value(&mut mode, Mode::Trace, Msg::ModeTrace.tr(lang));
+                        ui.selectable_value(&mut mode, Mode::Text, Msg::ModeText.tr(lang));
                     });
                 if mode != self.win.mode {
                     self.win.set_mode(mode);
@@ -615,6 +618,33 @@ impl App {
                         .color(DANGER)
                         .small(),
                 );
+            });
+    }
+
+    /// The text mode: the words to burn in a box of their own, then the height, the gaps, the power, the speed, the passes and the limits that are the keys of `[text]`.
+    fn text_group(&mut self, ui: &mut egui::Ui) {
+        let lang = self.win.lang;
+        egui::CollapsingHeader::new(self.heading(Msg::ModeText))
+            .default_open(true)
+            .show(ui, |ui| {
+                ui.label(Msg::TextWords.tr(lang));
+                let mut words = self.win.words.clone();
+                let edit = egui::TextEdit::multiline(&mut words)
+                    .desired_rows(3)
+                    .desired_width(f32::INFINITY);
+                if ui.add(edit).changed() {
+                    self.win.set_words(words);
+                }
+                self.fields_of(ui, Section::Text);
+                for key in [
+                    Key::SMax,
+                    Key::OriginX,
+                    Key::OriginY,
+                    Key::MaxPower,
+                    Key::MaxSpeed,
+                ] {
+                    self.field_for(ui, key);
+                }
             });
     }
 

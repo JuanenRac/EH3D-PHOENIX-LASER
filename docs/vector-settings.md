@@ -258,6 +258,8 @@ A line of text burnt with the font of strokes of the program (`phoenix-laser tex
 
 The keys of `[text]` are `height_mm`, `max_height_mm`, `spacing_percent`, `line_spacing_percent`, `power_percent`, `speed_mm_min`, `passes` and `max_chars`.
 
+In the window, the text mode has a box for the words and one box for each of these keys (a file of settings fills them); the text is worked out with the same function as the command, from the origin of the machine, and is refused for the same reasons, with the status line naming the box that is wrong. The bed is the one of the machine of the file.
+
 ### `[defaults]` and `[layer NAME]`
 
 | Key | Default | Range | Meaning |

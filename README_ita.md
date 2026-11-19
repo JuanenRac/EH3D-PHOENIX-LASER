@@ -17,7 +17,7 @@
 
 ---
 
-**Verifica di onestà - cosa funziona oggi:** una libreria Rust e un programma a riga di comando (`phoenix-laser`) con 529 test che girano su un computer: trasforma un'immagine in punti con la retinatura e scrive il G-code di un laser che brucia riga per riga con potenza dinamica ed extracorsa, legge disegni SVG e DXF e scrive il G-code che ne taglia i contorni (prima quelli interni, con la larghezza del fascio, ponticelli e più passate) e ne incide le forme con linee, con le impostazioni di ogni livello in un file, e una griglia di prova potenza contro avanzamento. Ha una finestra (compilata con `--features gui`) che apre un'immagine o un disegno, mostra il percorso del laser, permette di cambiare le impostazioni ed esporta il G-code, ma la finestra non è ancora stata vista su uno schermo; non è stato provato su una macchina e non è stato verificato con una raccolta di file reali.
+**Verifica di onestà - cosa funziona oggi:** una libreria Rust e un programma a riga di comando (`phoenix-laser`) con 532 test che girano su un computer: trasforma un'immagine in punti con la retinatura e scrive il G-code di un laser che brucia riga per riga con potenza dinamica ed extracorsa, legge disegni SVG e DXF e scrive il G-code che ne taglia i contorni (prima quelli interni, con la larghezza del fascio, ponticelli e più passate) e ne incide le forme con linee, con le impostazioni di ogni livello in un file, e una griglia di prova potenza contro avanzamento. Ha una finestra (compilata con `--features gui`) che apre un'immagine o un disegno, mostra il percorso del laser, permette di cambiare le impostazioni ed esporta il G-code, ma la finestra non è ancora stata vista su uno schermo; non è stato provato su una macchina e non è stato verificato con una raccolta di file reali.
 
 ---
 
@@ -30,7 +30,7 @@
 |---|---|
 | Versione | `0.0.9` |
 | Maturità | Funzionale |
-| Test | 529 |
+| Test | 532 |
 | Stack tecnologico | Rust |
 | Su hardware reale | Non provato: nulla di questo ha girato su una macchina |
 
@@ -46,7 +46,7 @@ Ogni riga è una parte di questo repository e il semaforo dice a che punto è og
 |---|---|---|
 | Nucleo | 🟡 | trasforma un'immagine in punti con la retinatura e scrive il G-code di un laser che brucia riga per riga con potenza dinamica ed extracorsa, legge disegni SVG e DXF e li taglia o li incide per livello (contorni ordinati, larghezza del fascio, ponticelli, passate, tratteggio), e una griglia di prova potenza contro avanzamento; provato su un computer con input normali e danneggiati, non con una raccolta di file reali. |
 | Riga di comando | 🟡 | `phoenix-laser` (`engrave`, `calibrate`, `info`, `cut`, `vector`, `layers`) esegue le stesse funzioni della libreria e stampa il risultato; ogni errore torna come messaggio e codice di uscita diverso da zero. |
-| Test | 🟡 | 529 test passano (`cargo test`), con casi normali, casi limite e input danneggiati. |
+| Test | 🟡 | 532 test passano (`cargo test`), con casi normali, casi limite e input danneggiati. |
 | Sicurezza | 🟡 | Rust sicuro e semplice (`forbid(unsafe_code)`): nulla va in panico con i file ricevuti e un valore errato è un errore con il suo motivo; nessuna revisione indipendente. |
 | Finestra | 🟠 | Scritta (egui, `--features gui`): aprire o trascinare un'immagine o un disegno SVG o DXF, vedere il percorso del laser (il taglio in un colore, lo spostamento attenuato), modificare la tabella dei livelli, una griglia di calibrazione, zoom e spostamento, stimare il tempo, esportare; la sua logica è testata, ma non è ancora stata compilata né vista su uno schermo. |
 | Hardware reale | 🔴 | Non provato: nulla di questo è stato eseguito su una macchina. |
@@ -74,6 +74,7 @@ Ogni riga è una parte di questo repository e il semaforo dice a che punto è og
 * **Contorni da un'immagine** (`src/trace.rs`, `[trace]` nel file delle impostazioni): `phoenix-laser trace` segue il contorno di un logo, di una sagoma o di una maschera invece di bruciarlo punto per punto; i livelli di grigio si separano con una soglia, il bordo si trova con marching squares a precisione sub-pixel, si semplifica finché nessun punto dista più di `simplify_mm` dalla linea e le macchie si scartano; il risultato è un livello di un disegno, tagliato (o riempito di linee) con le stesse impostazioni e gli stessi controlli, e la dimensione dell'immagine, i pezzi di bordo, i contorni e i punti sono tutti limitati.
 * **Toni, materiali e limiti nella finestra** (`src/window.rs`): le caselle della curva dei toni (gamma, contrasto, luminosità, inversione e livelli automatici) lavorano l'immagine con la stessa funzione della riga di comando; una libreria di materiali si carica da un file (o da quello indicato da `PHOENIX_LASER_MATERIALS`) e scegliere un materiale riempie le caselle di potenza, velocità, punto, dithering, toni e ogni livello di un disegno; i limiti di potenza e di velocità sono anch'essi caselle e un valore oltre il limite viene rifiutato, mai abbassato. I valori iniziali vengono dal file delle impostazioni (`[tone]`, `[machine]`).
 * **Il test di messa a fuoco nella finestra** (`src/window.rs`): una modalità con le caselle della sezione `[focus]` (l'altezza della prima linea, il passo, il numero e la lunghezza delle linee, la distanza, la velocità e la potenza); il test si calcola con la stessa funzione di `phoenix-laser focus`, potenza e velocità rispettano i limiti, non c'è un passo predefinito perché dov'è il basso dipende dalla macchina, e un avviso che il test muove Z resta nelle note.
+* **Testo nella finestra** (`src/window.rs`): una modalità con una casella per le parole e le caselle della sezione `[text]` (l'altezza di una maiuscola, la lettera più alta, gli spazi tra lettere e righe, la potenza, la velocità, i passaggi e il massimo di caratteri); il testo è calcolato con la stessa funzione di `phoenix-laser text`, dall'origine della macchina, così una lettera che il carattere non ha, un testo oltre un limite, una potenza o una velocità oltre il limite della macchina o un lavoro fuori dal piano (quando il file delle impostazioni lo indica) viene rifiutato e la riga di stato dice perché; viene scritto come `text.nc` con l'intestazione della riga di comando.
 * **La cornice nella finestra** (`src/window.rs`, `[frame]` nel file delle impostazioni): una modalità che inquadra l'immagine o il disegno aperto con il laser spento; margine, giri e velocità sono caselle. Una potenza pilota maggiore di 0 accende il laser, quindi la finestra chiede e non si calcola né si scrive nulla finché la persona non risponde sì, ogni volta (cambiare una casella, cambiare modalità o scrivere il file ritira la risposta), sotto il tetto di `max_pilot_percent`, il limite di potenza e il piano.
 * **L'anteprima nella finestra** (`src/window.rs`): ogni G-code calcolato dalla finestra è contato dalla stessa anteprima di `phoenix-laser preview` (movimenti, lunghezza bruciata e percorsa, un tempo che conta gli angoli con l'accelerazione della casella e ciò che sembra pericoloso, come un lavoro fuori dal piano del file delle impostazioni), e un programma di qualsiasi origine (`.nc`, `.ngc`, `.gcode`, `.gc`, `.tap`) può essere aperto o trascinato sulla finestra per vederne il percorso e le note. Si legge come testo, non si esegue mai e non si riscrive.
 * **Il contorno nella finestra** (`src/window.rs`, `[trace]` nel file delle impostazioni): una modalità che segue il contorno dell'immagine aperta con la stessa funzione di `phoenix-laser trace` e lo taglia, o riempie le sue forme con linee, come un livello chiamato `trace`; le caselle sono la soglia, la semplificazione e il pezzo minimo, con un interruttore per un inchiostro chiaro; la potenza e la velocità sono quelle delle caselle del laser e rispettano i limiti, e i limiti dell'immagine (`max_pixels`, `max_contours`, `max_segments`) sono quelli del file delle impostazioni, così un'immagine troppo dettagliata è un errore e non un programma lento.
@@ -176,7 +177,7 @@ Per fare un'immagine della finestra senza aprirla a mano, eseguila con `--shot F
 
 ## 🧪 Test
 
-La suite ha 529 test (`cargo test`, eseguiti su Windows e Linux nella CI). Verificano i casi normali, i casi limite e gli input danneggiati: file vuoti, spazzatura e file tagliati non causano mai un panico. La CI esegue anche `cargo fmt --check`, `cargo clippy` con gli avvisi come errori e `python -I tools/ci_validate.py`.
+La suite ha 532 test (`cargo test`, eseguiti su Windows e Linux nella CI). Verificano i casi normali, i casi limite e gli input danneggiati: file vuoti, spazzatura e file tagliati non causano mai un panico. La CI esegue anche `cargo fmt --check`, `cargo clippy` con gli avvisi come errori e `python -I tools/ci_validate.py`.
 
 ## 🏗️ Compilazione e rilascio
 

@@ -15,11 +15,12 @@ use crate::preview;
 use crate::raster::{engrave, overscan_for, Params};
 use crate::safety;
 use crate::svg::read_svg;
+use crate::text;
 use crate::tone::Tone;
 use crate::trace;
 use crate::vconfig::{
     self, CalibrateSettings, FocusSettings, FrameSettings, KerfSide, LayerMode, LayerParams,
-    Settings, TraceSettings,
+    Settings, TextSettings, TraceSettings,
 };
 use crate::vector::{Drawing, ReadOptions};
 use crate::verify;
@@ -87,6 +88,8 @@ pub enum Mode {
     Preview,
     /// The outline of the picture that is open (a logo, a silhouette, a stencil), cut or filled with lines like the shapes of a drawing.
     Trace,
+    /// A line of text, or several, burnt with the font of strokes of the program.
+    Text,
 }
 
 /// How a grey picture becomes dots.
@@ -169,6 +172,14 @@ pub enum Key {
     CalMinPower,
     CalMinFeed,
     VerifyOverscan,
+    TextHeight,
+    TextMaxHeight,
+    TextSpacing,
+    TextLineSpacing,
+    TextPower,
+    TextSpeed,
+    TextPasses,
+    TextMaxChars,
 }
 
 /// The group of the side panel a setting belongs to.
@@ -182,6 +193,7 @@ pub enum Section {
     Frame,
     Trace,
     Verify,
+    Text,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -199,6 +211,8 @@ fn default_fields() -> Vec<Field> {
         section,
         text: text.to_string(),
     };
+    let d = TextSettings::default();
+    let t = |v: f64| format!("{v}");
     vec![
         f(Key::WidthMm, Msg::WidthMm, Section::Image, "50"),
         f(Key::DotMm, Msg::DotMm, Section::Image, "0.1"),
@@ -263,6 +277,49 @@ fn default_fields() -> Vec<Field> {
             Msg::VerifyOverscan,
             Section::Verify,
             "0",
+        ),
+        f(
+            Key::TextHeight,
+            Msg::TextHeight,
+            Section::Text,
+            &t(d.height_mm),
+        ),
+        f(
+            Key::TextMaxHeight,
+            Msg::TextMaxHeight,
+            Section::Text,
+            &t(d.max_height_mm),
+        ),
+        f(
+            Key::TextSpacing,
+            Msg::TextSpacing,
+            Section::Text,
+            &t(d.spacing_percent),
+        ),
+        f(
+            Key::TextLineSpacing,
+            Msg::TextLineSpacing,
+            Section::Text,
+            &t(d.line_spacing_percent),
+        ),
+        f(
+            Key::TextPower,
+            Msg::Power,
+            Section::Text,
+            &t(d.power_percent),
+        ),
+        f(Key::TextSpeed, Msg::Feed, Section::Text, &t(d.speed_mm_min)),
+        f(
+            Key::TextPasses,
+            Msg::Passes,
+            Section::Text,
+            &d.passes.to_string(),
+        ),
+        f(
+            Key::TextMaxChars,
+            Msg::TextMaxChars,
+            Section::Text,
+            &d.max_chars.to_string(),
         ),
     ]
 }
@@ -599,6 +656,13 @@ pub enum Summary {
         engrave_mm: f64,
         seconds: f64,
     },
+    /// A text burnt with the font of strokes.
+    Texted {
+        chars: usize,
+        width_mm: f64,
+        height_mm: f64,
+        strokes: usize,
+    },
 }
 
 /// The G-code that was worked out and what goes in its header.
@@ -744,6 +808,20 @@ impl Status {
                     &format!("{seconds:.0}"),
                 ],
             ),
+            Status::Done(Summary::Texted {
+                chars,
+                width_mm,
+                height_mm,
+                strokes,
+            }) => fill(
+                Msg::TextMade.tr(lang),
+                &[
+                    &chars.to_string(),
+                    &format!("{width_mm:.1}"),
+                    &format!("{height_mm:.1}"),
+                    &strokes.to_string(),
+                ],
+            ),
             Status::Done(Summary::Focused { lines, length_mm }) => fill(
                 Msg::FocusMade.tr(lang),
                 &[&lines.to_string(), &format!("{length_mm}")],
@@ -858,6 +936,8 @@ pub struct Window {
     pub status: Status,
     pub viewport: Viewport,
     pub show_travel: bool,
+    /// The text that the text mode burns.
+    pub words: String,
 }
 
 impl Window {
@@ -895,6 +975,7 @@ impl Window {
             status: Status::Ready,
             viewport: Viewport::default(),
             show_travel: true,
+            words: String::new(),
         }
     }
 
@@ -913,7 +994,7 @@ impl Window {
     /// Whether the G-code can be worked out now.
     pub fn can_compute(&self) -> bool {
         match self.mode {
-            Mode::Calibrate | Mode::Focus => true,
+            Mode::Calibrate | Mode::Focus | Mode::Text => true,
             Mode::Frame => self.framed_mode().is_some(),
             Mode::Preview => self.program.is_some(),
             Mode::Engrave => self.picture.is_some(),
@@ -946,6 +1027,14 @@ impl Window {
             if matches!(mode, Mode::Engrave | Mode::Cut | Mode::Trace) {
                 self.work_mode = mode;
             }
+            self.mark_stale();
+        }
+    }
+
+    /// Writes the text that the text mode burns.
+    pub fn set_words(&mut self, words: String) {
+        if self.words != words {
+            self.words = words;
             self.mark_stale();
         }
     }
@@ -1159,6 +1248,7 @@ impl Window {
                 Some(p.path.with_file_name(format!("{stem}.nc")))
             }
             (_, Mode::Focus) => Some(PathBuf::from("focus.nc")),
+            (_, Mode::Text) => Some(PathBuf::from("text.nc")),
             (_, Mode::Frame) => Some(PathBuf::from("frame.nc")),
             _ => Some(PathBuf::from("calibration.nc")),
         }
@@ -1416,6 +1506,14 @@ impl Window {
                 self.put(Key::CalMinFeed, t(s.calibrate.min_feed_mm_min));
                 self.cal_labels = s.calibrate.labels;
                 self.put(Key::VerifyOverscan, t(s.verify.overscan_mm));
+                self.put(Key::TextHeight, t(s.text.height_mm));
+                self.put(Key::TextMaxHeight, t(s.text.max_height_mm));
+                self.put(Key::TextSpacing, t(s.text.spacing_percent));
+                self.put(Key::TextLineSpacing, t(s.text.line_spacing_percent));
+                self.put(Key::TextPower, t(s.text.power_percent));
+                self.put(Key::TextSpeed, t(s.text.speed_mm_min));
+                self.put(Key::TextPasses, s.text.passes.to_string());
+                self.put(Key::TextMaxChars, s.text.max_chars.to_string());
                 self.settings = s;
                 self.config_path = Some(path.to_path_buf());
                 self.rebuild_rows();
@@ -1617,6 +1715,7 @@ impl Window {
             Mode::Frame => self.frame_job(),
             Mode::Preview => self.preview_job(),
             Mode::Trace => self.trace_job(),
+            Mode::Text => self.text_job(),
         };
         match made {
             Ok(done) => {
@@ -1636,7 +1735,12 @@ impl Window {
                     done.s_max,
                     matches!(
                         self.mode,
-                        Mode::Cut | Mode::Focus | Mode::Frame | Mode::Preview | Mode::Trace
+                        Mode::Cut
+                            | Mode::Focus
+                            | Mode::Frame
+                            | Mode::Preview
+                            | Mode::Trace
+                            | Mode::Text
                     ),
                 );
                 self.segs = segs;
@@ -1975,6 +2079,45 @@ impl Window {
                 pilot_percent: pilot,
             },
             notes: work.notes,
+        })
+    }
+
+    /// The text of the window burnt like `phoenix-laser text`: the boxes of its group are the settings of `[text]`, the lower left corner is the origin of the machine, and the limits of power,
+    /// speed and bed hold over it. A letter that the font has not, a text over the limits or work outside of the bed is refused and nothing is made.
+    fn text_job(&self) -> Result<Done, Status> {
+        let t = TextSettings {
+            height_mm: self.number(Key::TextHeight)?,
+            max_height_mm: self.number(Key::TextMaxHeight)?,
+            spacing_percent: self.number(Key::TextSpacing)?,
+            line_spacing_percent: self.number(Key::TextLineSpacing)?,
+            power_percent: self.number(Key::TextPower)?,
+            speed_mm_min: self.number(Key::TextSpeed)?,
+            passes: self.whole(Key::TextPasses, 1.0, 20.0)?,
+            max_chars: self.whole(Key::TextMaxChars, 1.0, 5000.0)?,
+        };
+        let s_max = self.whole(Key::SMax, 1.0, 100_000.0)?;
+        let (max_power, max_speed) = self.limits()?;
+        let m = text::Machine {
+            s_max,
+            max_power_percent: max_power,
+            max_speed_mm_min: max_speed,
+            bed_mm: self.settings.machine.bed_mm,
+        };
+        let origin = (self.number(Key::OriginX)?, self.number(Key::OriginY)?);
+        let (gcode, l) = text::program(&self.words, origin, &t, &m).map_err(Status::Failed)?;
+        Ok(Done {
+            gcode,
+            source: None,
+            tools: format!("laser, S 0-{s_max}, text with a font of strokes"),
+            s_max,
+            line_mm: 0.1,
+            summary: Summary::Texted {
+                chars: self.words.chars().count(),
+                width_mm: l.width_mm,
+                height_mm: l.height_mm,
+                strokes: l.strokes.len(),
+            },
+            notes: Vec::new(),
         })
     }
 
@@ -3291,6 +3434,166 @@ hatch_cross = on
         assert!(w.load_config(&cfg));
         assert!(w.rows[0].hatch_cross && !w.rows[1].hatch_cross);
         assert!(Msg::HatchCross.tr(Lang::Pt).contains("cruzada"));
+    }
+
+    #[test]
+    fn the_text_mode_burns_the_words_like_the_command_and_says_what_it_made() {
+        let mut w = Window::new(Lang::En);
+        w.set_mode(Mode::Text);
+        assert!(w.can_compute());
+        // the boxes start from the settings of [text]
+        let d = TextSettings::default();
+        assert_eq!(text_of(&w, Key::TextHeight), d.height_mm.to_string());
+        assert_eq!(text_of(&w, Key::TextPower), d.power_percent.to_string());
+        assert_eq!(text_of(&w, Key::TextPasses), d.passes.to_string());
+        assert_eq!(text_of(&w, Key::TextMaxChars), d.max_chars.to_string());
+        // no words: nothing to burn
+        assert!(!w.compute());
+        assert!(
+            matches!(&w.status, Status::Failed(e) if e.contains("nothing to burn")),
+            "{:?}",
+            w.status
+        );
+        w.set_words("Phoenix 2".to_string());
+        assert!(w.compute());
+        let m = text::Machine {
+            s_max: 1000,
+            max_power_percent: 100.0,
+            max_speed_mm_min: 30_000.0,
+            bed_mm: None,
+        };
+        let (g, l) = text::program("Phoenix 2", (0.0, 0.0), &d, &m).unwrap();
+        let done = w.done.as_ref().unwrap();
+        assert_eq!(done.gcode, g);
+        assert_eq!(
+            done.summary,
+            Summary::Texted {
+                chars: 9,
+                width_mm: l.width_mm,
+                height_mm: l.height_mm,
+                strokes: l.strokes.len()
+            }
+        );
+        assert!(w.status.text(Lang::En).starts_with("Text: 9 characters, "));
+        assert!(w.status.text(Lang::Pt).starts_with("Texto: 9 caracteres, "));
+        // the strokes are drawn and the text is written with the header of the command line
+        assert!(w.segs.iter().any(|s| s.burn));
+        assert!(w.bounds().is_some());
+        assert_eq!(
+            w.suggested_output_for(Job::ExportGcode),
+            Some(PathBuf::from("text.nc"))
+        );
+        let s = Scratch::new("text-export");
+        let out = s.0.join("text.nc");
+        assert!(w.export(&out));
+        let text = fs::read_to_string(&out).unwrap();
+        assert!(text.contains("; tools: laser, S 0-1000, text with a font of strokes"));
+        assert!(text.ends_with("M2\n"));
+        // the words changing makes the work stale, the same words do not
+        w.set_words("Phoenix 2".to_string());
+        assert!(!w.stale);
+        w.set_words("Phoenix 3".to_string());
+        assert!(w.stale);
+    }
+
+    #[test]
+    fn the_text_mode_refuses_what_the_font_or_the_limits_do_not_allow_and_names_the_box() {
+        let mut w = Window::new(Lang::En);
+        w.set_mode(Mode::Text);
+        w.set_words("AB".to_string());
+        assert!(w.compute());
+        // a letter that the font has not is refused, never skipped
+        w.set_words("caf\u{e9}".to_string());
+        assert!(!w.compute());
+        assert!(matches!(&w.status, Status::Failed(e) if e.contains("not in the font")));
+        w.set_words("AB".to_string());
+        // a number of characters over the limit of the box
+        set(&mut w, Key::TextMaxChars, "1");
+        assert!(!w.compute());
+        assert!(matches!(&w.status, Status::Failed(e) if e.contains("max_chars")));
+        set(&mut w, Key::TextMaxChars, "200");
+        // the power and the speed obey the limits of the machine
+        set(&mut w, Key::MaxPower, "10");
+        assert!(!w.compute());
+        assert!(matches!(&w.status, Status::Failed(e) if e.contains("the power of the text")));
+        set(&mut w, Key::MaxPower, "100");
+        set(&mut w, Key::MaxSpeed, "500");
+        assert!(!w.compute());
+        assert!(matches!(&w.status, Status::Failed(e) if e.contains("the speed of the text")));
+        set(&mut w, Key::MaxSpeed, "30000");
+        // work outside of the bed is refused, not cut down
+        w.settings.machine.bed_mm = Some((10.0, 10.0));
+        assert!(!w.compute());
+        assert!(matches!(&w.status, Status::Failed(e) if e.contains("outside of the bed")));
+        w.settings.machine.bed_mm = None;
+        assert!(w.compute());
+        // a box that is not a number, or not a whole number, says which one
+        for (key, text, label) in [
+            (Key::TextHeight, "", Msg::TextHeight),
+            (Key::TextSpacing, "x", Msg::TextSpacing),
+            (Key::TextPasses, "2.5", Msg::Passes),
+            (Key::TextPasses, "0", Msg::Passes),
+            (Key::TextPasses, "21", Msg::Passes),
+            (Key::TextMaxChars, "0", Msg::TextMaxChars),
+        ] {
+            let before = text_of(&w, key);
+            set(&mut w, key, text);
+            assert!(!w.compute(), "{key:?} {text}");
+            assert_eq!(w.status, Status::BadValue(label), "{key:?} {text}");
+            set(&mut w, key, &before);
+        }
+        // the words that are not in the text are the person's: a parenthesis never reaches a comment of the program
+        w.set_words("A) (B".to_string());
+        assert!(w.compute());
+        for line in w.done.as_ref().unwrap().gcode.lines() {
+            if line.starts_with('(') {
+                assert!(line.starts_with("(text of ") && line.matches(')').count() == 1);
+            }
+        }
+    }
+
+    #[test]
+    fn a_file_of_settings_fills_the_boxes_of_the_text_and_the_words_speak_every_language() {
+        let s = Scratch::new("text-config");
+        let cfg = s.write(
+            "t.cfg",
+            "[text]\nheight_mm = 5\nmax_height_mm = 50\nspacing_percent = 10\nline_spacing_percent = 20\npower_percent = 12\nspeed_mm_min = 800\npasses = 2\nmax_chars = 40\n",
+        );
+        let mut w = Window::new(Lang::En);
+        assert!(w.load_config(&cfg));
+        for (key, text) in [
+            (Key::TextHeight, "5"),
+            (Key::TextMaxHeight, "50"),
+            (Key::TextSpacing, "10"),
+            (Key::TextLineSpacing, "20"),
+            (Key::TextPower, "12"),
+            (Key::TextSpeed, "800"),
+            (Key::TextPasses, "2"),
+            (Key::TextMaxChars, "40"),
+        ] {
+            assert_eq!(text_of(&w, key), text, "{key:?}");
+        }
+        w.set_mode(Mode::Text);
+        w.set_words("OK".to_string());
+        assert!(w.compute());
+        // two passes at 12 % of 1000
+        let g = &w.done.as_ref().unwrap().gcode;
+        assert!(g.contains("S120 F800"), "{g}");
+        for l in Lang::ALL {
+            for m in [
+                Msg::ModeText,
+                Msg::TextWords,
+                Msg::TextHeight,
+                Msg::TextMaxHeight,
+                Msg::TextSpacing,
+                Msg::TextLineSpacing,
+                Msg::TextMaxChars,
+            ] {
+                assert!(!m.tr(l).is_empty());
+            }
+            let said = w.status.text(l);
+            assert!(said.contains("2"), "{said}");
+        }
     }
 
     #[test]
