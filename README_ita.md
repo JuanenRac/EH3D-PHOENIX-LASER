@@ -17,7 +17,7 @@
 
 ---
 
-**Verifica di onestà - cosa funziona oggi:** una libreria Rust e un programma a riga di comando (`phoenix-laser`) con 485 test che girano su un computer: trasforma un'immagine in punti con la retinatura e scrive il G-code di un laser che brucia riga per riga con potenza dinamica ed extracorsa, legge disegni SVG e DXF e scrive il G-code che ne taglia i contorni (prima quelli interni, con la larghezza del fascio, ponticelli e più passate) e ne incide le forme con linee, con le impostazioni di ogni livello in un file, e una griglia di prova potenza contro avanzamento. Ha una finestra (compilata con `--features gui`) che apre un'immagine o un disegno, mostra il percorso del laser, permette di cambiare le impostazioni ed esporta il G-code, ma la finestra non è ancora stata vista su uno schermo; non è stato provato su una macchina e non è stato verificato con una raccolta di file reali.
+**Verifica di onestà - cosa funziona oggi:** una libreria Rust e un programma a riga di comando (`phoenix-laser`) con 493 test che girano su un computer: trasforma un'immagine in punti con la retinatura e scrive il G-code di un laser che brucia riga per riga con potenza dinamica ed extracorsa, legge disegni SVG e DXF e scrive il G-code che ne taglia i contorni (prima quelli interni, con la larghezza del fascio, ponticelli e più passate) e ne incide le forme con linee, con le impostazioni di ogni livello in un file, e una griglia di prova potenza contro avanzamento. Ha una finestra (compilata con `--features gui`) che apre un'immagine o un disegno, mostra il percorso del laser, permette di cambiare le impostazioni ed esporta il G-code, ma la finestra non è ancora stata vista su uno schermo; non è stato provato su una macchina e non è stato verificato con una raccolta di file reali.
 
 ---
 
@@ -30,7 +30,7 @@
 |---|---|
 | Versione | `0.0.8` |
 | Maturità | Funzionale |
-| Test | 485 |
+| Test | 493 |
 | Stack tecnologico | Rust |
 | Su hardware reale | Non provato: nulla di questo ha girato su una macchina |
 
@@ -46,7 +46,7 @@ Ogni riga è una parte di questo repository e il semaforo dice a che punto è og
 |---|---|---|
 | Nucleo | 🟡 | trasforma un'immagine in punti con la retinatura e scrive il G-code di un laser che brucia riga per riga con potenza dinamica ed extracorsa, legge disegni SVG e DXF e li taglia o li incide per livello (contorni ordinati, larghezza del fascio, ponticelli, passate, tratteggio), e una griglia di prova potenza contro avanzamento; provato su un computer con input normali e danneggiati, non con una raccolta di file reali. |
 | Riga di comando | 🟡 | `phoenix-laser` (`engrave`, `calibrate`, `info`, `cut`, `vector`, `layers`) esegue le stesse funzioni della libreria e stampa il risultato; ogni errore torna come messaggio e codice di uscita diverso da zero. |
-| Test | 🟡 | 485 test passano (`cargo test`), con casi normali, casi limite e input danneggiati. |
+| Test | 🟡 | 493 test passano (`cargo test`), con casi normali, casi limite e input danneggiati. |
 | Sicurezza | 🟡 | Rust sicuro e semplice (`forbid(unsafe_code)`): nulla va in panico con i file ricevuti e un valore errato è un errore con il suo motivo; nessuna revisione indipendente. |
 | Finestra | 🟠 | Scritta (egui, `--features gui`): aprire o trascinare un'immagine o un disegno SVG o DXF, vedere il percorso del laser (il taglio in un colore, lo spostamento attenuato), modificare la tabella dei livelli, una griglia di calibrazione, zoom e spostamento, stimare il tempo, esportare; la sua logica è testata, ma non è ancora stata compilata né vista su uno schermo. |
 | Hardware reale | 🔴 | Non provato: nulla di questo è stato eseguito su una macchina. |
@@ -59,7 +59,7 @@ Ogni riga è una parte di questo repository e il semaforo dice a che punto è og
 * **Il laser** (`src/raster.rs`, `src/calibrate.rs`): una riga dopo l'altra, da sinistra a destra e poi da destra a sinistra, `M4` con `S0` durante lo spostamento e la potenza scelta dove brucia, un overscan fisso o calcolato dall'accelerazione (v al quadrato su 2a) e una griglia di quadrati con una potenza per colonna e un avanzamento per riga per trovare ciò che si adatta a un materiale.
 * **L'intestazione e i numeri di ogni file G-code** (`src/gcode_out.rs`): il file si apre con righe di commento che dicono il generatore e la sua versione, le unità (mm, G21), l'immagine da cui è nato con il suo SHA-256 e gli utensili (il laser e la sua potenza); una griglia di calibrazione dice di non avere origine. Un numero si scrive in un solo modo (al massimo tre decimali, niente `-0`) e un valore non finito viene rifiutato invece di essere scritto come `NaN` o `inf`.
 * **`--dry-run`:** `engrave` calcola il risultato e lo conta (punti, righe, tratti, lunghezza bruciata, tempo) senza scrivere il file di uscita, che allora può essere omesso.
-* **I disegni** (`src/svg.rs`, `src/dxf.rs`, `src/flatten.rs`, `src/vector.rs`): un sottoinsieme sicuro di SVG (tracciati con tutti i comandi, forme, trasformazioni, gruppi, unità) e le entità di un DXF (linee, polilinee con archi, archi, cerchi, spline, unità) diventano forme in millimetri; script, immagini, `use`, entità dichiarate e tutto ciò che è sconosciuto vengono saltati o rifiutati, la dimensione, la profondità e il numero di elementi e di punti sono limitati dalle impostazioni, e le curve diventano tratti rettilinei entro una tolleranza.
+* **I disegni** (`src/svg.rs`, `src/dxf.rs`, `src/flatten.rs`, `src/vector.rs`): un sottoinsieme sicuro di SVG (tracciati con tutti i comandi, forme, trasformazioni, gruppi, unità e un `use` di un elemento dello stesso file) e le entità di un DXF (linee, polilinee con archi, archi, cerchi, spline, unità) diventano forme in millimetri; script, immagini, un `use` di un altro file, entità dichiarate e tutto ciò che è sconosciuto vengono saltati o rifiutati, la dimensione, la profondità e il numero di elementi (conta ciò che porta un `use`) e di punti sono limitati dalle impostazioni, un `use` che torna su se stesso è un errore, e le curve diventano tratti rettilinei entro una tolleranza.
 * **Taglio e incisione** (`src/order.rs`, `src/offset.rs`, `src/cut.rs`): le forme sono raggruppate per livello (DXF) o colore (SVG); ogni gruppo viene tagliato (linee sciolte unite, prima i contorni dentro un altro, il minor spostamento, la larghezza del fascio tolta dal lato giusto, ponticelli lasciati, più passate con il fuoco che avanza) o inciso (forme chiuse riempite di linee con un angolo, con la regola pari-dispari) con le sue impostazioni.
 * **Il file di impostazioni** (`src/vconfig.rs`, `docs/vector-settings.md`): ogni valore da regolare (i limiti dei lettori, la macchina, le impostazioni di ogni livello) è in un file di testo semplice controllato riga per riga; nulla di tutto ciò è nel codice.
 * **La prova di fuoco** (`src/calibrate.rs`, `[focus]` nel file delle impostazioni): `phoenix-laser focus` brucia una scala di linee corte, ciascuna con la testa a un'altra altezza, e la linea più nitida mostra dove il fascio è a fuoco; il passo di altezza non ha un valore predefinito (cosa sia giù dipende dalla macchina), la potenza rispetta il limite di potenza e la testa torna alla prima altezza.
@@ -167,7 +167,7 @@ Per fare un'immagine della finestra senza aprirla a mano, eseguila con `--shot F
 
 ## 🧪 Test
 
-La suite ha 485 test (`cargo test`, eseguiti su Windows e Linux nella CI). Verificano i casi normali, i casi limite e gli input danneggiati: file vuoti, spazzatura e file tagliati non causano mai un panico. La CI esegue anche `cargo fmt --check`, `cargo clippy` con gli avvisi come errori e `python -I tools/ci_validate.py`.
+La suite ha 493 test (`cargo test`, eseguiti su Windows e Linux nella CI). Verificano i casi normali, i casi limite e gli input danneggiati: file vuoti, spazzatura e file tagliati non causano mai un panico. La CI esegue anche `cargo fmt --check`, `cargo clippy` con gli avvisi come errori e `python -I tools/ci_validate.py`.
 
 ## 🏗️ Compilazione e rilascio
 
@@ -257,7 +257,7 @@ EH3D-PHOENIX-LASER/
 
 * La finestra non è ancora stata vista su uno schermo.
 * Non è stato provato su una macchina né con una raccolta di file reali e non ha avuto revisione indipendente.
-* Un disegno viene letto in un sottoinsieme sicuro (niente `use`, testo, sfumature o stili con selettori; niente ellissi, tratteggi o blocchi in un DXF); un contorno più stretto del fascio non viene tagliato e il programma lo dice; il laser è quello di un controller GRBL con `M4` e nulla è stato provato su un laser o un materiale reali.
+* Un disegno viene letto in un sottoinsieme sicuro (niente `use` di un altro file, testo, sfumature o stili con selettori; niente ellissi, tratteggi o blocchi in un DXF); un contorno più stretto del fascio non viene tagliato e il programma lo dice; il laser è quello di un controller GRBL con `M4` e nulla è stato provato su un laser o un materiale reali.
 
 **Prossimi passi**
 

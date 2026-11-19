@@ -2,11 +2,16 @@
 //! `line`, `polyline` and `polygon`, the `transform` attribute (`translate`, `scale`, `rotate`, `skewX`, `skewY` and `matrix`), groups (the layers of Inkscape give the name of a
 //! layer), the stroke and fill colours, and the units `mm`, `cm`, `in`, `pt`, `pc` and `px` (with a `dpi` that is a setting).
 //!
-//! It never runs or fetches anything: scripts, images, `use`, text, styles with selectors, filters and every other element it does not know are skipped (with a note), an external
-//! entity or a declared entity is an error, and the size of the file, the depth of the elements, their number and the points are all limited by [`ReadOptions`].
+//! A `use` that refers to an element of the same file (`href="#id"`, a shape, a group or a `symbol`) brings that element in again where the `use` is, moved by its `x` and `y` and
+//! under its `transform` and paint; a `use` that leads back to an element that is being expanded is an error, and what a `use` brings in counts against the number and the depth of
+//! the elements like everything else.
+//!
+//! It never runs or fetches anything: scripts, images, a `use` of another file or an address, text, styles with selectors, filters and every other element it does not know are skipped
+//! (with a note), an external entity or a declared entity is an error, and the size of the file, the depth of the elements, their number and the points are all limited by [`ReadOptions`].
 
 use crate::flatten;
-use crate::vector::{Collector, Drawing, Pt, ReadOptions, Source};
+use crate::vector::{Collector, Drawing, Limits, Pt, ReadOptions, Source};
+use std::collections::HashMap;
 
 /// The elements whose whole content is skipped.
 const SKIPPED: [&str; 24] = [
@@ -1040,6 +1045,264 @@ const SHAPES: [&str; 7] = [
     "path", "rect", "circle", "ellipse", "line", "polyline", "polygon",
 ];
 
+/// The elements that have an `id`, with the place in the text where each one starts and ends, so that a `use` can read the element it refers to. Only what is easy to bound is done: the
+/// number of elements and their depth stop at the same limits as the reading, and a file that is not well formed simply ends the index (the reading reports the mistake).
+fn index_ids(text: &str, limits: &Limits) -> HashMap<String, (usize, usize)> {
+    let mut ids: HashMap<String, (usize, usize)> = HashMap::new();
+    let mut lexer = Lexer { s: text, i: 0 };
+    let mut open: Vec<(String, usize, Option<String>)> = Vec::new();
+    let mut nodes = 0usize;
+    loop {
+        let start = lexer.i;
+        let Ok(Some(tok)) = lexer.token() else { break };
+        match tok {
+            Tok::Start { name, attrs, empty } => {
+                nodes += 1;
+                if nodes > limits.max_nodes || open.len() >= limits.max_depth {
+                    break;
+                }
+                let id = get(&attrs, "id").map(str::to_string);
+                if empty {
+                    if let Some(id) = id {
+                        ids.entry(id).or_insert((start, lexer.i));
+                    }
+                } else {
+                    open.push((name, start, id));
+                }
+            }
+            Tok::End(name) => match open.pop() {
+                Some((opened, from, id)) if opened == name => {
+                    if let Some(id) = id {
+                        ids.entry(id).or_insert((from, lexer.i));
+                    }
+                }
+                _ => break,
+            },
+        }
+    }
+    ids
+}
+
+/// The state of the reading of one file: what is shared by the file itself and by every `use` that is expanded inside it.
+struct Reader<'a> {
+    text: &'a str,
+    opts: &'a ReadOptions,
+    px_mm: f64,
+    col: Collector,
+    /// All the elements read, the ones that a `use` brings in again included, against `max_nodes`.
+    nodes: usize,
+    room: usize,
+    root_seen: bool,
+    /// Where each element with an `id` is in the text (only when the file has a `use`).
+    ids: HashMap<String, (usize, usize)>,
+    /// The ids that are being expanded, from the outermost: a `use` of one of them is a circular reference.
+    expanding: Vec<String>,
+}
+
+impl<'a> Reader<'a> {
+    /// Reads the elements of `lexer` one after the other. `depth0` is how deep the elements already are (the `use` that brought them in counts), and `from_use` says that the first element
+    /// is the one a `use` refers to: a `symbol` is then read as a group, scaled into `symbol_size` (the width and height of the `use`) when it has a view box.
+    fn walk(
+        &mut self,
+        mut lexer: Lexer<'a>,
+        base: &Ctx,
+        depth0: usize,
+        from_use: bool,
+        symbol_size: Option<(f64, f64)>,
+    ) -> Result<(), String> {
+        let limits = self.opts.limits;
+        let mut stack: Vec<(String, Ctx)> = Vec::new();
+        let mut skip = 0usize;
+        let mut first = from_use;
+        while let Some(tok) = lexer.token()? {
+            match tok {
+                Tok::Start { name, attrs, empty } => {
+                    self.nodes += 1;
+                    if self.nodes > limits.max_nodes {
+                        return Err(format!(
+                            "the file has more than {} elements (max_nodes)",
+                            limits.max_nodes
+                        ));
+                    }
+                    let is_root = std::mem::take(&mut first);
+                    if skip > 0 {
+                        if !empty {
+                            skip += 1;
+                        }
+                        continue;
+                    }
+                    if depth0 + stack.len() >= limits.max_depth {
+                        return Err(format!(
+                            "the elements are nested deeper than {} (max_depth)",
+                            limits.max_depth
+                        ));
+                    }
+                    let parent = stack
+                        .last()
+                        .map_or_else(|| base.clone(), |(_, c)| c.clone());
+                    let symbol = is_root && name == "symbol";
+                    if name == "svg" || name == "g" || name == "a" || name == "switch" || symbol {
+                        let mut ctx = parent.derive(&attrs, &mut self.col);
+                        if symbol {
+                            symbol_frame(&attrs, &mut ctx, symbol_size);
+                        } else if name == "svg" && !self.root_seen {
+                            self.root_seen = true;
+                            root_frame(&attrs, &mut ctx, self.px_mm, &mut self.col);
+                        } else if name == "svg" {
+                            self.col.warn("an svg inside another svg is read as a group: its size and view box are ignored");
+                        }
+                        if ctx.hidden && !empty {
+                            skip = 1;
+                        } else if !empty {
+                            stack.push((name, ctx));
+                        }
+                        continue;
+                    }
+                    if SHAPES.contains(&name.as_str()) {
+                        if !empty {
+                            skip = 1;
+                        }
+                        if !self.root_seen {
+                            continue;
+                        }
+                        let ctx = parent.derive(&attrs, &mut self.col);
+                        if ctx.hidden {
+                            continue;
+                        }
+                        let Some(color) = ctx.color() else {
+                            continue;
+                        };
+                        match shape(&name, &attrs, &ctx, self.opts, &mut self.room) {
+                            Ok(strokes) => {
+                                for (pts, closed) in strokes {
+                                    self.col
+                                        .push(&ctx.layer, Some(color.as_str()), pts, closed)?;
+                                }
+                            }
+                            Err(Fail::Bad(why)) => {
+                                self.col.warn(format!("a {name} was skipped: {why}"));
+                            }
+                            Err(Fail::Limit(why)) => return Err(why),
+                        }
+                        continue;
+                    }
+                    if !empty {
+                        skip = 1;
+                    }
+                    if name == "use" {
+                        if self.root_seen {
+                            self.expand_use(&attrs, &parent, depth0 + stack.len() + 1)?;
+                        }
+                        continue;
+                    }
+                    if SKIPPED.contains(&name.as_str()) {
+                        if matches!(
+                            name.as_str(),
+                            "script" | "image" | "foreignObject" | "text" | "style"
+                        ) {
+                            self.col
+                                .warn(format!("{name} is not supported and was skipped"));
+                        }
+                    } else {
+                        self.col.warn(format!(
+                            "the element {name} is not supported and was skipped"
+                        ));
+                    }
+                }
+                Tok::End(name) => {
+                    if skip > 0 {
+                        skip -= 1;
+                        continue;
+                    }
+                    match stack.pop() {
+                        Some((open, _)) if open == name => {}
+                        _ => {
+                            return Err("the end of an element does not match its start".to_string())
+                        }
+                    }
+                }
+            }
+        }
+        if !stack.is_empty() || skip > 0 {
+            return Err("the file ends before an element is closed".to_string());
+        }
+        Ok(())
+    }
+
+    /// A `use`: the element it refers to (`href="#id"` of this same file, never another file or an address) is read again where the `use` is, moved by its `x` and `y` and under its
+    /// `transform` and its paint. The elements it brings in count against `max_nodes` and `max_depth` like any other, and a `use` that leads back to an element that is being expanded is
+    /// an error: nothing is followed forever.
+    fn expand_use(
+        &mut self,
+        attrs: &[(String, String)],
+        parent: &Ctx,
+        depth: usize,
+    ) -> Result<(), String> {
+        let Some(href) = get(attrs, "href")
+            .or_else(|| get(attrs, "xlink:href"))
+            .map(str::trim)
+        else {
+            self.col.warn("a use with no href was skipped");
+            return Ok(());
+        };
+        let Some(id) = href.strip_prefix('#') else {
+            self.col
+                .warn("a use that refers to something outside the file was skipped");
+            return Ok(());
+        };
+        let Some(&(from, to)) = self.ids.get(id) else {
+            self.col.warn(format!(
+                "a use refers to #{id}, which the file does not have, and was skipped"
+            ));
+            return Ok(());
+        };
+        if self.expanding.iter().any(|open| open == id) {
+            return Err(format!(
+                "a use refers to #{id} from inside it (a circular reference)"
+            ));
+        }
+        let mut ctx = parent.derive(attrs, &mut self.col);
+        if ctx.hidden {
+            return Ok(());
+        }
+        let um = ctx.user_mm;
+        let (x, y) = (
+            user_len(attrs, "x", um).unwrap_or(0.0),
+            user_len(attrs, "y", um).unwrap_or(0.0),
+        );
+        ctx.m = mul(&ctx.m, &[1.0, 0.0, 0.0, 1.0, x, y]);
+        let size = match (user_len(attrs, "width", um), user_len(attrs, "height", um)) {
+            (Some(w), Some(h)) if w > 0.0 && h > 0.0 => Some((w, h)),
+            _ => None,
+        };
+        let text = self.text;
+        let lexer = Lexer {
+            s: &text[from..to],
+            i: 0,
+        };
+        self.expanding.push(id.to_string());
+        let done = self.walk(lexer, &ctx, depth, true, size);
+        self.expanding.pop();
+        done
+    }
+}
+
+/// The view box of a `symbol` that a `use` brings in: it is scaled to fit the width and height of the `use` (keeping the shape, centred), when both are given.
+fn symbol_frame(attrs: &[(String, String)], ctx: &mut Ctx, size: Option<(f64, f64)>) {
+    let view = get(attrs, "viewBox")
+        .or_else(|| get(attrs, "viewbox"))
+        .and_then(|v| numbers(v).ok())
+        .filter(|v| v.len() == 4 && v[2] > 0.0 && v[3] > 0.0);
+    if let (Some(v), Some((w, h))) = (view, size) {
+        let s = (w / v[2]).min(h / v[3]);
+        let (ox, oy) = (
+            (w - v[2] * s) / 2.0 - v[0] * s,
+            (h - v[3] * s) / 2.0 - v[1] * s,
+        );
+        ctx.m = mul(&ctx.m, &[s, 0.0, 0.0, s, ox, oy]);
+    }
+}
+
 /// Reads an SVG file.
 pub fn read_svg(bytes: &[u8], opts: &ReadOptions) -> Result<Drawing, String> {
     opts.validate()?;
@@ -1053,8 +1316,6 @@ pub fn read_svg(bytes: &[u8], opts: &ReadOptions) -> Result<Drawing, String> {
     let text = String::from_utf8_lossy(bytes);
     let text = text.strip_prefix('\u{feff}').unwrap_or(&text);
     let px_mm = 25.4 / opts.dpi;
-    let mut col = Collector::new(Source::Svg, limits);
-    let mut lexer = Lexer { s: text, i: 0 };
     let base = Ctx {
         m: IDENTITY,
         stroke: Paint::None,
@@ -1063,111 +1324,26 @@ pub fn read_svg(bytes: &[u8], opts: &ReadOptions) -> Result<Drawing, String> {
         hidden: false,
         user_mm: px_mm,
     };
-    let mut stack: Vec<(String, Ctx)> = Vec::new();
-    let mut skip = 0usize;
-    let mut root_seen = false;
-    let mut nodes = 0usize;
-    let mut room = limits.max_points;
-    while let Some(tok) = lexer.token()? {
-        match tok {
-            Tok::Start { name, attrs, empty } => {
-                nodes += 1;
-                if nodes > limits.max_nodes {
-                    return Err(format!(
-                        "the file has more than {} elements (max_nodes)",
-                        limits.max_nodes
-                    ));
-                }
-                if skip > 0 {
-                    if !empty {
-                        skip += 1;
-                    }
-                    continue;
-                }
-                if stack.len() >= limits.max_depth {
-                    return Err(format!(
-                        "the elements are nested deeper than {} (max_depth)",
-                        limits.max_depth
-                    ));
-                }
-                let parent = stack
-                    .last()
-                    .map_or_else(|| base.clone(), |(_, c)| c.clone());
-                if name == "svg" || name == "g" || name == "a" || name == "switch" {
-                    let mut ctx = parent.derive(&attrs, &mut col);
-                    if name == "svg" && !root_seen {
-                        root_seen = true;
-                        root_frame(&attrs, &mut ctx, px_mm, &mut col);
-                    } else if name == "svg" {
-                        col.warn("an svg inside another svg is read as a group: its size and view box are ignored");
-                    }
-                    if ctx.hidden && !empty {
-                        skip = 1;
-                    } else if !empty {
-                        stack.push((name, ctx));
-                    }
-                    continue;
-                }
-                if SHAPES.contains(&name.as_str()) {
-                    if !empty {
-                        skip = 1;
-                    }
-                    if !root_seen {
-                        continue;
-                    }
-                    let ctx = parent.derive(&attrs, &mut col);
-                    if ctx.hidden {
-                        continue;
-                    }
-                    let Some(color) = ctx.color() else {
-                        continue;
-                    };
-                    match shape(&name, &attrs, &ctx, opts, &mut room) {
-                        Ok(strokes) => {
-                            for (pts, closed) in strokes {
-                                col.push(&ctx.layer, Some(color.as_str()), pts, closed)?;
-                            }
-                        }
-                        Err(Fail::Bad(why)) => col.warn(format!("a {name} was skipped: {why}")),
-                        Err(Fail::Limit(why)) => return Err(why),
-                    }
-                    continue;
-                }
-                if !empty {
-                    skip = 1;
-                }
-                if SKIPPED.contains(&name.as_str()) {
-                    if matches!(
-                        name.as_str(),
-                        "script" | "image" | "use" | "foreignObject" | "text" | "style"
-                    ) {
-                        col.warn(format!("{name} is not supported and was skipped"));
-                    }
-                } else {
-                    col.warn(format!(
-                        "the element {name} is not supported and was skipped"
-                    ));
-                }
-            }
-            Tok::End(name) => {
-                if skip > 0 {
-                    skip -= 1;
-                    continue;
-                }
-                match stack.pop() {
-                    Some((open, _)) if open == name => {}
-                    _ => return Err("the end of an element does not match its start".to_string()),
-                }
-            }
-        }
-    }
-    if !stack.is_empty() || skip > 0 {
-        return Err("the file ends before an element is closed".to_string());
-    }
-    if !root_seen {
+    let mut reader = Reader {
+        text,
+        opts,
+        px_mm,
+        col: Collector::new(Source::Svg, limits),
+        nodes: 0,
+        room: limits.max_points,
+        root_seen: false,
+        ids: if text.contains("use") {
+            index_ids(text, &limits)
+        } else {
+            HashMap::new()
+        },
+        expanding: Vec::new(),
+    };
+    reader.walk(Lexer { s: text, i: 0 }, &base, 0, false, None)?;
+    if !reader.root_seen {
         return Err("this is not an SVG file: there is no svg element".to_string());
     }
-    Ok(col.finish())
+    Ok(reader.col.finish())
 }
 
 /// The size of the page and the view box of the first `svg`: the matrix that takes the units of the drawing to millimetres.
@@ -1662,6 +1838,174 @@ mod tests {
         for _ in 0..100 {
             let junk: Vec<u8> = (0..200).map(|_| (next() % 256) as u8).collect();
             let _ = read_svg(&junk, &mm());
+        }
+    }
+
+    #[test]
+    fn a_use_brings_in_the_element_it_refers_to_where_it_is_and_moved_by_x_and_y() {
+        // the element can be in the defs, and it can come after the use
+        let d = read(
+            r##"<svg xmlns:xlink="http://www.w3.org/1999/xlink">
+              <use href="#r" x="10" y="5"/>
+              <use xlink:href="#r" x="20"/>
+              <defs><rect id="r" x="0" y="0" width="2" height="1" stroke="red" fill="none"/></defs>
+            </svg>"##,
+        );
+        assert_eq!(d.shapes.len(), 2);
+        assert!(close(d.shapes[0].pts[0], (10.0, 5.0)));
+        assert!(close(d.shapes[0].pts[2], (12.0, 6.0)));
+        assert!(close(d.shapes[1].pts[0], (20.0, 0.0)));
+        assert!(d.warnings.is_empty(), "{:?}", d.warnings);
+        // a shape in the open is drawn once more by the use
+        let d =
+            read(r##"<svg><path id="p" d="M0 0 L1 0" stroke="red"/><use href="#p" x="3"/></svg>"##);
+        assert_eq!(d.shapes.len(), 2);
+        assert_eq!(d.shapes[1].pts, vec![(3.0, 0.0), (4.0, 0.0)]);
+    }
+
+    #[test]
+    fn a_use_has_its_transform_and_gives_its_paint_and_layer_to_what_it_brings() {
+        let d = read(
+            r##"<svg xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape">
+              <defs><path id="p" d="M0 0 L1 0"/></defs>
+              <g inkscape:groupmode="layer" inkscape:label="Holes" stroke="#0000ff" fill="none">
+                <use href="#p" transform="scale(2)" x="1"/>
+              </g>
+            </svg>"##,
+        );
+        assert_eq!(d.shapes.len(), 1);
+        // translate by x first, then the scale of the transform
+        assert_eq!(d.shapes[0].pts, vec![(2.0, 0.0), (4.0, 0.0)]);
+        assert_eq!(d.shapes[0].color.as_deref(), Some("#0000ff"));
+        assert_eq!(d.shapes[0].layer, "Holes");
+        // the paint of the element itself wins over the paint of the use
+        let d = read(
+            r##"<svg><defs><path id="p" d="M0 0 L1 0" stroke="#ff0000"/></defs><use href="#p" stroke="#00ff00"/></svg>"##,
+        );
+        assert_eq!(d.shapes[0].color.as_deref(), Some("#ff0000"));
+        // a use that is hidden draws nothing
+        let d = read(
+            r##"<svg><defs><path id="p" d="M0 0 L1 0" stroke="red"/></defs><use href="#p" display="none"/></svg>"##,
+        );
+        assert!(d.shapes.is_empty());
+    }
+
+    #[test]
+    fn a_symbol_is_scaled_to_the_size_of_the_use_that_brings_it() {
+        let svg = |size: &str| {
+            format!(
+                r##"<svg><defs><symbol id="s" viewBox="0 0 10 10"><path d="M0 0 L10 0" stroke="red"/></symbol></defs><use href="#s" {size}/></svg>"##
+            )
+        };
+        let d = read(&svg(r##"width="20" height="20""##));
+        assert_eq!(d.shapes[0].pts, vec![(0.0, 0.0), (20.0, 0.0)]);
+        // the shape is kept and centred when the use is taller than wide
+        let d = read(&svg(r##"width="20" height="40""##));
+        assert_eq!(d.shapes[0].pts, vec![(0.0, 10.0), (20.0, 10.0)]);
+        // with no size the symbol is read as it is, and a symbol is never drawn where it is defined
+        let d = read(&svg(""));
+        assert_eq!(d.shapes[0].pts, vec![(0.0, 0.0), (10.0, 0.0)]);
+        let d = read(r##"<svg><symbol id="s"><path d="M0 0 L1 0" stroke="red"/></symbol></svg>"##);
+        assert!(d.shapes.is_empty());
+    }
+
+    #[test]
+    fn a_use_can_bring_in_a_group_that_has_a_use() {
+        let d = read(
+            r##"<svg>
+              <defs>
+                <path id="a" d="M0 0 L1 0" stroke="red"/>
+                <g id="b"><use href="#a" x="1"/><use href="#a" x="3"/></g>
+              </defs>
+              <use href="#b" y="1"/>
+            </svg>"##,
+        );
+        assert_eq!(d.shapes.len(), 2);
+        assert!(close(d.shapes[0].pts[0], (1.0, 1.0)));
+        assert!(close(d.shapes[1].pts[0], (3.0, 1.0)));
+    }
+
+    #[test]
+    fn a_use_that_leads_back_to_itself_is_an_error_and_a_use_never_followed_is_not() {
+        for svg in [
+            r##"<svg><g id="a"><use href="#a"/></g></svg>"##,
+            r##"<svg><g id="a"><use href="#b"/></g><g id="b"><use href="#a"/></g></svg>"##,
+            r##"<svg><defs><g id="a"><use href="#b"/></g><g id="b"><use href="#c"/></g><g id="c"><use href="#a"/></g></defs><use href="#a"/></svg>"##,
+            r##"<svg><use id="u" href="#u"/></svg>"##,
+        ] {
+            let e = read_svg(svg.as_bytes(), &mm()).unwrap_err();
+            assert!(e.contains("circular"), "{svg}: {e}");
+        }
+        // in the defs and not used, a loop is only text
+        let d = read(
+            r##"<svg><defs><g id="a"><use href="#a"/></g></defs><path d="M0 0 L1 0" stroke="red"/></svg>"##,
+        );
+        assert_eq!(d.shapes.len(), 1);
+    }
+
+    #[test]
+    fn what_a_use_brings_in_counts_against_the_limits() {
+        // each level uses the one before twice: 2 ^ 12 shapes from a file of a few hundred bytes
+        let mut svg =
+            String::from(r##"<svg><defs><rect id="l0" width="1" height="1" stroke="red"/>"##);
+        for k in 1..=12 {
+            let p = k - 1;
+            svg.push_str(&format!(
+                r##"<g id="l{k}"><use href="#l{p}"/><use href="#l{p}" x="1"/></g>"##
+            ));
+        }
+        svg.push_str(r##"</defs><use href="#l12"/></svg>"##);
+        let lim = |f: fn(&mut ReadOptions)| {
+            let mut o = mm();
+            f(&mut o);
+            o
+        };
+        assert!(
+            read_svg(svg.as_bytes(), &lim(|o| o.limits.max_nodes = 1000))
+                .unwrap_err()
+                .contains("max_nodes")
+        );
+        assert!(
+            read_svg(svg.as_bytes(), &lim(|o| o.limits.max_shapes = 100))
+                .unwrap_err()
+                .contains("max_shapes")
+        );
+        // with room it is all there
+        let d = read(&svg);
+        assert_eq!(d.shapes.len(), 4096);
+        // a chain of uses is as deep as the elements it brings in
+        let mut chain = String::from(r##"<svg><defs><path id="c0" d="M0 0 L1 0" stroke="red"/>"##);
+        for k in 1..=10 {
+            chain.push_str(&format!(r##"<use id="c{k}" href="#c{}"/>"##, k - 1));
+        }
+        chain.push_str(r##"</defs><use href="#c10"/></svg>"##);
+        assert_eq!(read(&chain).shapes.len(), 1);
+        assert!(read_svg(chain.as_bytes(), &lim(|o| o.limits.max_depth = 5))
+            .unwrap_err()
+            .contains("max_depth"));
+    }
+
+    #[test]
+    fn a_use_of_something_else_than_an_element_of_the_file_is_skipped_with_a_note() {
+        let d = read(
+            r##"<svg><path id="p" d="M0 0 L1 0" stroke="red"/>
+              <use href="http://example.org/a.svg#p"/>
+              <use href="file:///etc/passwd"/>
+              <use href="other.svg#p"/>
+              <use href="#nothing"/>
+              <use/>
+            </svg>"##,
+        );
+        assert_eq!(d.shapes.len(), 1);
+        // the same note is told once
+        assert_eq!(
+            d.warnings.iter().filter(|w| w.contains("use")).count(),
+            3,
+            "{:?}",
+            d.warnings
+        );
+        for want in ["outside the file", "#nothing", "no href"] {
+            assert!(d.warnings.iter().any(|w| w.contains(want)), "{want}");
         }
     }
 }

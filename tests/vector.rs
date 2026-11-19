@@ -475,6 +475,33 @@ fn hostile_files_are_refused_without_a_panic() {
 }
 
 #[test]
+fn a_symbol_used_twice_is_cut_twice_and_a_use_that_loops_is_refused() {
+    let s = Scratch::new("use");
+    let out = s.path("u.nc");
+    let twice = r##"<svg xmlns="http://www.w3.org/2000/svg"><defs><symbol id="sq"><rect width="4" height="4" fill="none" stroke="#ff0000"/></symbol></defs><use href="#sq" x="0" y="0"/><use href="#sq" x="10" y="0"/></svg>"##;
+    let input = s.write("twice.svg", twice);
+    let (c, stdout, e) = run(&["cut", &input, &out, "--dpi", "25.4"]);
+    assert_eq!(c, Some(0), "{e}");
+    // two squares of 16 mm
+    assert!(stdout.contains("2 paths, 32 mm cut"), "{stdout}");
+    verify_gcode(&fs::read_to_string(&out).unwrap(), 1000, None).unwrap();
+    let _ = fs::remove_file(&out);
+    for (name, body) in [
+        (
+            "loop.svg",
+            r##"<svg><g id="a"><use href="#b"/></g><g id="b"><use href="#a"/></g></svg>"##,
+        ),
+        ("self.svg", r##"<svg><g id="a"><use href="#a"/></g></svg>"##),
+    ] {
+        let input = s.write(name, body);
+        let (c, _, e) = run(&["cut", &input, &out]);
+        assert_eq!(c, Some(1), "{name}: {e}");
+        assert!(e.contains("circular"), "{name}: {e}");
+        assert!(!PathBuf::from(&out).exists(), "{name} wrote a file");
+    }
+}
+
+#[test]
 fn a_damaged_copy_of_a_valid_file_is_never_a_panic() {
     let svg = PLATE_SVG.as_bytes();
     let dxf = SQUARE_DXF.as_bytes();

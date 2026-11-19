@@ -36,9 +36,9 @@ The shapes of a drawing are grouped, and each group has its own settings:
 | | SVG | DXF (text form) |
 |---|---|---|
 | Lines and curves | `path` (`M L H V C S Q T A Z`, absolute and relative), `rect` (with round corners), `circle`, `ellipse`, `line`, `polyline`, `polygon` | `LINE`, `LWPOLYLINE` and `POLYLINE` with bulges, `ARC`, `CIRCLE`, `SPLINE` |
-| Placing | `transform` (`translate scale rotate skewX skewY matrix`), groups, `viewBox` | the extrusion of an arc, a circle or a light polyline pointing down |
+| Placing | `transform` (`translate scale rotate skewX skewY matrix`), groups, `viewBox`, `use` of an element of the same file (`href="#id"`, with `x` and `y`; a `symbol` with a `viewBox` is fitted to the `width` and `height` of the `use`): what it brings in counts against `max_nodes` and `max_depth`, and a `use` that leads back to itself is an error | the extrusion of an arc, a circle or a light polyline pointing down |
 | Units | `mm cm in pt pc px`; a `px` is `25.4 / dpi` mm (`dpi` is 96 unless the file has a size and a view box) | `$INSUNITS` (inch, foot, mile, millimetre, centimetre, metre, mil, yard, micrometre, decimetre); a drawing with no unit uses `dxf_unit_mm` |
-| Never read | scripts, images, `use`, text, styles with selectors, filters, gradients, masks, and any entity declared in the file (an external entity or a declared one is an error) | blocks and inserts, text, hatches, dimensions, ellipses, meshes, binary files |
+| Never read | scripts, images, a `use` of another file or an address, text, styles with selectors, filters, gradients, masks, and any entity declared in the file (an external entity or a declared one is an error) | blocks and inserts, text, hatches, dimensions, ellipses, meshes, binary files |
 
 What is left out is listed as a note (in the window and on the standard error of the commands). Curves become straight pieces that are never farther than `tolerance_mm` from the true curve.
 
