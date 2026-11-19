@@ -2,7 +2,7 @@
   "repo": "EH3D-PHOENIX-LASER",
   "ecosystem": "eh3d",
   "tagline": "An image or a drawing, dots or contours, and the G-code of a laser.",
-  "description": "EH3D-PHOENIX-LASER is a Rust library and command line that turn an image into dots by dithering and write the G-code of a laser that burns line by line with dynamic power, and that read SVG and DXF drawings and write the G-code that cuts their contours and engraves their shapes, layer by layer, with the settings of each layer in a file. Built with the gui feature it also has a window (egui) that opens a picture or a drawing, shows the path of the laser, sets the power and the feed and exports the G-code.",
+  "description": "EH3D-PHOENIX-LASER is a Rust library and command line that turn an image into dots by dithering and write the G-code of a laser that burns line by line with dynamic power, and that read SVG and DXF drawings and write the G-code that cuts their contours and engraves their shapes, layer by layer, with the settings of each layer in a file. Built with the gui feature it also has a window (egui) that opens a picture or a drawing, shows the path of the laser, sets the power and the feed and exports the G-code. It also burns a name or a mark with a font of strokes of its own.",
   "columns": [
     "WHO USES IT",
     "THIS REPOSITORY",
@@ -33,27 +33,15 @@
       "id": "image",
       "column": 1,
       "level": "tested",
-      "title": "image and dither",
+      "title": "engrave a picture",
       "lines": [
         "PNG and PGM to grey levels,",
-        "then to dots"
+        "dots, and G-code with dynamic",
+        "power and overscan"
       ],
       "code": [
         "src/lib.rs::pub use eh3d_image as image",
-        "src/dither.rs::pub fn dither"
-      ]
-    },
-    {
-      "id": "raster",
-      "column": 1,
-      "level": "tested",
-      "title": "raster",
-      "lines": [
-        "G-code with dynamic power,",
-        "overscan and alternating",
-        "directions"
-      ],
-      "code": [
+        "src/dither.rs::pub fn dither",
         "src/raster.rs::pub fn engrave"
       ]
     },
@@ -98,6 +86,20 @@
         "src/order.rs::pub fn sequence",
         "src/offset.rs::pub fn offset_ring",
         "src/vconfig.rs::pub fn parse"
+      ]
+    },
+    {
+      "id": "text",
+      "column": 1,
+      "level": "tested",
+      "title": "text",
+      "lines": [
+        "a name or a mark with a",
+        "font of strokes of its own,",
+        "inside limits"
+      ],
+      "code": [
+        "src/text.rs::pub fn program"
       ]
     },
     {
@@ -155,8 +157,7 @@
     },
     {
       "from": "motion",
-      "to": "raster",
-      "label": "planned",
+      "to": "image",
       "level": "config"
     },
     {
@@ -171,7 +172,7 @@
       "level": "tested"
     },
     {
-      "from": "raster",
+      "from": "image",
       "to": "laser",
       "level": "tested"
     },
@@ -185,10 +186,21 @@
       "from": "cutting",
       "to": "laser",
       "level": "tested"
+    },
+    {
+      "from": "person",
+      "to": "text",
+      "label": "text",
+      "level": "tested"
+    },
+    {
+      "from": "text",
+      "to": "laser",
+      "level": "tested"
     }
   ],
   "legend": {
-    "tested": "covered by tests on a computer (309 tests)",
+    "tested": "covered by tests on a computer",
     "config": "planned, not used today",
     "external": "a person, a file or another repository",
     "untested": "written, not built or looked at on a screen yet"
