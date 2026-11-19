@@ -6,7 +6,9 @@ mod cli_args;
 
 use cli_args::{finish, flag, num, switch};
 use eh3d_phoenix_laser::barcode;
-use eh3d_phoenix_laser::calibrate::{focus_test, grid, labelled_grid, ladder, Grid, Labels};
+use eh3d_phoenix_laser::calibrate::{
+    focus_grid, focus_test, grid, labelled_grid, ladder, Grid, Labels,
+};
 use eh3d_phoenix_laser::cut::{layers as layer_list, plan, Plan};
 use eh3d_phoenix_laser::dither::{dither, Method};
 use eh3d_phoenix_laser::dxf::read_dxf;
@@ -50,7 +52,7 @@ const HELP: &str = "phoenix-laser: laser engraving from an image
   phoenix-laser layers DRAWING [--config FILE] [--dpi N]
   phoenix-laser trace IMAGE OUT.nc --width-mm W [--threshold 128] [--invert] [--simplify MM] [--min-area MM2] [--engrave] [the options of cut]
   phoenix-laser materials FILE
-  phoenix-laser focus OUT.nc --z-step MM [--z-start MM] [--steps 9] [--length 10] [--spacing 2] [--feed 1000] [--power 30] [--smax 1000] [--max-power P] [--max-speed MM/MIN] [--config FILE] [--profile NAME]
+  phoenix-laser focus OUT.nc --z-step MM [--z-start MM] [--steps 9] [--length 10] [--spacing 2] [--feed 1000] [--power 30 | --powers 10,20,30] [--smax 1000] [--max-power P] [--max-speed MM/MIN] [--config FILE] [--profile NAME]
   phoenix-laser text OUT.nc --text TEXT [--height-mm 10] [--spacing 25] [--line-spacing 50] [--power 20] [--feed 1000] [--passes 1] [--max-minutes 240] [--align left|center|right] [--mirror] [--origin X,Y] [--bed X,Y] [--smax N]
                 [--max-power P] [--max-speed MM/MIN] [--config FILE] [--profile NAME]
   phoenix-laser qr OUT.nc --text DATA [--ecc L|M|Q|H] [--module-mm 1] [--line-mm 0.1] [--power 20] [--feed 1000] [--passes 1] [--max-minutes 240] [--invert] [--border-modules 0] [--overscan-mm 0] [--mirror] [--origin X,Y] [--bed X,Y] [--smax N] [--print]
@@ -74,7 +76,7 @@ own settings in the file of --config (see the documentation); an option of the c
 layers lists the layers of a drawing with what would be done with each.
 trace follows the outline of a picture (a PNG or a PGM of a logo, a silhouette or a stencil) instead of burning it dot by dot: grey levels under --threshold are ink (over it with --invert), the border is found with sub-pixel precision, simplified until no point is farther than --simplify mm from the line, and specks smaller than --min-area mm2 are dropped. The result is a layer called trace that is cut, or filled with lines with --engrave, with the settings of --config, the options of cut and every limit of the file ([trace] holds max_pixels, max_contours and max_segments).
 materials FILE lists the materials of a library: a plain text file with a [material NAME] section for each material and way of working (see the documentation). --material NAME takes the power, the speed, the passes and the rest that the library says for it, before the other options, which win; the library is --materials FILE or the file named by PHOENIX_LASER_MATERIALS.
-focus writes a focus test: short lines side by side, each burnt with the head at another height (Z); the sharpest and thinnest line shows where the beam is in focus. --z-step has no default because which way is down depends on the machine: check it before running the program, which moves Z. The usual values live in the [focus] section of --config.
+focus writes a focus test: short lines side by side, each burnt with the head at another height (Z); the sharpest and thinnest line shows where the beam is in focus. --z-step has no default because which way is down depends on the machine: check it before running the program, which moves Z. --powers P1,P2,... (up to 10) makes a focus grid instead: the same lines once for each power, side by side with a column for each, so that the power that burns the thinnest line at the height of the focus can be read off. The usual values live in the [focus] section of --config.
 text burns TEXT with a font of strokes of the program (capitals, figures, space and . , - + / : ! ? ( ) = _ '; lower case is burnt as capitals, a new line starts a row, and a character the font has not is refused): --height-mm is the height of a capital (at most max_height_mm, 100 unless the file says another), --spacing and --line-spacing are the gaps between letters and rows as a percent of the height, --align left, center or right sets where the rows of a text of several lines start, --passes burns the whole text that many times (a burning that would take more than --max-minutes, 240 unless the file says another, is refused), --mirror burns its mirror image (for the back of glass or acrylic), and --origin X,Y is the lower left corner. A text of more than max_chars characters, a power or a speed over the limit, or work that would go outside of the bed (--bed X,Y or the machine of --config) is refused, never cut down; the [text] section of --config holds the usual values.
 qr burns DATA as a QR code of its own (versions 1 to 4, byte mode, with the level of error correction --ecc L, M, Q or H and the mask of the lowest penalty), filling each dark module with lines --line-mm apart (--invert fills the light ones instead, so the symbol is left bare in a burnt plate; --no-invert undoes invert = on of the settings; --border-modules N, only with --invert, also burns a border N modules wide around it, and the square counts as the symbol for --origin, the bed and max_size_mm; --overscan-mm runs the head up that far before each line and out past it with the laser off, and is refused when it would leave the bed): --mirror turns the symbol into its mirror image, to be burnt on the back of glass or acrylic; --module-mm is the side of a module and --origin X,Y the lower left corner; leave a light margin of four modules around the symbol on the material. --print also shows the symbol as text. Data of more than max_bytes bytes, a symbol that needs a version over max_version or is larger than max_size_mm, a fill of more than max_lines moves, a burning that would take more than --max-minutes (240 unless the file says another), a power or a speed over the limit, or work that would go outside of the bed (--bed X,Y or the machine of --config) is refused, never cut down; the [qr] section of --config holds the usual values.
 barcode burns DATA as a Code 128 barcode of its own (the characters from space to ~ in set B, and a text of an even number of figures in set C, which is half as wide), filling each bar with lines along its height --line-mm apart: --module-mm is the width of the narrowest bar, --height-mm the height of the bars, --mirror burns its mirror image (for the back of glass or acrylic) and --origin X,Y is the lower left corner; leave a light margin of ten modules at each side on the material. A byte that is not a printable character, more than max_chars characters, a barcode wider than max_width_mm, a fill of more than max_lines moves, a burning that would take more than --max-minutes (240 unless the file says another), a power or a speed over the limit, or work that would go outside of the bed (--bed X,Y or the machine of --config) is refused, never cut down; the [barcode] section of --config holds the usual values.
@@ -1302,9 +1304,14 @@ fn run(mut args: Vec<String>) -> Result<(), String> {
             if let Some(v) = flag(&mut args, "--feed")? {
                 f.feed_mm_min = num(&v, "--feed")?;
             }
+            let powers = flag(&mut args, "--powers")?;
             if let Some(v) = flag(&mut args, "--power")? {
+                if powers.is_some() {
+                    return Err("--power and --powers cannot be given together".into());
+                }
                 f.power_percent = num(&v, "--power")?;
             }
+            let powers = powers.map(|v| list(&v, "--powers")).transpose()?;
             finish(&args, 1)?;
             let out = args.first().ok_or("focus needs an output file")?;
             safety::validate_max(machine.max_power_percent)?;
@@ -1313,7 +1320,10 @@ fn run(mut args: Vec<String>) -> Result<(), String> {
                 f.feed_mm_min,
                 machine.max_speed_mm_min,
             )?;
-            let text = focus_test(&f, machine.s_max, machine.max_power_percent)?;
+            let text = match &powers {
+                Some(p) => focus_grid(&f, p, machine.s_max, machine.max_power_percent)?,
+                None => focus_test(&f, machine.s_max, machine.max_power_percent)?,
+            };
             if config
                 .as_deref()
                 .is_some_and(|c| same_file(Path::new(c), Path::new(out)))
@@ -1333,15 +1343,23 @@ fn run(mut args: Vec<String>) -> Result<(), String> {
             });
             write_atomic(Path::new(out), &format!("{head}{text}"))?;
             eprintln!("note: this program moves Z: check which way is down before running it");
-            println!(
-                "{} lines of {} mm from Z{} to Z{}, at {} % and {} mm/min, written to {out}",
-                f.steps,
-                f.length_mm,
-                f.z_start_mm,
-                f.z_start_mm + f.z_step_mm * f64::from(f.steps - 1),
-                f.power_percent,
-                f.feed_mm_min
-            );
+            let z_end = f.z_start_mm + f.z_step_mm * f64::from(f.steps - 1);
+            match &powers {
+                Some(p) => println!(
+                    "{} rows of {} lines of {} mm, one for each of the powers {} %, from Z{} to Z{}, at {} mm/min, written to {out}",
+                    f.steps,
+                    p.len(),
+                    f.length_mm,
+                    p.iter().map(f64::to_string).collect::<Vec<_>>().join(", "),
+                    f.z_start_mm,
+                    z_end,
+                    f.feed_mm_min
+                ),
+                None => println!(
+                    "{} lines of {} mm from Z{} to Z{}, at {} % and {} mm/min, written to {out}",
+                    f.steps, f.length_mm, f.z_start_mm, z_end, f.power_percent, f.feed_mm_min
+                ),
+            }
             Ok(())
         }
         "frame" => {

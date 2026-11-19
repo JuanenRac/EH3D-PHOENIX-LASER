@@ -2366,6 +2366,60 @@ fn an_inverted_qr_code_can_have_a_burnt_border_that_counts_for_the_size_and_the_
 }
 
 #[test]
+fn the_focus_command_makes_a_grid_of_powers_from_an_option_and_refuses_what_does_not_fit() {
+    let out = tmp("focus-grid.nc");
+    let _ = std::fs::remove_file(&out);
+    let (ok, said, err) = run(&[
+        "focus", &out, "--z-step", "-0.5", "--steps", "4", "--powers", "10,20,30",
+    ]);
+    assert!(ok, "{err}");
+    assert!(
+        said.contains("4 rows of 3 lines of 10 mm, one for each of the powers 10, 20, 30 %"),
+        "{said}"
+    );
+    let program = std::fs::read_to_string(&out).unwrap();
+    assert!(program.contains("(row 4 of 4 at Z-1.5)"), "{program}");
+    assert_eq!(program.matches(" S100\n").count(), 4);
+    assert_eq!(program.matches(" S300\n").count(), 4);
+    let (pass, report, _) = run(&["verify", &out]);
+    assert!(pass, "{report}");
+    // the lines are the ones of the focus test when there is one power
+    let (ok, _, err) = run(&["focus", &out, "--z-step", "-0.5", "--powers", "30"]);
+    assert!(ok, "{err}");
+    // what is refused: nothing is written
+    for (args, word) in [
+        (
+            vec!["--powers", "10,20", "--power", "30"],
+            "cannot be given together",
+        ),
+        (vec!["--powers", "10,x"], "--powers"),
+        (vec!["--powers", "0"], "more than 0 up to 100"),
+        (
+            vec!["--powers", "10,70", "--max-power", "50"],
+            "max_power_percent",
+        ),
+        (vec!["--powers", "1,2,3,4,5,6,7,8,9,10,11"], "11 powers"),
+        (
+            vec!["--powers", "10,20", "--feed", "5000", "--max-speed", "2000"],
+            "max_speed_mm_min",
+        ),
+    ] {
+        let refused = tmp("focus-grid-refused.nc");
+        let _ = std::fs::remove_file(&refused);
+        let mut full = vec!["focus", refused.as_str(), "--z-step", "-0.5"];
+        full.extend(args.iter().copied());
+        let (ok, _, err) = run(&full);
+        assert!(!ok, "{args:?}");
+        assert!(err.contains(word), "{args:?}: {err}");
+        assert!(!err.contains("panicked"), "{err}");
+        assert!(!std::path::Path::new(&refused).exists(), "{args:?}");
+    }
+    // without a step of the height there is no grid either
+    let (ok, _, err) = run(&["focus", &tmp("focus-grid-refused.nc"), "--powers", "10,20"]);
+    assert!(!ok && err.contains("--z-step"), "{err}");
+}
+
+#[test]
 fn the_preview_tells_the_energy_when_it_is_given_the_power_of_the_laser() {
     let program = tmp("energy.nc");
     // 60 mm at 600 mm/min and half power: 6 s

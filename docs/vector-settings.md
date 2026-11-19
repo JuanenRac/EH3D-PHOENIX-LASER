@@ -184,6 +184,8 @@ The focus test (`phoenix-laser focus`): short lines side by side, each burnt wit
 
 The keys of `[focus]` are `z_start_mm`, `z_step_mm`, `steps`, `length_mm`, `spacing_mm`, `feed_mm_min` and `power_percent`.
 
+`--powers P1,P2,...` (from 1 to 10 powers, as percents of full power) makes a focus grid instead of the test of one power: the same lines once for each power, side by side with a column for each (`spacing_mm` apart, in the order given) and a row for each height, so the power that burns the thinnest line at the height of the focus can be read off. Each power must be more than 0 up to 100, at least one step of `S` and at most the limit of power of the machine, and `--powers` cannot be given together with `--power`; the other keys of `[focus]` work as for the test.
+
 ### `[trace]`
 
 The contours of a picture (`phoenix-laser trace IMAGE OUT.nc --width-mm W`): the grey levels are split at `threshold` into ink and paper, the border between them is found with marching squares (the crossing of every edge is placed by the grey levels on both sides, so the line does not follow the steps of the pixels), the pieces of border are joined into closed rings and each ring is simplified until no point is farther than `simplify_mm` from the line. The rings become the shapes of one layer called `trace`, which is cut (or, with `--engrave`, filled with lines) with the settings of `[layer trace]` or `[defaults]`, the options of `cut` and every check of a drawing. A picture that asks for more than a limit of this section is an error that names the limit; nothing is left to run for a long time.

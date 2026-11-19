@@ -361,10 +361,160 @@ pub fn focus_test(f: &FocusSettings, s_max: u32, max_power_percent: f64) -> Resu
     Ok(out)
 }
 
+/// The most powers of a focus grid: one column for each.
+pub const MAX_FOCUS_POWERS: usize = 10;
+
+/// The G-code of a focus grid: the lines of the focus test, once for each power in `powers_percent`, side by side (a column for each power, `spacing_mm` apart, in the order given) and one row for
+/// each height, so that the power that burns the thinnest line at the height of the focus can be read off. The head goes to a height once and burns all the columns of that row, and goes back to the
+/// first height at the end. A power that is not more than 0 up to 100 or over the limit of power of the machine, one that is less than one step of S, no powers or more than
+/// [`MAX_FOCUS_POWERS`], and a missing step of the height are refused and nothing is written.
+pub fn focus_grid(
+    f: &FocusSettings,
+    powers_percent: &[f64],
+    s_max: u32,
+    max_power_percent: f64,
+) -> Result<String, String> {
+    f.validate()?;
+    if f.z_step_mm == 0.0 {
+        return Err(
+            "the focus step is needed: --z-step MM or z_step_mm in [focus] (which way is down depends on the machine)"
+                .to_string(),
+        );
+    }
+    if powers_percent.is_empty() || powers_percent.len() > MAX_FOCUS_POWERS {
+        return Err(format!(
+            "the focus grid has {} powers: it must have from 1 to {MAX_FOCUS_POWERS}",
+            powers_percent.len()
+        ));
+    }
+    if s_max == 0 || s_max > 100_000 {
+        return Err(format!("s_max is {s_max}: it must be from 1 to 100000"));
+    }
+    let mut values = Vec::new();
+    for &p in powers_percent {
+        if !(p.is_finite() && p > 0.0 && p <= 100.0) {
+            return Err(format!(
+                "a power of the focus grid is {p} %: it must be more than 0 up to 100"
+            ));
+        }
+        crate::safety::check_power("a power of the focus grid", p, max_power_percent)?;
+        let s = (f64::from(s_max) * p / 100.0).round() as u32;
+        if s == 0 {
+            return Err(format!(
+                "a power of {p} % of S{s_max} is less than one step of S"
+            ));
+        }
+        values.push(s);
+    }
+    let mut out = format!("G21\nG90\nM4 S0\nF{}\n", n(f.feed_mm_min)?);
+    for k in 0..f.steps {
+        let z = n(f.z_start_mm + f64::from(k) * f.z_step_mm)?;
+        let y = n(f64::from(k) * f.spacing_mm)?;
+        out.push_str(&format!(
+            "(row {} of {} at Z{z})\nG0 Z{z}\n",
+            k + 1,
+            f.steps
+        ));
+        for (j, s) in values.iter().enumerate() {
+            let x0 = j as f64 * (f.length_mm + f.spacing_mm);
+            out.push_str(&format!(
+                "G0 X{} Y{y}\nG1 X{} S{s}\nS0\n",
+                n(x0)?,
+                n(x0 + f.length_mm)?
+            ));
+        }
+    }
+    out.push_str(&format!("G0 Z{}\nM5\nM2\n", n(f.z_start_mm)?));
+    Ok(out)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::preview::{analyse, read, Options};
+
+    #[test]
+    fn the_focus_grid_burns_a_column_for_each_power_and_a_row_for_each_height() {
+        let f = settings();
+        let g = focus_grid(&f, &[10.0, 20.0, 30.0], 1000, 100.0).unwrap();
+        let p = read(&g);
+        assert!(p.ended && p.notes.is_empty(), "{:?}", p.notes);
+        let burns: Vec<_> = p.moves.iter().filter(|m| m.power > 0.0).collect();
+        assert_eq!(burns.len(), 5 * 3);
+        // the powers go along each row in the order they were given, and every line is a length long
+        for row in burns.chunks(3) {
+            assert_eq!(
+                row.iter().map(|m| m.power).collect::<Vec<_>>(),
+                vec![100.0, 200.0, 300.0]
+            );
+            assert!(row.iter().all(|m| (m.length() - 10.0).abs() < 1e-9));
+            // the columns are a length and a gap apart
+            assert_eq!(
+                row.iter().map(|m| m.from.0).collect::<Vec<_>>(),
+                vec![0.0, 12.0, 24.0]
+            );
+            assert!(row.iter().all(|m| m.from.1 == row[0].from.1));
+        }
+        // the rows are 2 mm apart, one for each height, and the head goes down once for each row
+        let rows: Vec<f64> = burns.chunks(3).map(|r| r[0].from.1).collect();
+        assert_eq!(rows, vec![0.0, 2.0, 4.0, 6.0, 8.0]);
+        for z in ["Z0", "Z-0.5", "Z-1", "Z-1.5", "Z-2"] {
+            assert_eq!(
+                g.matches(&format!("G0 {z}\n")).count(),
+                if z == "Z0" { 2 } else { 1 },
+                "{z}"
+            );
+        }
+        assert!(g.ends_with("G0 Z0\nM5\nM2\n"), "{g}");
+        let r = analyse(&p, &Options::default()).unwrap();
+        assert_eq!(r.burn_bounds, Some(((0.0, 0.0), (34.0, 8.0))));
+        let v = crate::verify::verify(g.as_bytes(), &crate::verify::Limits::default()).unwrap();
+        assert!(v.passes(), "{:?}", v.problems);
+    }
+
+    #[test]
+    fn a_grid_of_one_power_burns_the_lines_of_the_focus_test() {
+        let f = settings();
+        let one = focus_grid(&f, &[30.0], 1000, 100.0).unwrap();
+        let test = focus_test(&f, 1000, 100.0).unwrap();
+        let (a, b) = (read(&one), read(&test));
+        let key = |p: &crate::preview::Program| {
+            p.moves
+                .iter()
+                .filter(|m| m.power > 0.0)
+                .map(|m| (m.from, m.to, m.power))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(key(&a), key(&b));
+    }
+
+    #[test]
+    fn a_focus_grid_with_a_power_or_a_count_that_is_not_allowed_is_refused() {
+        let f = settings();
+        assert!(focus_grid(&f, &[], 1000, 100.0)
+            .unwrap_err()
+            .contains("0 powers"));
+        let many = [10.0; MAX_FOCUS_POWERS + 1];
+        assert!(focus_grid(&f, &many, 1000, 100.0)
+            .unwrap_err()
+            .contains("11 powers"));
+        assert!(focus_grid(&f, &[10.0; MAX_FOCUS_POWERS], 1000, 100.0).is_ok());
+        for bad in [0.0, -5.0, 100.5, f64::NAN, f64::INFINITY] {
+            assert!(focus_grid(&f, &[10.0, bad], 1000, 100.0).is_err(), "{bad}");
+        }
+        // over the limit of power of the machine, and under one step of S
+        let e = focus_grid(&f, &[10.0, 40.0], 1000, 30.0).unwrap_err();
+        assert!(e.contains("max_power_percent"), "{e}");
+        assert!(focus_grid(&f, &[10.0, 30.0], 1000, 30.0).is_ok());
+        assert!(focus_grid(&f, &[0.01], 100, 100.0)
+            .unwrap_err()
+            .contains("one step"));
+        // the step of the height is needed, as for the focus test
+        let e = focus_grid(&FocusSettings::default(), &[10.0], 1000, 100.0).unwrap_err();
+        assert!(e.contains("--z-step"), "{e}");
+        assert!(focus_grid(&f, &[10.0], 0, 100.0).is_err());
+        assert!(focus_grid(&f, &[10.0], 100_001, 100.0).is_err());
+    }
 
     fn settings() -> FocusSettings {
         FocusSettings {
