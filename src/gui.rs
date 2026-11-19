@@ -4,7 +4,7 @@
 use crate::browse::{self, Browser};
 use crate::lang::{fill, Lang, Msg};
 use crate::shot::{ShotRequest, ShotTheme, PATIENCE_FRAMES};
-use crate::vconfig::{KerfSide, LayerMode, QrEcc};
+use crate::vconfig::{KerfSide, LayerMode, QrEcc, TextAlign};
 use crate::window::{fire, Job, Key, Kind, LayerField, Mode, Section, Window, MAX_SEGMENTS};
 use eframe::egui::{
     self, Color32, FontData, FontDefinitions, FontFamily, Pos2, Rect, Stroke, Vec2,
@@ -642,6 +642,26 @@ impl App {
                 let mut mirror = self.win.text_mirror;
                 if ui.checkbox(&mut mirror, Msg::Mirror.tr(lang)).changed() {
                     self.win.set_text_mirror(mirror);
+                }
+                ui.label(Msg::TextAlign.tr(lang));
+                let name = |a: TextAlign| {
+                    let msg = match a {
+                        TextAlign::Left => Msg::AlignLeft,
+                        TextAlign::Centre => Msg::AlignCentre,
+                        TextAlign::Right => Msg::AlignRight,
+                    };
+                    msg.tr(lang)
+                };
+                let mut align = self.win.text_align;
+                egui::ComboBox::from_id_salt("text-align")
+                    .selected_text(name(align))
+                    .show_ui(ui, |ui| {
+                        for a in [TextAlign::Left, TextAlign::Centre, TextAlign::Right] {
+                            ui.selectable_value(&mut align, a, name(a));
+                        }
+                    });
+                if align != self.win.text_align {
+                    self.win.set_text_align(align);
                 }
                 for key in [
                     Key::SMax,

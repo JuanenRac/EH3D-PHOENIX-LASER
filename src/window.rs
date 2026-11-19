@@ -21,7 +21,7 @@ use crate::tone::Tone;
 use crate::trace;
 use crate::vconfig::{
     self, CalibrateSettings, FocusSettings, FrameSettings, KerfSide, LayerMode, LayerParams, QrEcc,
-    QrSettings, Settings, TextSettings, TraceSettings,
+    QrSettings, Settings, TextAlign, TextSettings, TraceSettings,
 };
 use crate::vector::{Drawing, ReadOptions};
 use crate::verify;
@@ -1027,6 +1027,8 @@ pub struct Window {
     /// The QR code and the text are burnt as their mirror images.
     pub qr_mirror: bool,
     pub text_mirror: bool,
+    /// Where the rows of the text start.
+    pub text_align: TextAlign,
 }
 
 impl Window {
@@ -1070,6 +1072,7 @@ impl Window {
             qr_invert: false,
             qr_mirror: false,
             text_mirror: false,
+            text_align: TextAlign::Left,
         }
     }
 
@@ -1151,6 +1154,13 @@ impl Window {
     pub fn set_qr_mirror(&mut self, on: bool) {
         if self.qr_mirror != on {
             self.qr_mirror = on;
+            self.mark_stale();
+        }
+    }
+
+    pub fn set_text_align(&mut self, align: TextAlign) {
+        if self.text_align != align {
+            self.text_align = align;
             self.mark_stale();
         }
     }
@@ -1659,6 +1669,7 @@ impl Window {
                 self.qr_invert = s.qr.invert;
                 self.qr_mirror = s.qr.mirror;
                 self.text_mirror = s.text.mirror;
+                self.text_align = s.text.align;
                 self.settings = s;
                 self.config_path = Some(path.to_path_buf());
                 self.rebuild_rows();
@@ -2242,6 +2253,7 @@ impl Window {
             passes: self.whole(Key::TextPasses, 1.0, 20.0)?,
             max_chars: self.whole(Key::TextMaxChars, 1.0, 5000.0)?,
             mirror: self.text_mirror,
+            align: self.text_align,
         };
         let s_max = self.whole(Key::SMax, 1.0, 100_000.0)?;
         let (max_power, max_speed) = self.limits()?;
@@ -3954,6 +3966,52 @@ hatch_cross = on
         assert!(!v.text_mirror && !v.qr_mirror);
         for l in Lang::ALL {
             assert!(!Msg::Mirror.tr(l).is_empty());
+        }
+    }
+
+    #[test]
+    fn the_rows_of_the_text_can_be_aligned_in_the_window_and_a_file_of_settings_sets_it() {
+        let m = text::Machine {
+            s_max: 1000,
+            max_power_percent: 100.0,
+            max_speed_mm_min: 30_000.0,
+            bed_mm: None,
+        };
+        let mut w = Window::new(Lang::En);
+        w.set_mode(Mode::Text);
+        w.set_words("EH3D 42\nLA".to_string());
+        assert_eq!(w.text_align, TextAlign::Left);
+        assert!(w.compute());
+        let left = w.done.as_ref().unwrap().gcode.clone();
+        w.set_text_align(TextAlign::Right);
+        assert!(w.stale);
+        assert!(w.compute());
+        let t = TextSettings {
+            align: TextAlign::Right,
+            ..TextSettings::default()
+        };
+        let right = w.done.as_ref().unwrap().gcode.clone();
+        assert_eq!(
+            right,
+            text::program("EH3D 42\nLA", (0.0, 0.0), &t, &m).unwrap().0
+        );
+        assert_ne!(left, right);
+        w.set_text_align(TextAlign::Right);
+        assert!(!w.stale);
+        let s = Scratch::new("align-config");
+        let cfg = s.write("a.cfg", "[text]\nalign = centre\n");
+        let mut v = Window::new(Lang::En);
+        assert!(v.load_config(&cfg));
+        assert_eq!(v.text_align, TextAlign::Centre);
+        for l in Lang::ALL {
+            for msg in [
+                Msg::TextAlign,
+                Msg::AlignLeft,
+                Msg::AlignCentre,
+                Msg::AlignRight,
+            ] {
+                assert!(!msg.tr(l).is_empty());
+            }
         }
     }
 

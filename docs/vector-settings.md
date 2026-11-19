@@ -255,9 +255,10 @@ A line of text burnt with the font of strokes of the program (`phoenix-laser tex
 | `speed_mm_min` | 1000 | from 1 to 30000 |
 | `passes` | 1 | how many times the whole text is burnt, from 1 to 20 |
 | `max_chars` | 200 | the most characters a text may have, from 1 to 5000 |
+| `align` | left | where the rows of a text of several lines start: `left`, `center` (or `centre`) or `right` (`--align`); the box of the text is the same |
 | `mirror` | off | `on` burns the text as its mirror image, for the back of glass or acrylic read from the front (`--mirror`, and `--no-mirror` to undo it) |
 
-The keys of `[text]` are `height_mm`, `max_height_mm`, `spacing_percent`, `line_spacing_percent`, `power_percent`, `speed_mm_min`, `passes`, `max_chars` and `mirror`.
+The keys of `[text]` are `height_mm`, `max_height_mm`, `spacing_percent`, `line_spacing_percent`, `power_percent`, `speed_mm_min`, `passes`, `max_chars`, `align` and `mirror`.
 
 In the window, the text mode has a box for the words and one box for each of these keys (a file of settings fills them); the text is worked out with the same function as the command, from the origin of the machine, and is refused for the same reasons, with the status line naming the box that is wrong. The bed is the one of the machine of the file.
 

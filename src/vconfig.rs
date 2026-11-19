@@ -592,6 +592,37 @@ impl QrSettings {
     }
 }
 
+/// Where the rows of a text of several lines start (`phoenix-laser text --align`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TextAlign {
+    /// Every row starts at the left edge of the text (the default).
+    Left,
+    /// Every row is centred on the box of the text.
+    Centre,
+    /// Every row ends at the right edge of the text.
+    Right,
+}
+
+impl TextAlign {
+    /// The alignment a word names (`left`, `center`, `centre` or `right`, in any case).
+    pub fn from_word(word: &str) -> Option<TextAlign> {
+        match word.trim().to_ascii_lowercase().as_str() {
+            "left" => Some(TextAlign::Left),
+            "center" | "centre" => Some(TextAlign::Centre),
+            "right" => Some(TextAlign::Right),
+            _ => None,
+        }
+    }
+
+    pub fn word(self) -> &'static str {
+        match self {
+            TextAlign::Left => "left",
+            TextAlign::Centre => "center",
+            TextAlign::Right => "right",
+        }
+    }
+}
+
 /// A line of text burnt with the font of strokes of the program (`phoenix-laser text`).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct TextSettings {
@@ -612,6 +643,8 @@ pub struct TextSettings {
     pub max_chars: u32,
     /// The text is turned into its mirror image, to be burnt on the back of glass or acrylic and read from the front (off by default).
     pub mirror: bool,
+    /// Where the rows of a text of several lines start: at the left (the default), centred or at the right.
+    pub align: TextAlign,
 }
 
 impl Default for TextSettings {
@@ -626,6 +659,7 @@ impl Default for TextSettings {
             passes: 1,
             max_chars: 200,
             mirror: false,
+            align: TextAlign::Left,
         }
     }
 }
@@ -1135,6 +1169,10 @@ fn set_global(s: &mut Settings, section: &str, key: &str, value: &str) -> Result
         ("qr", "overscan_mm") => s.qr.overscan_mm = number(value)?,
         ("qr", "mirror") => s.qr.mirror = switch(value)?,
         ("text", "mirror") => s.text.mirror = switch(value)?,
+        ("text", "align") => {
+            s.text.align = TextAlign::from_word(value)
+                .ok_or_else(|| format!("'{}' is not left, center or right", value.trim()))?
+        }
         ("trace", "threshold") => {
             s.trace.threshold = u8::try_from(whole(value)?)
                 .map_err(|_| "trace threshold must be from 0 to 255".to_string())?
@@ -1927,8 +1965,21 @@ mod tests {
                 passes: 2,
                 max_chars: 50,
                 mirror: false,
+                align: TextAlign::Left,
             }
         );
+        for (word, align) in [
+            ("left", TextAlign::Left),
+            (" Center ", TextAlign::Centre),
+            ("centre", TextAlign::Centre),
+            ("RIGHT", TextAlign::Right),
+        ] {
+            let s = parse(&format!("[text]\nalign = {word}\n")).unwrap();
+            assert_eq!(s.text.align, align, "{word}");
+            assert_eq!(TextAlign::from_word(align.word()), Some(align));
+        }
+        assert!(parse("[text]\nalign = middle\n").is_err());
+        assert_eq!(TextAlign::from_word(""), None);
         assert!(parse("[text]\nmirror = on\n").unwrap().text.mirror);
         assert!(!parse("[text]\nmirror = off\n").unwrap().text.mirror);
         assert!(parse("[text]\nmirror = sideways\n").is_err());

@@ -2211,6 +2211,54 @@ fn the_text_and_the_qr_code_can_be_burnt_as_mirror_images_from_an_option_or_from
 }
 
 #[test]
+fn the_rows_of_a_text_can_start_at_the_left_in_the_middle_or_end_at_the_right() {
+    let words = "EHEHEH\nE";
+    let make = |name: &str, extra: &[&str]| -> String {
+        let out = tmp(name);
+        let mut args = vec!["text", out.as_str(), "--text", words, "--origin", "3,3"];
+        args.extend_from_slice(extra);
+        let (ok, _, err) = run(&args);
+        assert!(ok, "{err}");
+        std::fs::read_to_string(&out).unwrap()
+    };
+    let left = make("align-left.nc", &[]);
+    assert_eq!(left, make("align-left2.nc", &["--align", "left"]));
+    let centre = make("align-centre.nc", &["--align", "center"]);
+    assert_eq!(centre, make("align-centre2.nc", &["--align", "CENTRE"]));
+    let right = make("align-right.nc", &["--align", "right"]);
+    assert!(left != centre && centre != right && left != right);
+    // the same strokes are burnt in the same box
+    for g in [&left, &centre, &right] {
+        assert_eq!(g.lines().count(), left.lines().count());
+    }
+    let file = tmp("align-right-check.nc");
+    std::fs::write(&file, &right).unwrap();
+    let (ok, out, err) = run(&["verify", &file, "--bed", "100,100"]);
+    assert!(ok, "{out} {err}");
+    // the settings can ask for it and the option wins; a word that is not an alignment is refused
+    let cfg = tmp("align.cfg");
+    std::fs::write(&cfg, "[text]\nalign = right\n").unwrap();
+    assert_eq!(right, make("align-file.nc", &["--config", cfg.as_str()]));
+    assert_eq!(
+        left,
+        make(
+            "align-file2.nc",
+            &["--config", cfg.as_str(), "--align", "left"]
+        )
+    );
+    let refused = tmp("align-refused.nc");
+    let _ = std::fs::remove_file(&refused);
+    let (ok, _, err) = run(&["text", &refused, "--text", "A", "--align", "middle"]);
+    assert!(!ok);
+    assert!(err.contains("left, center or right"), "{err}");
+    std::fs::write(&cfg, "[text]\nalign = middle\n").unwrap();
+    let (ok, _, err) = run(&["text", &refused, "--text", "A", "--config", &cfg]);
+    assert!(!ok);
+    assert!(err.contains("left, center or right"), "{err}");
+    assert!(!std::path::Path::new(&refused).exists());
+}
+
+#[test]
 fn the_cross_option_fills_an_engraved_layer_a_second_time() {
     let engraved = |out: &str| -> f64 {
         let end = out.find(" mm engraved").unwrap_or_else(|| panic!("{out}"));

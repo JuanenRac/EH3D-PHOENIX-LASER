@@ -3,7 +3,7 @@
 //! the speed are held between limits that the settings can narrow.
 
 use crate::gcode_out::number as n;
-use crate::vconfig::TextSettings;
+use crate::vconfig::{TextAlign, TextSettings};
 
 /// The width of a letter on the lattice of the font.
 const GLYPH_W: f64 = 4.0;
@@ -344,16 +344,26 @@ pub fn layout(text: &str, t: &TextSettings) -> Result<Layout, String> {
     let pitch = t.height_mm * (1.0 + t.line_spacing_percent / 100.0);
     let rows_n = chars.len();
     let mut strokes: Vec<Vec<(f64, f64)>> = Vec::new();
-    let mut width = 0.0f64;
+    // the width of a row stops at its last letter that is not a space, and the text is as wide as its widest row
+    let row_width: Vec<f64> = chars
+        .iter()
+        .map(|line| {
+            line.iter()
+                .rposition(|c| *c != ' ')
+                .map_or(0.0, |last| last as f64 * advance + GLYPH_W * unit)
+        })
+        .collect();
+    let width = row_width.iter().copied().fold(0.0f64, f64::max);
     for (k, line) in chars.iter().enumerate() {
         let y = (rows_n - 1 - k) as f64 * pitch;
-        // the width of a row stops at its last letter that is not a space
-        let last = line.iter().rposition(|c| *c != ' ');
-        if let Some(last) = last {
-            width = width.max(last as f64 * advance + GLYPH_W * unit);
-        }
+        // a row that is narrower than the text starts at the left, in the middle or so that it ends at the right
+        let shift = match t.align {
+            TextAlign::Left => 0.0,
+            TextAlign::Centre => (width - row_width[k]) / 2.0,
+            TextAlign::Right => width - row_width[k],
+        };
         for (i, c) in line.iter().enumerate() {
-            let x = i as f64 * advance;
+            let x = shift + i as f64 * advance;
             for s in glyph(*c).unwrap_or(&[]) {
                 strokes.push(
                     s.iter()
@@ -523,6 +533,81 @@ mod tests {
             ..machine()
         };
         assert!(program("EH3D 42", (5.0, 5.0), &flipped, &bed).is_ok());
+    }
+
+    #[test]
+    fn the_rows_start_at_the_left_in_the_middle_or_end_at_the_right_inside_the_same_box() {
+        let text = "EH3D 42\nLA";
+        let at = |align: TextAlign| {
+            layout(
+                text,
+                &TextSettings {
+                    align,
+                    ..settings()
+                },
+            )
+            .unwrap()
+        };
+        let (left, centre, right) = (
+            at(TextAlign::Left),
+            at(TextAlign::Centre),
+            at(TextAlign::Right),
+        );
+        // the box is the same, and so is what is burnt
+        for l in [&centre, &right] {
+            assert_eq!((l.width_mm, l.height_mm), (left.width_mm, left.height_mm));
+            assert_eq!(l.strokes.len(), left.strokes.len());
+        }
+        // the short row is the lower one: its strokes lie under the pitch of the rows (10 mm of height and 50 % of gap)
+        let low = |l: &Layout| -> (f64, f64) {
+            let xs: Vec<f64> = l
+                .strokes
+                .iter()
+                .filter(|s| s.iter().all(|p| p.1 < 12.0))
+                .flatten()
+                .map(|p| p.0)
+                .collect();
+            (
+                xs.iter().copied().fold(f64::INFINITY, f64::min),
+                xs.iter().copied().fold(f64::NEG_INFINITY, f64::max),
+            )
+        };
+        let short = layout("LA", &settings()).unwrap().width_mm;
+        let (lo, hi) = low(&left);
+        assert!(lo.abs() < 1e-9 && (hi - short).abs() < 1e-9, "{lo} {hi}");
+        let (lo, hi) = low(&centre);
+        assert!((lo - (left.width_mm - short) / 2.0).abs() < 1e-9, "{lo}");
+        assert!((hi - lo - short).abs() < 1e-9);
+        let (lo, hi) = low(&right);
+        assert!((hi - left.width_mm).abs() < 1e-9 && (hi - lo - short).abs() < 1e-9);
+        // the long row does not move, and one row is the same whatever the alignment
+        let upper = |l: &Layout| {
+            l.strokes
+                .iter()
+                .filter(|s| s.iter().any(|p| p.1 > 12.0))
+                .cloned()
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(upper(&left), upper(&right));
+        assert_eq!(
+            layout("EH3D", &settings()).unwrap(),
+            layout(
+                "EH3D",
+                &TextSettings {
+                    align: TextAlign::Right,
+                    ..settings()
+                }
+            )
+            .unwrap()
+        );
+        // a mirror image turns the aligned text about the same axis, and the program passes its own check
+        let both = TextSettings {
+            align: TextAlign::Right,
+            mirror: true,
+            ..settings()
+        };
+        let (g, _) = program(text, (2.0, 2.0), &both, &machine()).unwrap();
+        assert!(verify(g.as_bytes(), &Limits::default()).unwrap().passes());
     }
 
     #[test]
