@@ -531,6 +531,8 @@ pub struct QrSettings {
     pub invert: bool,
     /// The run-up at each end of a burnt line (mm), burnt with the laser off so that the head is at speed when the laser comes on (0 is none, the default).
     pub overscan_mm: f64,
+    /// The symbol is turned into its mirror image, to be burnt on the back of glass or acrylic and read from the front (off by default).
+    pub mirror: bool,
 }
 
 impl Default for QrSettings {
@@ -548,6 +550,7 @@ impl Default for QrSettings {
             max_lines: 100_000,
             invert: false,
             overscan_mm: 0.0,
+            mirror: false,
         }
     }
 }
@@ -607,6 +610,8 @@ pub struct TextSettings {
     pub passes: u32,
     /// The most characters that a text may have.
     pub max_chars: u32,
+    /// The text is turned into its mirror image, to be burnt on the back of glass or acrylic and read from the front (off by default).
+    pub mirror: bool,
 }
 
 impl Default for TextSettings {
@@ -620,6 +625,7 @@ impl Default for TextSettings {
             speed_mm_min: 1000.0,
             passes: 1,
             max_chars: 200,
+            mirror: false,
         }
     }
 }
@@ -1127,6 +1133,8 @@ fn set_global(s: &mut Settings, section: &str, key: &str, value: &str) -> Result
         }
         ("qr", "invert") => s.qr.invert = switch(value)?,
         ("qr", "overscan_mm") => s.qr.overscan_mm = number(value)?,
+        ("qr", "mirror") => s.qr.mirror = switch(value)?,
+        ("text", "mirror") => s.text.mirror = switch(value)?,
         ("trace", "threshold") => {
             s.trace.threshold = u8::try_from(whole(value)?)
                 .map_err(|_| "trace threshold must be from 0 to 255".to_string())?
@@ -1841,8 +1849,12 @@ mod tests {
                 max_lines: 5000,
                 invert: false,
                 overscan_mm: 0.0,
+                mirror: false,
             }
         );
+        assert!(parse("[qr]\nmirror = on\n").unwrap().qr.mirror);
+        assert!(!parse("[qr]\nmirror = off\n").unwrap().qr.mirror);
+        assert!(parse("[qr]\nmirror = sideways\n").is_err());
         assert_eq!(
             parse("[qr]\noverscan_mm = 2.5\n").unwrap().qr.overscan_mm,
             2.5
@@ -1914,8 +1926,12 @@ mod tests {
                 speed_mm_min: 1500.0,
                 passes: 2,
                 max_chars: 50,
+                mirror: false,
             }
         );
+        assert!(parse("[text]\nmirror = on\n").unwrap().text.mirror);
+        assert!(!parse("[text]\nmirror = off\n").unwrap().text.mirror);
+        assert!(parse("[text]\nmirror = sideways\n").is_err());
         for text in [
             "[text]\nheight_mm = 0.5\n",
             "[text]\nheight_mm = 101\n",

@@ -2154,6 +2154,63 @@ fn a_qr_code_can_run_the_head_up_to_each_line_with_the_laser_off_and_never_out_o
 }
 
 #[test]
+fn the_text_and_the_qr_code_can_be_burnt_as_mirror_images_from_an_option_or_from_the_settings() {
+    for (command, data) in [("text", "EH3D 42"), ("qr", "EH3D 42")] {
+        let plain = tmp(&format!("{command}-plain.nc"));
+        let mirror = tmp(&format!("{command}-mirror.nc"));
+        let (ok, _, err) = run(&[command, &plain, "--text", data, "--origin", "4,4"]);
+        assert!(ok, "{err}");
+        let (ok, _, err) = run(&[
+            command, &mirror, "--text", data, "--origin", "4,4", "--mirror",
+        ]);
+        assert!(ok, "{err}");
+        let (a, b) = (
+            std::fs::read_to_string(&plain).unwrap(),
+            std::fs::read_to_string(&mirror).unwrap(),
+        );
+        assert_ne!(a, b, "{command}");
+        // both pass the check inside the same box
+        for file in [&plain, &mirror] {
+            let (ok, out, err) = run(&["verify", file, "--bed", "100,100"]);
+            assert!(ok, "{command}: {out} {err}");
+        }
+        // the settings can ask for it and the option can turn it off
+        let cfg = tmp(&format!("{command}-mirror.cfg"));
+        std::fs::write(&cfg, format!("[{command}]\nmirror = on\n")).unwrap();
+        let from_file = tmp(&format!("{command}-from-file.nc"));
+        let (ok, _, err) = run(&[
+            command, &from_file, "--text", data, "--origin", "4,4", "--config", &cfg,
+        ]);
+        assert!(ok, "{err}");
+        assert_eq!(b, std::fs::read_to_string(&from_file).unwrap(), "{command}");
+        let (ok, _, err) = run(&[
+            command,
+            &from_file,
+            "--text",
+            data,
+            "--origin",
+            "4,4",
+            "--config",
+            &cfg,
+            "--no-mirror",
+        ]);
+        assert!(ok, "{err}");
+        assert_eq!(a, std::fs::read_to_string(&from_file).unwrap(), "{command}");
+        // the two together are an error
+        let (ok, _, err) = run(&[
+            command,
+            &from_file,
+            "--text",
+            "A",
+            "--mirror",
+            "--no-mirror",
+        ]);
+        assert!(!ok);
+        assert!(err.contains("cannot be given together"), "{err}");
+    }
+}
+
+#[test]
 fn the_cross_option_fills_an_engraved_layer_a_second_time() {
     let engraved = |out: &str| -> f64 {
         let end = out.find(" mm engraved").unwrap_or_else(|| panic!("{out}"));

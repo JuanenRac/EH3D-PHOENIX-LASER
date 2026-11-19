@@ -639,6 +639,10 @@ impl App {
                     self.win.set_words(words);
                 }
                 self.fields_of(ui, Section::Text);
+                let mut mirror = self.win.text_mirror;
+                if ui.checkbox(&mut mirror, Msg::Mirror.tr(lang)).changed() {
+                    self.win.set_text_mirror(mirror);
+                }
                 for key in [
                     Key::SMax,
                     Key::OriginX,
@@ -676,6 +680,10 @@ impl App {
                     });
                 if ecc != self.win.qr_ecc {
                     self.win.set_qr_ecc(ecc);
+                }
+                let mut mirror = self.win.qr_mirror;
+                if ui.checkbox(&mut mirror, Msg::Mirror.tr(lang)).changed() {
+                    self.win.set_qr_mirror(mirror);
                 }
                 let mut invert = self.win.qr_invert;
                 if ui.checkbox(&mut invert, Msg::QrInvert.tr(lang)).changed() {

@@ -514,7 +514,11 @@ pub fn program(
     }
     let lines = (q.module_mm / q.line_mm - 1e-9).ceil().max(1.0) as usize;
     // a module is burnt when it is dark, or when it is light and the symbol is inverted
-    let burns = |x: usize, y: usize| sym.dark(x, y) != q.invert;
+    // (a mirror image has the first column where the last one was)
+    let burns = |x: usize, y: usize| {
+        let x = if q.mirror { sym.size - 1 - x } else { x };
+        sym.dark(x, y) != q.invert
+    };
     // the runs of burnt modules of each row, from the bottom
     let mut rows: Vec<Vec<(usize, usize)>> = Vec::new();
     for rb in 0..sym.size {
@@ -564,7 +568,12 @@ pub fn program(
         sym.size,
         sym.size,
         q.passes,
-        if q.invert { ", inverted" } else { "" }
+        match (q.invert, q.mirror) {
+            (false, false) => "",
+            (true, false) => ", inverted",
+            (false, true) => ", mirrored",
+            (true, true) => ", inverted, mirrored",
+        }
     ));
     let mut lit = false;
     for _ in 0..q.passes {
@@ -1206,6 +1215,71 @@ mod tests {
             ..q
         };
         assert!(program("A", (25.0, 5.0), &top, &machine()).is_ok());
+    }
+
+    #[test]
+    fn a_mirrored_symbol_burns_the_same_runs_turned_about_its_vertical_axis() {
+        // one line to a module, so each burnt line is one run of one row
+        let q = QrSettings {
+            line_mm: 1.0,
+            ..settings()
+        };
+        let flipped = QrSettings { mirror: true, ..q };
+        let (a, sym) = program("EH3D 42", (3.0, 4.0), &q, &machine()).unwrap();
+        let (b, _) = program("EH3D 42", (3.0, 4.0), &flipped, &machine()).unwrap();
+        assert!(b.contains(", mirrored)") && !a.contains("mirrored"));
+        let runs = |g: &str| -> Vec<(i64, i64, i64)> {
+            let mut out = Vec::new();
+            let mut from = (0.0, 0.0);
+            for line in g.lines() {
+                let num = |axis: char| -> f64 {
+                    line.split(' ')
+                        .find_map(|w| w.strip_prefix(axis))
+                        .unwrap()
+                        .parse()
+                        .unwrap()
+                };
+                if line.starts_with("G0") {
+                    from = (num('X'), num('Y'));
+                } else if line.starts_with("G1") {
+                    let to = num('X');
+                    let (lo, hi) = (from.0.min(to), from.0.max(to));
+                    out.push((
+                        (from.1 * 10.0) as i64,
+                        (lo * 10.0) as i64,
+                        (hi * 10.0) as i64,
+                    ));
+                }
+            }
+            out.sort_unstable();
+            out
+        };
+        let w = (sym.size as f64 * 10.0) as i64;
+        let left = 30;
+        let mut expect: Vec<(i64, i64, i64)> = runs(&a)
+            .into_iter()
+            .map(|(y, lo, hi)| (y, left + w - (hi - left), left + w - (lo - left)))
+            .collect();
+        expect.sort_unstable();
+        assert_eq!(runs(&b), expect);
+        // the same length is burnt, the symbol inside the same square, and it can be inverted too
+        let lim = Limits {
+            bed_mm: Some((100.0, 50.0)),
+            ..Limits::default()
+        };
+        let (va, vb) = (
+            verify(a.as_bytes(), &lim).unwrap(),
+            verify(b.as_bytes(), &lim).unwrap(),
+        );
+        assert!(vb.passes(), "{:?}", vb.problems);
+        assert!((va.burn_mm - vb.burn_mm).abs() < 1e-6);
+        let both = QrSettings {
+            invert: true,
+            ..flipped
+        };
+        let (c, _) = program("EH3D 42", (3.0, 4.0), &both, &machine()).unwrap();
+        assert!(c.contains(", inverted, mirrored)"));
+        assert!(verify(c.as_bytes(), &lim).unwrap().passes());
     }
 
     #[test]

@@ -1024,6 +1024,9 @@ pub struct Window {
     pub qr_ecc: QrEcc,
     /// The QR code burns its light modules instead of the dark ones.
     pub qr_invert: bool,
+    /// The QR code and the text are burnt as their mirror images.
+    pub qr_mirror: bool,
+    pub text_mirror: bool,
 }
 
 impl Window {
@@ -1065,6 +1068,8 @@ impl Window {
             qr_data: String::new(),
             qr_ecc: QrSettings::default().ecc,
             qr_invert: false,
+            qr_mirror: false,
+            text_mirror: false,
         }
     }
 
@@ -1139,6 +1144,20 @@ impl Window {
     pub fn set_qr_ecc(&mut self, ecc: QrEcc) {
         if self.qr_ecc != ecc {
             self.qr_ecc = ecc;
+            self.mark_stale();
+        }
+    }
+
+    pub fn set_qr_mirror(&mut self, on: bool) {
+        if self.qr_mirror != on {
+            self.qr_mirror = on;
+            self.mark_stale();
+        }
+    }
+
+    pub fn set_text_mirror(&mut self, on: bool) {
+        if self.text_mirror != on {
+            self.text_mirror = on;
             self.mark_stale();
         }
     }
@@ -1638,6 +1657,8 @@ impl Window {
                 self.put(Key::QrOverscan, t(s.qr.overscan_mm));
                 self.qr_ecc = s.qr.ecc;
                 self.qr_invert = s.qr.invert;
+                self.qr_mirror = s.qr.mirror;
+                self.text_mirror = s.text.mirror;
                 self.settings = s;
                 self.config_path = Some(path.to_path_buf());
                 self.rebuild_rows();
@@ -2220,6 +2241,7 @@ impl Window {
             speed_mm_min: self.number(Key::TextSpeed)?,
             passes: self.whole(Key::TextPasses, 1.0, 20.0)?,
             max_chars: self.whole(Key::TextMaxChars, 1.0, 5000.0)?,
+            mirror: self.text_mirror,
         };
         let s_max = self.whole(Key::SMax, 1.0, 100_000.0)?;
         let (max_power, max_speed) = self.limits()?;
@@ -2263,6 +2285,7 @@ impl Window {
             max_lines: self.whole(Key::QrMaxLines, 1.0, 1_000_000.0)?,
             invert: self.qr_invert,
             overscan_mm: self.number(Key::QrOverscan)?,
+            mirror: self.qr_mirror,
         };
         let s_max = self.whole(Key::SMax, 1.0, 100_000.0)?;
         let (max_power, max_speed) = self.limits()?;
@@ -3879,6 +3902,58 @@ hatch_cross = on
         assert!(!v.qr_invert);
         for l in Lang::ALL {
             assert!(!Msg::QrInvert.tr(l).is_empty());
+        }
+    }
+
+    #[test]
+    fn the_text_and_the_qr_code_can_be_burnt_as_mirror_images_and_a_file_turns_it_on() {
+        let m = text::Machine {
+            s_max: 1000,
+            max_power_percent: 100.0,
+            max_speed_mm_min: 30_000.0,
+            bed_mm: None,
+        };
+        let mut w = Window::new(Lang::En);
+        w.set_mode(Mode::Text);
+        w.set_words("EH3D".to_string());
+        assert!(w.compute());
+        let plain = w.done.as_ref().unwrap().gcode.clone();
+        w.set_text_mirror(true);
+        assert!(w.stale);
+        assert!(w.compute());
+        let t = TextSettings {
+            mirror: true,
+            ..TextSettings::default()
+        };
+        let flipped = w.done.as_ref().unwrap().gcode.clone();
+        assert_eq!(
+            flipped,
+            text::program("EH3D", (0.0, 0.0), &t, &m).unwrap().0
+        );
+        assert_ne!(flipped, plain);
+        w.set_text_mirror(true);
+        assert!(!w.stale);
+        // the QR code has its own switch
+        w.set_mode(Mode::Qr);
+        w.set_qr_data("EH3D 42".to_string());
+        assert!(w.compute());
+        let plain = w.done.as_ref().unwrap().gcode.clone();
+        w.set_qr_mirror(true);
+        assert!(w.stale);
+        assert!(w.compute());
+        assert_ne!(w.done.as_ref().unwrap().gcode, plain);
+        assert!(w.done.as_ref().unwrap().gcode.contains(", mirrored)"));
+        // a file of settings turns both on, and another turns them off
+        let s = Scratch::new("mirror-config");
+        let on = s.write("m.cfg", "[text]\nmirror = on\n[qr]\nmirror = on\n");
+        let mut v = Window::new(Lang::En);
+        assert!(v.load_config(&on));
+        assert!(v.text_mirror && v.qr_mirror);
+        let off = s.write("n.cfg", "[text]\nmirror = off\n");
+        assert!(v.load_config(&off));
+        assert!(!v.text_mirror && !v.qr_mirror);
+        for l in Lang::ALL {
+            assert!(!Msg::Mirror.tr(l).is_empty());
         }
     }
 

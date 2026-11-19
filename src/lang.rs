@@ -247,6 +247,7 @@ pub enum Msg {
     QrMaxLines,
     QrEccLabel,
     QrInvert,
+    Mirror,
     SectionMachine,
     NoProfile,
     ProfileApplied,
@@ -263,7 +264,7 @@ pub enum Msg {
 }
 
 impl Msg {
-    pub const ALL: [Msg; 172] = [
+    pub const ALL: [Msg; 173] = [
         Msg::Language,
         Msg::Fit,
         Msg::Cancel,
@@ -423,6 +424,7 @@ impl Msg {
         Msg::QrMaxLines,
         Msg::QrEccLabel,
         Msg::QrInvert,
+        Msg::Mirror,
         Msg::SectionMachine,
         Msg::NoProfile,
         Msg::ProfileApplied,
@@ -1970,6 +1972,16 @@ impl Msg {
                 "明るいモジュールを焼く（反転）",
                 "烧刻浅色模块（反相）",
                 "Gravar os módulos claros (invertido)",
+            ],
+            Msg::Mirror => [
+                "Mirror image (for the back of glass or acrylic)",
+                "Imagen en espejo (para el reverso de vidrio o acrílico)",
+                "Spiegelbild (für die Rückseite von Glas oder Acryl)",
+                "Image miroir (pour l'envers du verre ou de l'acrylique)",
+                "Immagine speculare (per il retro di vetro o acrilico)",
+                "鏡像（ガラスやアクリルの裏面用）",
+                "镜像（用于玻璃或亚克力背面）",
+                "Imagem espelhada (para o verso de vidro ou acrílico)",
             ],
             Msg::SectionTrace => [
                 "Outline of the picture",

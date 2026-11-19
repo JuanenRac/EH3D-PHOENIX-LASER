@@ -343,7 +343,7 @@ pub fn layout(text: &str, t: &TextSettings) -> Result<Layout, String> {
     let advance = GLYPH_W * unit + gap;
     let pitch = t.height_mm * (1.0 + t.line_spacing_percent / 100.0);
     let rows_n = chars.len();
-    let mut strokes = Vec::new();
+    let mut strokes: Vec<Vec<(f64, f64)>> = Vec::new();
     let mut width = 0.0f64;
     for (k, line) in chars.iter().enumerate() {
         let y = (rows_n - 1 - k) as f64 * pitch;
@@ -364,6 +364,14 @@ pub fn layout(text: &str, t: &TextSettings) -> Result<Layout, String> {
         }
     }
     let height = (rows_n - 1) as f64 * pitch + t.height_mm;
+    if t.mirror {
+        // the mirror image: every point is as far from the right edge as it was from the left one
+        for stroke in &mut strokes {
+            for p in stroke.iter_mut() {
+                p.0 = width - p.0;
+            }
+        }
+    }
     Ok(Layout {
         strokes,
         width_mm: width,
@@ -470,6 +478,51 @@ mod tests {
             max_speed_mm_min: 30_000.0,
             bed_mm: None,
         }
+    }
+
+    #[test]
+    fn the_mirror_image_has_every_point_as_far_from_the_right_edge_as_it_was_from_the_left_one() {
+        let plain = settings();
+        let flipped = TextSettings {
+            mirror: true,
+            ..plain
+        };
+        let a = layout("EH3D 42\nLASER", &plain).unwrap();
+        let b = layout("EH3D 42\nLASER", &flipped).unwrap();
+        assert_eq!((a.width_mm, a.height_mm), (b.width_mm, b.height_mm));
+        assert_eq!(a.strokes.len(), b.strokes.len());
+        for (s, m) in a.strokes.iter().zip(&b.strokes) {
+            assert_eq!(s.len(), m.len());
+            for (p, q) in s.iter().zip(m) {
+                assert!((q.0 - (a.width_mm - p.0)).abs() < 1e-9 && q.1 == p.1);
+                assert!(q.0 >= -1e-9 && q.0 <= a.width_mm + 1e-9);
+            }
+        }
+        // an E has its spine on the left; mirrored, the spine is on the right
+        let e = layout("E", &flipped).unwrap();
+        assert!(e.strokes[0].iter().any(|p| (p.0 - e.width_mm).abs() < 1e-9));
+        // the program is another one, passes its own check and burns the same length
+        let (g, _) = program("EH3D 42", (5.0, 5.0), &plain, &machine()).unwrap();
+        let (h, _) = program("EH3D 42", (5.0, 5.0), &flipped, &machine()).unwrap();
+        assert_ne!(g, h);
+        let lim = Limits::default();
+        let (v, w) = (
+            verify(g.as_bytes(), &lim).unwrap(),
+            verify(h.as_bytes(), &lim).unwrap(),
+        );
+        assert!(w.passes(), "{:?}", w.problems);
+        assert!(
+            (v.burn_mm - w.burn_mm).abs() < 0.05,
+            "{} {}",
+            v.burn_mm,
+            w.burn_mm
+        );
+        // the bed holds the same box
+        let bed = Machine {
+            bed_mm: Some((5.0 + a.width_mm, 5.0 + a.height_mm)),
+            ..machine()
+        };
+        assert!(program("EH3D 42", (5.0, 5.0), &flipped, &bed).is_ok());
     }
 
     #[test]
