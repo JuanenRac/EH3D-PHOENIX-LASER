@@ -19,13 +19,15 @@ pub fn line_energy_j_per_mm(laser_watts: f64, p: &LayerParams) -> Option<f64> {
     ok.then(|| watts / speed_mm_s)
 }
 
-/// The energy for each square millimetre of a hatch, in joules, for one pass: the energy of a millimetre of line over the distance between the lines. None as
+/// The energy for each square millimetre of a hatch, in joules, for one pass: the energy of a millimetre of line over the distance between the lines (twice that for a cross hatch). None as
 /// [`line_energy_j_per_mm`], or when the lines are not apart.
 pub fn hatch_energy_j_per_mm2(laser_watts: f64, p: &LayerParams) -> Option<f64> {
     if !(p.hatch_spacing_mm.is_finite() && p.hatch_spacing_mm > 0.0) {
         return None;
     }
-    line_energy_j_per_mm(laser_watts, p).map(|j| j / p.hatch_spacing_mm)
+    // a cross hatch goes over every point twice, once with the lines one way and once with the lines at right angles
+    let times = if p.hatch_cross { 2.0 } else { 1.0 };
+    line_energy_j_per_mm(laser_watts, p).map(|j| times * j / p.hatch_spacing_mm)
 }
 
 /// The words that follow the line of a layer in the list of layers: the energy of one pass for each millimetre (cut) or each square millimetre (engrave); empty for a layer that is
@@ -73,6 +75,19 @@ mod tests {
         assert!((hatch_energy_j_per_mm2(10.0, &p).unwrap() - 5.0).abs() < 1e-9);
         let p = layer(LayerMode::Engrave, 100.0, 1200.0, 0.2);
         assert!((hatch_energy_j_per_mm2(40.0, &p).unwrap() - 10.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn a_cross_hatch_puts_twice_the_energy_on_every_point() {
+        let mut p = layer(LayerMode::Engrave, 50.0, 600.0, 0.1);
+        let once = hatch_energy_j_per_mm2(10.0, &p).unwrap();
+        p.hatch_cross = true;
+        assert!((hatch_energy_j_per_mm2(10.0, &p).unwrap() - 2.0 * once).abs() < 1e-9);
+        assert_eq!(describe(10.0, &p), ", 10.000 J/mm2 a pass");
+        // a cut has no hatch to cross
+        let mut cut = layer(LayerMode::Cut, 50.0, 600.0, 0.1);
+        cut.hatch_cross = true;
+        assert_eq!(describe(10.0, &cut), ", 0.500 J/mm a pass");
     }
 
     #[test]

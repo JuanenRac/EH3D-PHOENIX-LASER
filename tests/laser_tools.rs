@@ -1860,3 +1860,55 @@ fn text_is_burnt_with_the_font_of_strokes_inside_the_limits() {
     assert!(!ok);
     assert!(err.contains("written over"), "{err}");
 }
+
+#[test]
+fn the_cross_option_fills_an_engraved_layer_a_second_time() {
+    let engraved = |out: &str| -> f64 {
+        let end = out.find(" mm engraved").unwrap_or_else(|| panic!("{out}"));
+        out[..end].rsplit(' ').next().unwrap().parse().unwrap()
+    };
+    let nc = tmp("cross.nc");
+    let base = [
+        "vector",
+        "examples/plate.svg",
+        nc.as_str(),
+        "--config",
+        "examples/plate.cfg",
+    ];
+    let (ok, once, err) = run(&base);
+    assert!(ok, "{err}");
+    let mut with = base.to_vec();
+    with.push("--cross");
+    let (ok, twice, err) = run(&with);
+    assert!(ok, "{err}");
+    let (a, b) = (engraved(&once), engraved(&twice));
+    assert!(a > 100.0 && (b - 2.0 * a).abs() < 0.02 * a, "{a} {b}");
+    // the program is still a clean one inside the bed
+    let (ok, out, err) = run(&["verify", &nc]);
+    assert!(ok, "{out} {err}");
+    // the settings file can ask for it, and --no-cross takes it away
+    let cfg = tmp("cross.cfg");
+    let text = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/examples/plate.cfg"))
+        .unwrap();
+    std::fs::write(&cfg, format!("{text}\n[layer #0000ff]\nhatch_cross = on\n")).unwrap();
+    let from_file = [
+        "vector",
+        "examples/plate.svg",
+        nc.as_str(),
+        "--config",
+        cfg.as_str(),
+    ];
+    let (ok, out, err) = run(&from_file);
+    assert!(ok, "{err}");
+    assert!((engraved(&out) - b).abs() < 0.02 * b, "{out}");
+    let mut off = from_file.to_vec();
+    off.push("--no-cross");
+    let (ok, out, err) = run(&off);
+    assert!(ok, "{err}");
+    assert!((engraved(&out) - a).abs() < 0.02 * a, "{out}");
+    let mut both = base.to_vec();
+    both.extend(["--cross", "--no-cross"]);
+    let (ok, _, err) = run(&both);
+    assert!(!ok);
+    assert!(err.contains("cannot be given together"), "{err}");
+}

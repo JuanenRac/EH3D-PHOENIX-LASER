@@ -17,7 +17,7 @@
 
 ---
 
-**Verifica di onestà - cosa funziona oggi:** una libreria Rust e un programma a riga di comando (`phoenix-laser`) con 523 test che girano su un computer: trasforma un'immagine in punti con la retinatura e scrive il G-code di un laser che brucia riga per riga con potenza dinamica ed extracorsa, legge disegni SVG e DXF e scrive il G-code che ne taglia i contorni (prima quelli interni, con la larghezza del fascio, ponticelli e più passate) e ne incide le forme con linee, con le impostazioni di ogni livello in un file, e una griglia di prova potenza contro avanzamento. Ha una finestra (compilata con `--features gui`) che apre un'immagine o un disegno, mostra il percorso del laser, permette di cambiare le impostazioni ed esporta il G-code, ma la finestra non è ancora stata vista su uno schermo; non è stato provato su una macchina e non è stato verificato con una raccolta di file reali.
+**Verifica di onestà - cosa funziona oggi:** una libreria Rust e un programma a riga di comando (`phoenix-laser`) con 526 test che girano su un computer: trasforma un'immagine in punti con la retinatura e scrive il G-code di un laser che brucia riga per riga con potenza dinamica ed extracorsa, legge disegni SVG e DXF e scrive il G-code che ne taglia i contorni (prima quelli interni, con la larghezza del fascio, ponticelli e più passate) e ne incide le forme con linee, con le impostazioni di ogni livello in un file, e una griglia di prova potenza contro avanzamento. Ha una finestra (compilata con `--features gui`) che apre un'immagine o un disegno, mostra il percorso del laser, permette di cambiare le impostazioni ed esporta il G-code, ma la finestra non è ancora stata vista su uno schermo; non è stato provato su una macchina e non è stato verificato con una raccolta di file reali.
 
 ---
 
@@ -30,7 +30,7 @@
 |---|---|
 | Versione | `0.0.9` |
 | Maturità | Funzionale |
-| Test | 523 |
+| Test | 526 |
 | Stack tecnologico | Rust |
 | Su hardware reale | Non provato: nulla di questo ha girato su una macchina |
 
@@ -46,7 +46,7 @@ Ogni riga è una parte di questo repository e il semaforo dice a che punto è og
 |---|---|---|
 | Nucleo | 🟡 | trasforma un'immagine in punti con la retinatura e scrive il G-code di un laser che brucia riga per riga con potenza dinamica ed extracorsa, legge disegni SVG e DXF e li taglia o li incide per livello (contorni ordinati, larghezza del fascio, ponticelli, passate, tratteggio), e una griglia di prova potenza contro avanzamento; provato su un computer con input normali e danneggiati, non con una raccolta di file reali. |
 | Riga di comando | 🟡 | `phoenix-laser` (`engrave`, `calibrate`, `info`, `cut`, `vector`, `layers`) esegue le stesse funzioni della libreria e stampa il risultato; ogni errore torna come messaggio e codice di uscita diverso da zero. |
-| Test | 🟡 | 523 test passano (`cargo test`), con casi normali, casi limite e input danneggiati. |
+| Test | 🟡 | 526 test passano (`cargo test`), con casi normali, casi limite e input danneggiati. |
 | Sicurezza | 🟡 | Rust sicuro e semplice (`forbid(unsafe_code)`): nulla va in panico con i file ricevuti e un valore errato è un errore con il suo motivo; nessuna revisione indipendente. |
 | Finestra | 🟠 | Scritta (egui, `--features gui`): aprire o trascinare un'immagine o un disegno SVG o DXF, vedere il percorso del laser (il taglio in un colore, lo spostamento attenuato), modificare la tabella dei livelli, una griglia di calibrazione, zoom e spostamento, stimare il tempo, esportare; la sua logica è testata, ma non è ancora stata compilata né vista su uno schermo. |
 | Hardware reale | 🔴 | Non provato: nulla di questo è stato eseguito su una macchina. |
@@ -65,6 +65,7 @@ Ogni riga è una parte di questo repository e il semaforo dice a che punto è og
 * **La prova di fuoco** (`src/calibrate.rs`, `[focus]` nel file delle impostazioni): `phoenix-laser focus` brucia una scala di linee corte, ciascuna con la testa a un'altra altezza, e la linea più nitida mostra dove il fascio è a fuoco; il passo di altezza non ha un valore predefinito (cosa sia giù dipende dalla macchina), la potenza rispetta il limite di potenza e la testa torna alla prima altezza.
 * **La griglia di prova di un materiale** (`src/calibrate.rs`, `[calibrate]` nel file delle impostazioni): `phoenix-laser calibrate --material NOME --materials FILE` distribuisce le potenze e le velocità della griglia intorno a ciò che dice il materiale della libreria, entro i limiti e senza ripetere valori, e `--labels` brucia la potenza di ogni colonna e la velocità di ogni riga accanto ai quadrati con un carattere a tratti, così la griglia si può leggere poi sul materiale; un materiale oltre un limite viene rifiutato, mai abbassato. Con un materiale le cifre escono per impostazione predefinita (`--no-labels` le toglie) e la potenza e la velocità minime della scala sono le chiavi `min_power_percent` e `min_feed_mm_min`.
 * **Testo** (`src/text.rs`, `[text]` nel file delle impostazioni): `phoenix-laser text OUT.nc --text TESTO` incide un nome, un numero di serie o un marchio con un carattere a tratti del programma (maiuscole, cifre, spazio e `. , - + / : ! ? ( ) = _ '`; una minuscola è incisa come maiuscola, un a capo inizia una riga) e senza file di carattere. L'altezza di una maiuscola, gli spazi tra lettere e righe, la potenza, la velocità e i passaggi sono impostazioni; un carattere che il font non ha, un testo di più di `max_chars` caratteri, un'altezza oltre `max_height_mm`, una potenza o una velocità oltre il limite, o un lavoro che uscirebbe dal piano sono rifiutati, mai tagliati, e il testo non è mai scritto in un commento del programma.
+* **Tratteggio incrociato** (`src/cut.rs`, `hatch_cross` in un livello): un livello `engrave` con `hatch_cross = on` (o `--cross` in `vector` e `trace`) è riempito una seconda volta con linee ad angolo retto con le prime, con la stessa spaziatura, a ogni passaggio, e il limite di linee vale per ogni gruppo; l'energia di un millimetro quadrato che dà l'elenco dei livelli è raddoppiata, e l'anteprima e la verifica del programma lo vedono come qualsiasi altro programma.
 * **La cornice del lavoro** (`src/frame.rs`, `[frame]` nel file delle impostazioni): `phoenix-laser frame` scrive un programma che percorre il rettangolo del lavoro con il laser spento, da una dimensione o dal riquadro di ciò che un programma G-code brucia, per vedere dove cadrà; una debole potenza pilota richiede ogni volta `--confirm-laser-on`, è limitata al 5 % (`max_pilot_percent` di `[frame]` cambia il tetto) e rispetta il limite di potenza, e una cornice fuori dal piano viene rifiutata.
 * **L'anteprima** (`src/preview.rs`): `phoenix-laser preview` legge un programma G-code (proprio o altrui), stampa i movimenti, la lunghezza bruciata e percorsa, il riquadro, le potenze e un tempo che conta la frenata negli angoli, avverte di ciò che sembra pericoloso (laser acceso in uno spostamento rapido, nessun avanzamento, potenza oltre il massimo, lavoro fuori dal piano, nessuna fine) e disegna il percorso come SVG; i test rileggono ciò che scrive l'incisione e verificano la stessa lunghezza.
 * **La libreria dei materiali** (`src/materials.rs`, `examples/materials.cfg`): ciò che si addice a ogni materiale e modo di lavorare si scrive una volta in un file di testo (`[material NOME]`: potenza, velocità, passate, passo di fuoco, larghezza del fascio, tratteggio, dimensione del punto, dithering e curva dei toni) e si sceglie con `--material NOME --materials FILE`; le opzioni della riga di comando prevalgono e il limite di potenza vale su entrambi. `phoenix-laser materials FILE` elenca la libreria.
@@ -138,7 +139,7 @@ phoenix-laser text OUT.nc --text TEXT [--height-mm 10] [--spacing 25] [--line-sp
 phoenix-laser info IMAGE
 phoenix-laser cut DRAWING OUT.nc [--config FILE] [--power P] [--speed MM/MIN] [--passes N] [--focus-step MM] [--kerf MM] [--kerf-side none|auto|inside|outside]
               [--tabs N] [--tab-width MM] [--smax N] [--overscan MM] [--origin X,Y] [--bed X,Y] [--max-power P] [--max-speed MM/MIN] [--profile NAME] [--material NAME --materials FILE] [--dpi N] [--tolerance MM] [--dry-run]
-phoenix-laser vector DRAWING OUT.nc [the options of cut] [--angle DEG] [--spacing MM]
+phoenix-laser vector DRAWING OUT.nc [the options of cut] [--angle DEG] [--spacing MM] [--cross|--no-cross]
 phoenix-laser layers DRAWING [--config FILE] [--dpi N]
 phoenix-laser trace IMAGE OUT.nc --width-mm W [--threshold 128] [--invert] [--simplify MM] [--min-area MM2] [--engrave] [the options of cut]
 phoenix-laser materials FILE
@@ -173,7 +174,7 @@ Per fare un'immagine della finestra senza aprirla a mano, eseguila con `--shot F
 
 ## 🧪 Test
 
-La suite ha 523 test (`cargo test`, eseguiti su Windows e Linux nella CI). Verificano i casi normali, i casi limite e gli input danneggiati: file vuoti, spazzatura e file tagliati non causano mai un panico. La CI esegue anche `cargo fmt --check`, `cargo clippy` con gli avvisi come errori e `python -I tools/ci_validate.py`.
+La suite ha 526 test (`cargo test`, eseguiti su Windows e Linux nella CI). Verificano i casi normali, i casi limite e gli input danneggiati: file vuoti, spazzatura e file tagliati non causano mai un panico. La CI esegue anche `cargo fmt --check`, `cargo clippy` con gli avvisi come errori e `python -I tools/ci_validate.py`.
 
 ## 🏗️ Compilazione e rilascio
 

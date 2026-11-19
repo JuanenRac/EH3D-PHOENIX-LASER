@@ -17,7 +17,7 @@
 
 ---
 
-**正直さの確認 - 現在実際に動くもの：** Rust ライブラリとコマンドラインプログラム（`phoenix-laser`）。コンピューター上で動く 523 件のテストがあります。画像をディザリングで点に変換し、動的出力とオーバースキャンで1行ずつ照射するレーザーの G コードを書き、SVG と DXF の図面を読んで輪郭を切断する G コード（内側から先に、ビーム幅、タブ、複数パスを考慮）と図形を線で彫刻する G コードを書き（各レイヤーの設定は1つのファイルに）、出力対送り速度のテスト格子も作ります。ウィンドウ（`--features gui` でビルド）は画像または図面を開き、レーザーの経路を表示し、設定を変更でき、G コードを書き出しますが、画面ではまだ確認していません。実機では試しておらず、実際のファイルの集まりでも確認していません。
+**正直さの確認 - 現在実際に動くもの：** Rust ライブラリとコマンドラインプログラム（`phoenix-laser`）。コンピューター上で動く 526 件のテストがあります。画像をディザリングで点に変換し、動的出力とオーバースキャンで1行ずつ照射するレーザーの G コードを書き、SVG と DXF の図面を読んで輪郭を切断する G コード（内側から先に、ビーム幅、タブ、複数パスを考慮）と図形を線で彫刻する G コードを書き（各レイヤーの設定は1つのファイルに）、出力対送り速度のテスト格子も作ります。ウィンドウ（`--features gui` でビルド）は画像または図面を開き、レーザーの経路を表示し、設定を変更でき、G コードを書き出しますが、画面ではまだ確認していません。実機では試しておらず、実際のファイルの集まりでも確認していません。
 
 ---
 
@@ -30,7 +30,7 @@
 |---|---|
 | バージョン | `0.0.9` |
 | 成熟度 | 機能する |
-| テスト | 523 |
+| テスト | 526 |
 | 技術スタック | Rust |
 | 実機での動作 | 未試験：ここにあるものは機械で動かしたことがありません |
 
@@ -46,7 +46,7 @@
 |---|---|---|
 | コア | 🟡 | 画像をディザリングで点に変換し、動的出力とオーバースキャンで1行ずつ照射するレーザーの G コードを書き、SVG と DXF の図面を読んでレイヤーごとに切断または彫刻し（輪郭の順序、ビーム幅、タブ、パス、ハッチ）、出力対送り速度のテスト格子も作ります。コンピューター上で通常入力と壊れた入力を使ってテスト済みで、実際のファイルの集まりでは確認していません。 |
 | コマンドライン | 🟡 | `phoenix-laser`（`engrave`、`calibrate`、`info`、`cut`、`vector`、`layers`）はライブラリと同じ関数を実行して結果を表示します。エラーはすべてメッセージと 0 以外の終了コードで返ります。 |
-| テスト | 🟡 | 523 件のテストが通ります（`cargo test`）。通常ケース、境界ケース、破損入力を含みます。 |
+| テスト | 🟡 | 526 件のテストが通ります（`cargo test`）。通常ケース、境界ケース、破損入力を含みます。 |
 | セキュリティ | 🟡 | 安全な Rust のみ（`forbid(unsafe_code)`）。受け取ったファイルでパニックせず、不正な値は理由付きのエラーになります。独立したレビューはありません。 |
 | ウィンドウ | 🟠 | 作成済み（egui、`--features gui`）：画像または SVG・DXF の図面を開く／ドロップする、レーザーの経路（切断は1色、移動は薄く）を見る、レイヤーの表を編集する、キャリブレーション格子、拡大縮小と移動、時間の見積り、書き出し。ロジックはテスト済みですが、まだビルドも画面での確認もしていません。 |
 | 実機 | 🔴 | 未試験：ここにあるものは機械で実行したことがありません。 |
@@ -65,6 +65,7 @@
 * **焦点テスト**（`src/calibrate.rs`、設定ファイルの `[focus]`）：`phoenix-laser focus` は、ヘッドの高さを変えながら短い線を階段状に焼き、最も鮮明な線でビームの焦点位置を示します。高さのステップには既定値がなく（下がどちらかは機械によります）、出力は出力の上限に従い、ヘッドは最初の高さに戻ります。
 * **材料の試験グリッド**（`src/calibrate.rs`、設定ファイルの `[calibrate]`）：`phoenix-laser calibrate --material 名前 --materials ファイル` は、ライブラリの材料が示す値のまわりにグリッドのパワーと速度を、上限の範囲内で重複なく振り分けます。`--labels` は各列のパワーと各行の速度を、ストローク書体で四角の横に焼き付けるので、あとから材料の上でグリッドを読めます。上限を超える材料は拒否され、下げられることはありません。 材料を使うと数字は既定で焼き付けられ（`--no-labels` で外せます）、階段の最小パワーと最小送り速度はキー `min_power_percent` と `min_feed_mm_min` です。
 * **テキスト**（`src/text.rs`、設定ファイルの `[text]`）：`phoenix-laser text OUT.nc --text TEXT` は、プログラム独自のストローク書体（大文字、数字、スペース、`. , - + / : ! ? ( ) = _ '`。小文字は大文字として、改行は新しい行として焼き付けます）で名前、シリアル番号、マークを焼き付け、フォントファイルは不要です。大文字の高さ、文字と行の間隔、パワー、送り速度、回数は設定です。書体にない文字、`max_chars` を超える文字数、`max_height_mm` を超える高さ、上限を超えるパワーや送り速度、ベッドの外に出る作業は拒否され、切り詰められることはなく、テキストがプログラムのコメントに書かれることもありません。
+* **クロスハッチ**（`src/cut.rs`、レイヤーの `hatch_cross`）：`hatch_cross = on`（または `vector` と `trace` の `--cross`）の `engrave` レイヤーは、同じ間隔で最初の線と直角の線で、各パスごとに二度目の塗りつぶしをします。線数の上限は各組に適用され、レイヤー一覧が示す 1 平方ミリメートルあたりのエネルギーは 2 倍になり、プレビューとプログラムの検査は他のプログラムと同じように扱います。
 * **作業のフレーム**（`src/frame.rs`、設定ファイルの `[frame]`）：`phoenix-laser frame` は、サイズまたは G-code プログラムが焼く範囲から、レーザーを消したまま作業範囲の長方形をなぞるプログラムを書き、どこに載るかを確認できます。弱いパイロット出力は毎回 `--confirm-laser-on` が必要で、上限は 5 %（`[frame]` の `max_pilot_percent` で変更できます）、出力の上限にも従い、ベッド外のフレームは拒否されます。
 * **プレビュー**（`src/preview.rs`）：`phoenix-laser preview` は G-code プログラム（自作のものでも他のものでも）を読み、移動、焼いた長さと移動した長さ、範囲、出力、角での減速を数えた時間を表示します。危険に見えるもの（早送り中のレーザーオン、送り速度なし、全出力超えの値、ベッド外の作業、終了なし）を警告し、経路を SVG で描きます。テストは彫刻が書いたものを読み戻して同じ長さを確認します。
 * **素材ライブラリ**（`src/materials.rs`、`examples/materials.cfg`）：素材と加工方法ごとに合う値（`[material 名前]`：出力、速度、パス数、焦点ステップ、ビーム幅、ハッチ、ドットの大きさ、ディザリング、トーンカーブ）を 1 つのテキストファイルに書き、`--material 名前 --materials ファイル` で選びます。コマンドラインのオプションが優先し、出力の上限は両方に対して有効です。`phoenix-laser materials ファイル` でライブラリを一覧できます。
@@ -138,7 +139,7 @@ phoenix-laser text OUT.nc --text TEXT [--height-mm 10] [--spacing 25] [--line-sp
 phoenix-laser info IMAGE
 phoenix-laser cut DRAWING OUT.nc [--config FILE] [--power P] [--speed MM/MIN] [--passes N] [--focus-step MM] [--kerf MM] [--kerf-side none|auto|inside|outside]
               [--tabs N] [--tab-width MM] [--smax N] [--overscan MM] [--origin X,Y] [--bed X,Y] [--max-power P] [--max-speed MM/MIN] [--profile NAME] [--material NAME --materials FILE] [--dpi N] [--tolerance MM] [--dry-run]
-phoenix-laser vector DRAWING OUT.nc [the options of cut] [--angle DEG] [--spacing MM]
+phoenix-laser vector DRAWING OUT.nc [the options of cut] [--angle DEG] [--spacing MM] [--cross|--no-cross]
 phoenix-laser layers DRAWING [--config FILE] [--dpi N]
 phoenix-laser trace IMAGE OUT.nc --width-mm W [--threshold 128] [--invert] [--simplify MM] [--min-area MM2] [--engrave] [the options of cut]
 phoenix-laser materials FILE
@@ -173,7 +174,7 @@ cargo run --release --features gui -- --shot screen.png examples/plate.svg   # a
 
 ## 🧪 テスト
 
-テストは 523 件あります（`cargo test`、CI では Windows と Linux で実行）。通常ケース、境界ケース、破損入力を確認し、空のファイル、ゴミデータ、途中で切れたファイルでもパニックしません。CI は `cargo fmt --check`、警告をエラーにした `cargo clippy`、`python -I tools/ci_validate.py` も実行します。
+テストは 526 件あります（`cargo test`、CI では Windows と Linux で実行）。通常ケース、境界ケース、破損入力を確認し、空のファイル、ゴミデータ、途中で切れたファイルでもパニックしません。CI は `cargo fmt --check`、警告をエラーにした `cargo clippy`、`python -I tools/ci_validate.py` も実行します。
 
 ## 🏗️ ビルドとリリース
 

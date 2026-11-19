@@ -44,7 +44,7 @@ const HELP: &str = "phoenix-laser: laser engraving from an image
   phoenix-laser info IMAGE
   phoenix-laser cut DRAWING OUT.nc [--config FILE] [--power P] [--speed MM/MIN] [--passes N] [--focus-step MM] [--kerf MM] [--kerf-side none|auto|inside|outside]
                 [--tabs N] [--tab-width MM] [--smax N] [--overscan MM] [--origin X,Y] [--bed X,Y] [--max-power P] [--max-speed MM/MIN] [--profile NAME] [--material NAME --materials FILE] [--dpi N] [--tolerance MM] [--dry-run]
-  phoenix-laser vector DRAWING OUT.nc [the options of cut] [--angle DEG] [--spacing MM]
+  phoenix-laser vector DRAWING OUT.nc [the options of cut] [--angle DEG] [--spacing MM] [--cross|--no-cross]
   phoenix-laser layers DRAWING [--config FILE] [--dpi N]
   phoenix-laser trace IMAGE OUT.nc --width-mm W [--threshold 128] [--invert] [--simplify MM] [--min-area MM2] [--engrave] [the options of cut]
   phoenix-laser materials FILE
@@ -218,6 +218,7 @@ struct Overrides {
     tab_width: Option<f64>,
     angle: Option<f64>,
     spacing: Option<f64>,
+    cross: Option<bool>,
 }
 
 impl Overrides {
@@ -239,6 +240,17 @@ impl Overrides {
         o.tabs = flag(args, "--tabs")?
             .map(|v| whole(&v, "--tabs"))
             .transpose()?;
+        let (cross, no_cross) = (switch(args, "--cross"), switch(args, "--no-cross"));
+        if cross && no_cross {
+            return Err("--cross and --no-cross cannot be given together".into());
+        }
+        o.cross = if cross {
+            Some(true)
+        } else if no_cross {
+            Some(false)
+        } else {
+            None
+        };
         o.side = flag(args, "--kerf-side")?
             .map(|v| {
                 KerfSide::from_word(&v).ok_or_else(|| {
@@ -260,6 +272,7 @@ impl Overrides {
         p.tab_width_mm = self.tab_width.unwrap_or(p.tab_width_mm);
         p.hatch_angle_deg = self.angle.unwrap_or(p.hatch_angle_deg);
         p.hatch_spacing_mm = self.spacing.unwrap_or(p.hatch_spacing_mm);
+        p.hatch_cross = self.cross.unwrap_or(p.hatch_cross);
     }
 }
 

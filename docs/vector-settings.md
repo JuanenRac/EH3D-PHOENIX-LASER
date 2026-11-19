@@ -273,6 +273,7 @@ The keys of `[text]` are `height_mm`, `max_height_mm`, `spacing_percent`, `line_
 | `tab_width` | 1 | 0 to 100 | width of a bridge in mm |
 | `hatch_angle` | 0 | -360 to 360 | degrees |
 | `hatch_spacing` | 0.1 | 0.01 to 5 | mm between the lines |
+| `hatch_cross` | off | `on`, `off` | fill a second time with lines at right angles to the first ones (`hatch_angle` + 90 degrees), in every pass; the limit of lines holds over each set |
 | `order` | 0 | any whole number | the layers of a kind are done from the lowest |
 
 ## Not tried

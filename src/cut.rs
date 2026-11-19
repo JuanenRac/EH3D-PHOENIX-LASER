@@ -552,15 +552,25 @@ fn engrave_layer(out: &mut Out, layer: &Layer, notes: &mut Vec<String>) -> Resul
         .filter(|c| c.closed)
         .map(|c| c.pts.as_slice())
         .collect();
-    let hatch = hatch_lines(
-        &rings,
+    // the lines of the hatch, and a second set at right angles to them when the layer is cross hatched
+    let mut sets = vec![(
         p.hatch_angle_deg,
-        p.hatch_spacing_mm,
-        s.max_hatch_lines,
-    )?;
+        hatch_lines(
+            &rings,
+            p.hatch_angle_deg,
+            p.hatch_spacing_mm,
+            s.max_hatch_lines,
+        )?,
+    )];
+    if p.hatch_cross {
+        let angle = p.hatch_angle_deg + 90.0;
+        sets.push((
+            angle,
+            hatch_lines(&rings, angle, p.hatch_spacing_mm, s.max_hatch_lines)?,
+        ));
+    }
     let lines: Vec<Contour> = items.iter().filter(|c| !c.closed).cloned().collect();
     let visits = visits_for(&lines, None, out.head, s, notes);
-    let (sin, cos) = p.hatch_angle_deg.to_radians().sin_cos();
     let over = s.machine.overscan_mm;
     for pass in 0..p.passes {
         out.line(&format!("; pass {} of {}", pass + 1, p.passes));
@@ -568,33 +578,36 @@ fn engrave_layer(out: &mut Out, layer: &Layer, notes: &mut Vec<String>) -> Resul
         if p.focus_step_mm != 0.0 {
             out.focus(s.machine.focus_z_mm + p.focus_step_mm * f64::from(pass))?;
         }
-        for (k, runs) in hatch.iter().enumerate() {
-            let backwards = k % 2 == 1;
-            let ordered: Vec<(Pt, Pt)> = if backwards {
-                runs.iter().rev().map(|&(a, b)| (b, a)).collect()
-            } else {
-                runs.clone()
-            };
-            let dir = if backwards { (-cos, -sin) } else { (cos, sin) };
-            let first = ordered[0].0;
-            let approach = (first.0 - dir.0 * over, first.1 - dir.1 * over);
-            out.travel_to(approach)?;
-            if over > 0.0 {
-                out.slow_to(first, p.speed_mm_min)?;
-            }
-            let mut here = first;
-            for &(from, to) in &ordered {
-                if dist(here, from) > 1e-9 {
-                    out.slow_to(from, p.speed_mm_min)?;
+        for (angle, hatch) in &sets {
+            let (sin, cos) = angle.to_radians().sin_cos();
+            for (k, runs) in hatch.iter().enumerate() {
+                let backwards = k % 2 == 1;
+                let ordered: Vec<(Pt, Pt)> = if backwards {
+                    runs.iter().rev().map(|&(a, b)| (b, a)).collect()
+                } else {
+                    runs.clone()
+                };
+                let dir = if backwards { (-cos, -sin) } else { (cos, sin) };
+                let first = ordered[0].0;
+                let approach = (first.0 - dir.0 * over, first.1 - dir.1 * over);
+                out.travel_to(approach)?;
+                if over > 0.0 {
+                    out.slow_to(first, p.speed_mm_min)?;
                 }
-                out.burn_to(to, Some(power), p.speed_mm_min, true)?;
-                here = to;
-            }
-            if over > 0.0 {
-                out.slow_to(
-                    (here.0 + dir.0 * over, here.1 + dir.1 * over),
-                    p.speed_mm_min,
-                )?;
+                let mut here = first;
+                for &(from, to) in &ordered {
+                    if dist(here, from) > 1e-9 {
+                        out.slow_to(from, p.speed_mm_min)?;
+                    }
+                    out.burn_to(to, Some(power), p.speed_mm_min, true)?;
+                    here = to;
+                }
+                if over > 0.0 {
+                    out.slow_to(
+                        (here.0 + dir.0 * over, here.1 + dir.1 * over),
+                        p.speed_mm_min,
+                    )?;
+                }
             }
         }
         for v in &visits {
@@ -1141,6 +1154,91 @@ mod tests {
             ]
         );
         assert_eq!(p.stats.engrave_mm, 40.0);
+    }
+
+    #[test]
+    fn a_cross_hatch_fills_the_shape_a_second_time_at_right_angles() {
+        let d = dxf(vec![shape("e", &square(0.0, 0.0, 10.0), true)]);
+        let base = "[machine]
+overscan_mm = 0
+[defaults]
+mode = engrave
+hatch_spacing = 2.5
+power = 50
+";
+        let one = plan(&d, &settings(base)).unwrap();
+        let cross = plan(
+            &d,
+            &settings(&format!(
+                "{base}hatch_cross = on
+"
+            )),
+        )
+        .unwrap();
+        // 4 lines of 10 mm one way and 4 the other
+        assert_eq!(one.stats.engrave_mm, 40.0);
+        assert_eq!(cross.stats.engrave_mm, 80.0);
+        // the first set is the hatch as ever, and the second is the hatch at 90 degrees
+        let (c, a, b) = (
+            code(&cross.gcode),
+            code(&one.gcode),
+            code(
+                &plan(
+                    &d,
+                    &settings(&format!(
+                        "{base}hatch_angle = 90
+"
+                    )),
+                )
+                .unwrap()
+                .gcode,
+            )
+            .iter()
+            .map(|l| l.to_string())
+            .collect::<Vec<_>>(),
+        );
+        assert_eq!(&c[3..12], &a[3..12]);
+        assert_eq!(c[12..c.len() - 2], b[4..b.len() - 2]);
+        // every pass burns both sets: 2 passes are 4 sets
+        let twice = plan(
+            &d,
+            &settings(&format!(
+                "{base}hatch_cross = on
+passes = 2
+"
+            )),
+        )
+        .unwrap();
+        assert_eq!(twice.stats.engrave_mm, 160.0);
+        verify_gcode(&cross.gcode, 1000, None).unwrap();
+        // the second set has its own lines, and the limit of lines holds over it: 2 lines one way and 4 the other
+        let wide = dxf(vec![shape(
+            "e",
+            &[(0.0, 0.0), (10.0, 0.0), (10.0, 5.0), (0.0, 5.0)],
+            true,
+        )]);
+        let few = "[hatch]
+max_lines = 3
+[defaults]
+mode = engrave
+hatch_spacing = 2.5
+";
+        assert!(plan(&wide, &settings(few)).is_ok());
+        let e = plan(
+            &wide,
+            &settings(&format!(
+                "{few}hatch_cross = on
+"
+            )),
+        )
+        .unwrap_err();
+        assert!(e.contains("max_lines"), "{e}");
+        assert!(parse(
+            "[defaults]
+hatch_cross = maybe
+"
+        )
+        .is_err());
     }
 
     #[test]

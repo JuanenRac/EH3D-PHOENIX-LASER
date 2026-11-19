@@ -102,6 +102,8 @@ pub struct LayerParams {
     /// The angle of the lines of the hatch, in degrees.
     pub hatch_angle_deg: f64,
     pub hatch_spacing_mm: f64,
+    /// The shapes are filled a second time with lines at right angles to the first ones (a cross hatch), in every pass.
+    pub hatch_cross: bool,
     /// The layers are done in this order (the lowest first); engraving always comes before cutting.
     pub order: i32,
 }
@@ -120,6 +122,7 @@ impl Default for LayerParams {
             tab_width_mm: 1.0,
             hatch_angle_deg: 0.0,
             hatch_spacing_mm: 0.1,
+            hatch_cross: false,
             order: 0,
         }
     }
@@ -876,6 +879,7 @@ fn set_layer(p: &mut LayerParams, key: &str, value: &str) -> Result<(), String> 
         "tab_width" => p.tab_width_mm = number(value)?,
         "hatch_angle" => p.hatch_angle_deg = number(value)?,
         "hatch_spacing" => p.hatch_spacing_mm = number(value)?,
+        "hatch_cross" => p.hatch_cross = switch(value)?,
         "order" => p.order = number(value)?.clamp(-1_000_000.0, 1_000_000.0) as i32,
         _ => return Err(format!("'{key}' is not a setting of a layer")),
     }
