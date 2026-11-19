@@ -2366,6 +2366,119 @@ fn an_inverted_qr_code_can_have_a_burnt_border_that_counts_for_the_size_and_the_
 }
 
 #[test]
+fn the_marks_command_burns_the_corners_of_the_rectangle_and_refuses_what_does_not_fit() {
+    let out = tmp("marks.nc");
+    let _ = std::fs::remove_file(&out);
+    let (ok, said, err) = run(&["marks", &out, "--size", "40,20", "--origin", "10,5"]);
+    assert!(ok, "{err}");
+    assert!(said.contains("marks round 40.0 x 20.0 mm"), "{said}");
+    let program = std::fs::read_to_string(&out).unwrap();
+    assert!(
+        program.contains("positioning marks, 4 strokes, 1 passes"),
+        "{program}"
+    );
+    let (pass, report, _) = run(&["verify", &out, "--bed", "100,100"]);
+    assert!(pass, "{report}");
+    // the options and a cross in the middle
+    let (ok, said, err) = run(&[
+        "marks",
+        &out,
+        "--size",
+        "40,20",
+        "--centre-cross",
+        "--arm-mm",
+        "8",
+        "--margin-mm",
+        "2",
+        "--power",
+        "15",
+        "--passes",
+        "2",
+        "--bed",
+        "60,40",
+        "--origin",
+        "5,5",
+    ]);
+    assert!(ok, "{err}");
+    assert!(
+        said.contains("and a cross") && said.contains("at 15 %"),
+        "{said}"
+    );
+    assert!(std::fs::read_to_string(&out)
+        .unwrap()
+        .contains("6 strokes, 2 passes"));
+    // what is refused: nothing is written
+    for (args, word) in [
+        (vec!["--size", "40,20", "--arm-mm", "11"], "half a side"),
+        (
+            vec!["--size", "40,20", "--power", "60", "--max-power", "50"],
+            "max_power_percent",
+        ),
+        (
+            vec!["--size", "40,20", "--feed", "5000", "--max-speed", "2000"],
+            "max_speed_mm_min",
+        ),
+        (
+            vec!["--size", "40,20", "--bed", "30,30"],
+            "outside of the bed",
+        ),
+        (
+            vec![
+                "--size",
+                "40,20",
+                "--origin",
+                "10,10",
+                "--margin-mm",
+                "1",
+                "--bed",
+                "50,30",
+            ],
+            "outside of the bed",
+        ),
+        (vec!["--size", "0.5,20"], "each side must be from 1 to 1000"),
+        (vec!["--size", "40"], "--size needs W,H"),
+        (
+            vec!["--size", "40,20", "--centre-cross", "--no-centre-cross"],
+            "cannot be given together",
+        ),
+        (vec!["--size", "40,20", "--passes", "0"], "passes"),
+        (vec![], "--size"),
+    ] {
+        let refused = tmp("marks-refused.nc");
+        let _ = std::fs::remove_file(&refused);
+        let mut full = vec!["marks", refused.as_str()];
+        full.extend(args.iter().copied());
+        let (ok, _, err) = run(&full);
+        assert!(!ok, "{args:?}");
+        assert!(err.contains(word), "{args:?}: {err}");
+        assert!(!err.contains("panicked"), "{err}");
+        assert!(!std::path::Path::new(&refused).exists(), "{args:?}");
+    }
+    // the settings say the usual values, the options win, and the output is never the settings
+    let cfg = tmp("marks.cfg");
+    std::fs::write(&cfg, "[marks]\narm_mm = 3\ncentre_cross = on\n").unwrap();
+    let (ok, said, err) = run(&["marks", &out, "--size", "40,20", "--config", &cfg]);
+    assert!(
+        ok && said.contains("arms of 3 mm and a cross"),
+        "{said} {err}"
+    );
+    let (ok, said, _) = run(&[
+        "marks",
+        &out,
+        "--size",
+        "40,20",
+        "--config",
+        &cfg,
+        "--no-centre-cross",
+        "--arm-mm",
+        "4",
+    ]);
+    assert!(ok && said.contains("arms of 4 mm,"), "{said}");
+    let (ok, _, err) = run(&["marks", &cfg, "--size", "40,20", "--config", &cfg]);
+    assert!(!ok && err.contains("written over the settings"), "{err}");
+}
+
+#[test]
 fn the_barcode_command_burns_a_barcode_that_reads_back_and_refuses_what_does_not_fit() {
     let out = tmp("barcode.nc");
     let _ = std::fs::remove_file(&out);

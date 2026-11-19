@@ -277,14 +277,14 @@
         {
           "name": "frame.rs",
           "desc": {
-            "en": "the frame of the work: the rectangle traced with the laser off",
-            "es": "el marco del trabajo: el rectángulo recorrido con el láser apagado",
-            "de": "der Rahmen der Arbeit: das Rechteck bei ausgeschaltetem Laser",
-            "fr": "le cadre du travail : le rectangle parcouru laser éteint",
-            "it": "la cornice del lavoro: il rettangolo percorso con il laser spento",
-            "ja": "作業のフレーム：レーザーを消してなぞる長方形",
-            "zh": "作业边框：在激光关闭时描出的矩形",
-            "pt": "a moldura do trabalho: o retângulo percorrido com o laser desligado"
+            "en": "the frame of the work (the rectangle traced with the laser off) and the marks at its corners",
+            "es": "el marco del trabajo (el rectángulo recorrido con el láser apagado) y las marcas de sus esquinas",
+            "de": "der Rahmen der Arbeit (das Rechteck bei ausgeschaltetem Laser) und die Marken an seinen Ecken",
+            "fr": "le cadre du travail (le rectangle parcouru laser éteint) et les repères de ses coins",
+            "it": "la cornice del lavoro (il rettangolo percorso con il laser spento) e i segni ai suoi angoli",
+            "ja": "作業のフレーム（レーザーを消してなぞる長方形）と、その四隅の位置合わせマーク",
+            "zh": "作业边框（在激光关闭时描出的矩形）及其四角的定位标记",
+            "pt": "a moldura do trabalho (o retângulo percorrido com o laser desligado) e as marcas dos seus cantos"
           }
         },
         {

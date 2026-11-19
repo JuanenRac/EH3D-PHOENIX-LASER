@@ -5,6 +5,8 @@
 //! as soon as the lap is done. The rectangle comes from a size and a corner, or from the moves that burn in a G-code program, so that the real place of the work is framed.
 
 use crate::gcode_out::number as n;
+use crate::qr::Machine;
+use crate::vconfig::MarksSettings;
 use crate::vector::Pt;
 
 /// The most laps of the frame.
@@ -97,6 +99,119 @@ pub fn gcode(f: &Frame, bed: Option<Pt>) -> Result<String, String> {
     Ok(g)
 }
 
+/// The strokes of the positioning marks of a rectangle `size` mm large whose lower left corner is at `origin`: an L at each corner, on the edges of the rectangle or `margin_mm` outside of them,
+/// and a cross in the middle when it is asked for. An arm longer than half a side of the rectangle that the marks go round is refused.
+pub fn marks_strokes(
+    size: (f64, f64),
+    origin: (f64, f64),
+    k: &MarksSettings,
+) -> Result<Vec<Vec<Pt>>, String> {
+    k.validate()?;
+    if !(size.0.is_finite()
+        && size.1.is_finite()
+        && (1.0..=1000.0).contains(&size.0)
+        && (1.0..=1000.0).contains(&size.1))
+    {
+        return Err(format!(
+            "the size of the marks is {} x {} mm: each side must be from 1 to 1000",
+            size.0, size.1
+        ));
+    }
+    if !(origin.0.is_finite()
+        && origin.1.is_finite()
+        && origin.0.abs() <= 100_000.0
+        && origin.1.abs() <= 100_000.0)
+    {
+        return Err("the origin of the marks is not a number from -100000 to 100000".to_string());
+    }
+    let (lo, hi) = grow(origin, (origin.0 + size.0, origin.1 + size.1), k.margin_mm);
+    let a = k.arm_mm;
+    if a > (hi.0 - lo.0) / 2.0 + 1e-9 || a > (hi.1 - lo.1) / 2.0 + 1e-9 {
+        return Err(format!(
+            "an arm of {a} mm is longer than half a side of the {:.1} x {:.1} mm that the marks go round (arm_mm in [marks])",
+            hi.0 - lo.0,
+            hi.1 - lo.1
+        ));
+    }
+    let mut strokes = vec![
+        vec![(lo.0 + a, lo.1), (lo.0, lo.1), (lo.0, lo.1 + a)],
+        vec![(hi.0 - a, lo.1), (hi.0, lo.1), (hi.0, lo.1 + a)],
+        vec![(hi.0 - a, hi.1), (hi.0, hi.1), (hi.0, hi.1 - a)],
+        vec![(lo.0 + a, hi.1), (lo.0, hi.1), (lo.0, hi.1 - a)],
+    ];
+    if k.centre_cross {
+        let (cx, cy, h) = ((lo.0 + hi.0) / 2.0, (lo.1 + hi.1) / 2.0, a / 2.0);
+        strokes.push(vec![(cx - h, cy), (cx + h, cy)]);
+        strokes.push(vec![(cx, cy - h), (cx, cy + h)]);
+    }
+    Ok(strokes)
+}
+
+/// The G-code of the positioning marks: each stroke is burnt at the power and the speed of the settings, as many times as `passes` says, with the laser off between the strokes. A power or a
+/// speed over the limit, or marks outside of the bed, are refused and nothing is written.
+pub fn marks_program(
+    size: (f64, f64),
+    origin: (f64, f64),
+    k: &MarksSettings,
+    m: &Machine,
+) -> Result<String, String> {
+    crate::safety::validate_max(m.max_power_percent)?;
+    crate::safety::check_power(
+        "the power of the marks",
+        k.power_percent,
+        m.max_power_percent,
+    )?;
+    crate::safety::check_speed("the speed of the marks", k.speed_mm_min, m.max_speed_mm_min)?;
+    if m.s_max == 0 || m.s_max > 100_000 {
+        return Err("s_max must be from 1 to 100000".to_string());
+    }
+    let strokes = marks_strokes(size, origin, k)?;
+    if let Some((bx, by)) = m.bed_mm {
+        let all = strokes.iter().flatten();
+        for p in all {
+            if p.0 < -1e-9 || p.1 < -1e-9 || p.0 > bx + 1e-9 || p.1 > by + 1e-9 {
+                return Err(format!(
+                    "the marks go outside of the bed of {bx} x {by} mm: one is at {:.1}, {:.1}",
+                    p.0, p.1
+                ));
+            }
+        }
+    }
+    let s = (f64::from(m.s_max) * k.power_percent / 100.0).round() as u32;
+    if s == 0 {
+        return Err(format!(
+            "a power of {} % of S{} is less than one step of S",
+            k.power_percent, m.s_max
+        ));
+    }
+    let feed = n(k.speed_mm_min)?;
+    let mut out = String::from("G21\nG90\nM4 S0\n");
+    out.push_str(&format!(
+        "(positioning marks, {} strokes, {} passes)\n",
+        strokes.len(),
+        k.passes
+    ));
+    let mut lit = false;
+    for _ in 0..k.passes {
+        for stroke in &strokes {
+            let Some(((fx, fy), rest)) = stroke.split_first() else {
+                continue;
+            };
+            // no rapid move with the power of the last stroke still set
+            if lit {
+                out.push_str("S0\n");
+            }
+            out.push_str(&format!("G0 X{} Y{}\n", n(*fx)?, n(*fy)?));
+            for (x, y) in rest {
+                out.push_str(&format!("G1 X{} Y{} S{s} F{feed}\n", n(*x)?, n(*y)?));
+            }
+            lit = true;
+        }
+    }
+    out.push_str("S0\nM5\nM2\n");
+    Ok(out)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -111,6 +226,160 @@ mod tests {
             s_max: 1000,
             pilot_s: 0,
         }
+    }
+
+    fn machine() -> Machine {
+        Machine {
+            s_max: 1000,
+            max_power_percent: 100.0,
+            max_speed_mm_min: 30_000.0,
+            bed_mm: None,
+        }
+    }
+
+    #[test]
+    fn the_marks_are_an_l_at_each_corner_on_the_edges_and_burn_only_there() {
+        let k = MarksSettings::default();
+        let g = marks_program((40.0, 20.0), (10.0, 5.0), &k, &machine()).unwrap();
+        let p = read(&g);
+        assert!(p.ended && p.notes.is_empty(), "{:?}", p.notes);
+        let burns: Vec<_> = p.moves.iter().filter(|m| m.power > 0.0).collect();
+        // two arms of 5 mm at each of the four corners
+        assert_eq!(burns.len(), 8);
+        assert!(burns.iter().all(|m| (m.length() - 5.0).abs() < 1e-9));
+        assert!(burns.iter().all(|m| m.power == 100.0));
+        let r = analyse(&p, &Options::default()).unwrap();
+        assert_eq!(r.burn_bounds, Some(((10.0, 5.0), (50.0, 25.0))));
+        assert!((r.burn_mm - 40.0).abs() < 1e-9);
+        // each corner of the rectangle is the corner of an L, and the middle of the rectangle burns nothing
+        for corner in [(10.0, 5.0), (50.0, 5.0), (50.0, 25.0), (10.0, 25.0)] {
+            assert!(
+                burns.iter().any(|m| m.from == corner || m.to == corner),
+                "{corner:?}"
+            );
+        }
+        assert!(burns.iter().all(|m| {
+            let mid = |p: Pt| (p.0 - 30.0).abs() < 10.0 && (p.1 - 15.0).abs() < 5.0;
+            !mid(m.from) && !mid(m.to)
+        }));
+    }
+
+    #[test]
+    fn the_margin_moves_the_marks_outside_and_the_cross_is_in_the_middle() {
+        let k = MarksSettings {
+            margin_mm: 2.0,
+            centre_cross: true,
+            arm_mm: 6.0,
+            ..MarksSettings::default()
+        };
+        let strokes = marks_strokes((40.0, 20.0), (10.0, 5.0), &k).unwrap();
+        assert_eq!(strokes.len(), 6);
+        // the lower left L has its corner two millimetres outside of the rectangle
+        assert_eq!(strokes[0][1], (8.0, 3.0));
+        assert_eq!(strokes[2][1], (52.0, 27.0));
+        // the cross has arms half as long as an arm of an L and crosses at the middle of the rectangle that is round
+        assert_eq!(strokes[4], vec![(27.0, 15.0), (33.0, 15.0)]);
+        assert_eq!(strokes[5], vec![(30.0, 12.0), (30.0, 18.0)]);
+        let g = marks_program((40.0, 20.0), (10.0, 5.0), &k, &machine()).unwrap();
+        let r = analyse(&read(&g), &Options::default()).unwrap();
+        assert_eq!(r.burn_bounds, Some(((8.0, 3.0), (52.0, 27.0))));
+    }
+
+    #[test]
+    fn the_passes_repeat_the_marks_and_the_laser_is_off_whenever_the_head_moves_fast() {
+        let k = MarksSettings {
+            passes: 3,
+            centre_cross: true,
+            ..MarksSettings::default()
+        };
+        let one = marks_program(
+            (40.0, 20.0),
+            (0.0, 0.0),
+            &MarksSettings {
+                passes: 1,
+                centre_cross: true,
+                ..k
+            },
+            &machine(),
+        )
+        .unwrap();
+        let three = marks_program((40.0, 20.0), (0.0, 0.0), &k, &machine()).unwrap();
+        let burns = |g: &str| read(g).moves.iter().filter(|m| m.power > 0.0).count();
+        assert_eq!(burns(&three), 3 * burns(&one));
+        let v = crate::verify::verify(three.as_bytes(), &crate::verify::Limits::default()).unwrap();
+        assert!(v.passes(), "{:?}", v.problems);
+    }
+
+    #[test]
+    fn what_is_too_long_too_strong_or_outside_of_the_bed_is_refused() {
+        let k = MarksSettings::default();
+        let m = machine();
+        // an arm of more than half a side
+        let long = MarksSettings { arm_mm: 11.0, ..k };
+        assert!(marks_program((40.0, 20.0), (0.0, 0.0), &long, &m)
+            .unwrap_err()
+            .contains("half a side"));
+        let half = MarksSettings { arm_mm: 10.0, ..k };
+        assert!(marks_program((40.0, 20.0), (0.0, 0.0), &half, &m).is_ok());
+        // the power and the speed over the limits
+        let low = Machine {
+            max_power_percent: 5.0,
+            ..m
+        };
+        assert!(marks_program((40.0, 20.0), (0.0, 0.0), &k, &low)
+            .unwrap_err()
+            .contains("max_power_percent"));
+        let slow = Machine {
+            max_speed_mm_min: 500.0,
+            ..m
+        };
+        assert!(marks_program((40.0, 20.0), (0.0, 0.0), &k, &slow).is_err());
+        // the bed: the margin counts
+        let bed = Machine {
+            bed_mm: Some((50.0, 30.0)),
+            ..m
+        };
+        assert!(marks_program((40.0, 20.0), (10.0, 10.0), &k, &bed).is_ok());
+        assert!(marks_program(
+            (40.0, 20.0),
+            (10.0, 10.0),
+            &MarksSettings {
+                margin_mm: 1.0,
+                ..k
+            },
+            &bed
+        )
+        .unwrap_err()
+        .contains("outside of the bed"));
+        assert!(marks_program(
+            (40.0, 20.0),
+            (0.0, 0.0),
+            &MarksSettings {
+                margin_mm: 1.0,
+                ..k
+            },
+            &bed
+        )
+        .is_err());
+        assert!(marks_program((40.0, 20.0), (-1.0, 0.0), &k, &bed).is_err());
+        // a size, an origin or a power that is not usable
+        for size in [
+            (0.5, 20.0),
+            (40.0, 1001.0),
+            (f64::NAN, 20.0),
+            (40.0, f64::INFINITY),
+        ] {
+            assert!(marks_program(size, (0.0, 0.0), &k, &m).is_err(), "{size:?}");
+        }
+        assert!(marks_program((40.0, 20.0), (f64::NAN, 0.0), &k, &m).is_err());
+        let tiny = MarksSettings {
+            power_percent: 0.01,
+            ..k
+        };
+        assert!(marks_program((40.0, 20.0), (0.0, 0.0), &tiny, &m)
+            .unwrap_err()
+            .contains("one step"));
+        assert!(marks_program((40.0, 20.0), (0.0, 0.0), &k, &Machine { s_max: 0, ..m }).is_err());
     }
 
     #[test]

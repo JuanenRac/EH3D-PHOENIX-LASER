@@ -313,6 +313,21 @@ Data that cannot be written is refused, never cut down: a byte that is not a pri
 
 The keys of `[barcode]` are `module_mm`, `height_mm`, `line_mm`, `power_percent`, `speed_mm_min`, `passes`, `max_chars`, `max_width_mm`, `max_lines`, `max_minutes` and `mirror`.
 
+### `[marks]`
+
+Positioning marks burnt with a low power (`phoenix-laser marks OUT.nc --size W,H`): an L at each corner of the rectangle of the work, and a cross in the middle when `centre_cross` is on, so that the material can be put back in the same place after it is taken out and a second job can be lined up with the first. The rectangle starts at `--origin X,Y` (the machine origin otherwise) and is `W` by `H` mm; the marks lie on its edges, or `margin_mm` outside of them. Unlike the frame, which is traced with the laser off, the marks are burnt: they obey the limits of power and of speed of the machine (`--max-power`, `--max-speed`) and are refused when they would go outside of the bed (`--bed X,Y` or the machine of the file) or when an arm is longer than half a side of the rectangle that the marks go round. The options `--arm-mm`, `--margin-mm`, `--power`, `--feed`, `--passes` and `--centre-cross` (and `--no-centre-cross`) take the place of the keys with the same meaning.
+
+| Key | Default | Meaning |
+|---|---|---|
+| `arm_mm` | 5 | the length of each arm of an L, from 1 to 100 mm; at most half a side of the rectangle the marks go round |
+| `margin_mm` | 0 | how far outside of the rectangle of the work the marks are burnt, from 0 to 50 mm |
+| `power_percent` | 10 | more than 0 up to 100, a percent of `s_max` |
+| `speed_mm_min` | 1000 | from 1 to 30000 |
+| `passes` | 1 | how many times the marks are burnt, from 1 to 20 |
+| `centre_cross` | off | `on` burns a cross in the middle of the rectangle too, with arms half as long as an arm of an L |
+
+The keys of `[marks]` are `arm_mm`, `margin_mm`, `power_percent`, `speed_mm_min`, `passes` and `centre_cross`.
+
 ### `[defaults]` and `[layer NAME]`
 
 | Key | Default | Range | Meaning |

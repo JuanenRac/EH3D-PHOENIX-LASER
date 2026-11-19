@@ -17,7 +17,7 @@
 
 ---
 
-**正直さの確認 - 現在実際に動くもの：** Rust ライブラリとコマンドラインプログラム（`phoenix-laser`）。コンピューター上で動く 582 件のテストがあります。画像をディザリングで点に変換し、動的出力とオーバースキャンで1行ずつ照射するレーザーの G コードを書き、SVG と DXF の図面を読んで輪郭を切断する G コード（内側から先に、ビーム幅、タブ、複数パスを考慮）と図形を線で彫刻する G コードを書き（各レイヤーの設定は1つのファイルに）、出力対送り速度のテスト格子も作ります。ウィンドウ（`--features gui` でビルド）は画像または図面を開き、レーザーの経路を表示し、設定を変更でき、G コードを書き出しますが、画面ではまだ確認していません。実機では試しておらず、実際のファイルの集まりでも確認していません。
+**正直さの確認 - 現在実際に動くもの：** Rust ライブラリとコマンドラインプログラム（`phoenix-laser`）。コンピューター上で動く 588 件のテストがあります。画像をディザリングで点に変換し、動的出力とオーバースキャンで1行ずつ照射するレーザーの G コードを書き、SVG と DXF の図面を読んで輪郭を切断する G コード（内側から先に、ビーム幅、タブ、複数パスを考慮）と図形を線で彫刻する G コードを書き（各レイヤーの設定は1つのファイルに）、出力対送り速度のテスト格子も作ります。ウィンドウ（`--features gui` でビルド）は画像または図面を開き、レーザーの経路を表示し、設定を変更でき、G コードを書き出しますが、画面ではまだ確認していません。実機では試しておらず、実際のファイルの集まりでも確認していません。
 
 ---
 
@@ -30,7 +30,7 @@
 |---|---|
 | バージョン | `0.1.1` |
 | 成熟度 | 機能する |
-| テスト | 582 |
+| テスト | 588 |
 | 技術スタック | Rust |
 | 実機での動作 | 未試験：ここにあるものは機械で動かしたことがありません |
 
@@ -46,7 +46,7 @@
 |---|---|---|
 | コア | 🟡 | 画像をディザリングで点に変換し、動的出力とオーバースキャンで1行ずつ照射するレーザーの G コードを書き、SVG と DXF の図面を読んでレイヤーごとに切断または彫刻し（輪郭の順序、ビーム幅、タブ、パス、ハッチ）、出力対送り速度のテスト格子も作ります。コンピューター上で通常入力と壊れた入力を使ってテスト済みで、実際のファイルの集まりでは確認していません。 |
 | コマンドライン | 🟡 | `phoenix-laser`（`engrave`、`calibrate`、`info`、`cut`、`vector`、`layers`）はライブラリと同じ関数を実行して結果を表示します。エラーはすべてメッセージと 0 以外の終了コードで返ります。 |
-| テスト | 🟡 | 582 件のテストが通ります（`cargo test`）。通常ケース、境界ケース、破損入力を含みます。 |
+| テスト | 🟡 | 588 件のテストが通ります（`cargo test`）。通常ケース、境界ケース、破損入力を含みます。 |
 | セキュリティ | 🟡 | 安全な Rust のみ（`forbid(unsafe_code)`）。受け取ったファイルでパニックせず、不正な値は理由付きのエラーになります。独立したレビューはありません。 |
 | ウィンドウ | 🟠 | 作成済み（egui、`--features gui`）：画像または SVG・DXF の図面を開く／ドロップする、レーザーの経路（切断は1色、移動は薄く）を見る、レイヤーの表を編集する、キャリブレーション格子、拡大縮小と移動、時間の見積り、書き出し。ロジックはテスト済みですが、まだビルドも画面での確認もしていません。 |
 | 実機 | 🔴 | 未試験：ここにあるものは機械で実行したことがありません。 |
@@ -69,6 +69,7 @@
 * **バーコード**（`src/barcode.rs`、設定ファイルの `[barcode]`）：`phoenix-laser barcode OUT.nc --text データ` は、データをプログラム独自の Code 128 バーコード（スペースから `~` までの文字はセット B、偶数桁の数字だけの文字列は幅が半分のセット C で、チェックシンボル付き）として、各バーを高さ方向の線で塗りつぶして焼き付けます。テストは自前のリーダーで読み戻しますが、スキャナーでの読み取りはまだ確認していません。最も細いバーの幅、高さ、線の間隔、出力、速度、パス数、上限は設定です。印字できない文字のバイト、`max_chars` を超える文字数、`max_width_mm` より広いバーコード、`max_lines` を超える移動の塗りつぶし、`max_minutes` を超える時間がかかる焼き付け、上限を超える出力や速度、ベッドの外になる作業は、切り詰めも縮小もせずに拒否され、データがプログラムのコメントに書かれることはありません。`--mirror` はガラスやアクリルの裏面用に鏡像を焼きます。
 * **クロスハッチ**（`src/cut.rs`、レイヤーの `hatch_cross`）：`hatch_cross = on`（または `vector` と `trace` の `--cross`）の `engrave` レイヤーは、同じ間隔で最初の線と直角の線で、各パスごとに二度目の塗りつぶしをします。線数の上限は各組に適用され、レイヤー一覧が示す 1 平方ミリメートルあたりのエネルギーは 2 倍になり、プレビューとプログラムの検査は他のプログラムと同じように扱います。
 * **作業のフレーム**（`src/frame.rs`、設定ファイルの `[frame]`）：`phoenix-laser frame` は、サイズまたは G-code プログラムが焼く範囲から、レーザーを消したまま作業範囲の長方形をなぞるプログラムを書き、どこに載るかを確認できます。弱いパイロット出力は毎回 `--confirm-laser-on` が必要で、上限は 5 %（`[frame]` の `max_pilot_percent` で変更できます）、出力の上限にも従い、ベッド外のフレームは拒否されます。
+* **位置合わせマーク**（`src/frame.rs`、設定ファイルの `[marks]`）：`phoenix-laser marks OUT.nc --size W,H` は、作業の長方形の四隅（辺の上、または `margin_mm` だけ外側）に L 字を、`--centre-cross` を付けると中央に十字を、弱い出力で焼き付けます。材料を同じ位置に戻したり、2 つ目の作業を 1 つ目に合わせたりするためのものです。レーザーを消すフレームと違い、マークは焼かれるため、出力と速度は機械の上限に従い、長方形の一辺の半分より長い腕や、ベッドの外に出るマークは、切り詰めずに拒否されます。腕の長さ、余白、出力、速度、パス数は設定です。
 * **プレビュー**（`src/preview.rs`）：`phoenix-laser preview` は G-code プログラム（自作のものでも他のものでも）を読み、移動、焼いた長さと移動した長さ、範囲、出力、角での減速を数えた時間を表示します。危険に見えるもの（早送り中のレーザーオン、送り速度なし、全出力超えの値、ベッド外の作業、終了なし）を警告し、経路を SVG で描きます。テストは彫刻が書いたものを読み戻して同じ長さを確認します。
 * **素材ライブラリ**（`src/materials.rs`、`examples/materials.cfg`）：素材と加工方法ごとに合う値（`[material 名前]`：出力、速度、パス数、焦点ステップ、ビーム幅、ハッチ、ドットの大きさ、ディザリング、トーンカーブ）を 1 つのテキストファイルに書き、`--material 名前 --materials ファイル` で選びます。コマンドラインのオプションが優先し、出力の上限は両方に対して有効です。`phoenix-laser materials ファイル` でライブラリを一覧できます。
 * **出力の上限**（`src/safety.rs`、`[machine]` の `max_power_percent`、`--max-power`）：出力が上限を超えるプログラムは、レイヤーまたはオプションを示すエラーで拒否され、黙って下げられることはありません。ファイルかオプションが指定するまで上限は 100 % です。
@@ -157,6 +158,7 @@ phoenix-laser calibrate OUT.nc --material NAME --materials FILE [--steps 5] [--s
 phoenix-laser text OUT.nc --text TEXT [--height-mm 10] [--spacing 25] [--line-spacing 50] [--power 20] [--feed 1000] [--passes 1] [--max-minutes 240] [--align left|center|right] [--mirror] [--origin X,Y] [--bed X,Y] [--smax 1000] [--max-power 100] [--max-speed MM/MIN] [--config FILE] [--profile NAME]
 phoenix-laser qr OUT.nc --text DATA [--ecc L|M|Q|H] [--module-mm 1] [--line-mm 0.1] [--power 20] [--feed 1000] [--passes 1] [--max-minutes 240] [--invert] [--border-modules 0] [--overscan-mm 0] [--mirror] [--origin X,Y] [--bed X,Y] [--smax 1000] [--max-power 100] [--max-speed MM/MIN] [--print] [--config FILE] [--profile NAME]
 phoenix-laser barcode OUT.nc --text DATA [--module-mm 0.4] [--height-mm 10] [--line-mm 0.1] [--power 20] [--feed 1000] [--passes 1] [--max-minutes 240] [--mirror] [--origin X,Y] [--bed X,Y] [--smax 1000] [--max-power 100] [--max-speed MM/MIN] [--config FILE] [--profile NAME]
+phoenix-laser marks OUT.nc --size W,H [--origin X,Y] [--arm-mm 5] [--margin-mm 0] [--power 10] [--feed 1000] [--passes 1] [--centre-cross|--no-centre-cross] [--bed X,Y] [--smax 1000] [--max-power 100] [--max-speed MM/MIN] [--config FILE] [--profile NAME]
 phoenix-laser info IMAGE
 phoenix-laser cut DRAWING OUT.nc [--config FILE] [--power P] [--speed MM/MIN] [--passes N] [--focus-step MM] [--kerf MM] [--kerf-side none|auto|inside|outside]
               [--tabs N] [--tab-width MM] [--smax N] [--overscan MM] [--origin X,Y] [--bed X,Y] [--max-power P] [--max-speed MM/MIN] [--profile NAME] [--material NAME --materials FILE] [--dpi N] [--tolerance MM] [--dry-run]
@@ -195,7 +197,7 @@ cargo run --release --features gui -- --shot screen.png examples/plate.svg   # a
 
 ## 🧪 テスト
 
-テストは 582 件あります（`cargo test`、CI では Windows と Linux で実行）。通常ケース、境界ケース、破損入力を確認し、空のファイル、ゴミデータ、途中で切れたファイルでもパニックしません。CI は `cargo fmt --check`、警告をエラーにした `cargo clippy`、`python -I tools/ci_validate.py` も実行します。
+テストは 588 件あります（`cargo test`、CI では Windows と Linux で実行）。通常ケース、境界ケース、破損入力を確認し、空のファイル、ゴミデータ、途中で切れたファイルでもパニックしません。CI は `cargo fmt --check`、警告をエラーにした `cargo clippy`、`python -I tools/ci_validate.py` も実行します。
 
 ## 🏗️ ビルドとリリース
 
@@ -236,7 +238,7 @@ EH3D-PHOENIX-LASER/
 │   ├── vector.rs                                読み込んだ図面：mm の図形、レイヤー、上限、基本の幾何
 │   ├── verify.rs                                プログラムの検査：SHA-256、内容、機械の上限に対する判定
 │   ├── flatten.rs                               許容差内で曲線を直線に分割（ベジェ、円弧）
-│   ├── frame.rs                                 作業のフレーム：レーザーを消してなぞる長方形
+│   ├── frame.rs                                 作業のフレーム（レーザーを消してなぞる長方形）と、その四隅の位置合わせマーク
 │   ├── svg.rs                                   SVG リーダー：安全なサブセット（スクリプト・画像・エンティティなし）
 │   ├── dxf.rs                                   DXF リーダー：線、ポリライン、円弧、円、スプライン（単位つき）
 │   ├── energy.rs                                光出力から求める 1 パスあたりの 1 mm または 1 mm² のエネルギー

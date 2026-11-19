@@ -17,7 +17,7 @@
 
 ---
 
-**Honesty check - what actually runs today:** a Rust library and a command line program (`phoenix-laser`) with 582 tests that run on a computer: turns an image into dots by dithering and writes the G-code of a laser that burns line by line with dynamic power and overscan, reads SVG and DXF drawings and writes the G-code that cuts their contours (the inside ones first, the width of the beam taken into account, bridges, several passes) and engraves their shapes with lines, with the settings of each layer in a file, and a power-against-feed test grid. It has a window (built with `--features gui`) that opens a picture or a drawing, shows the path of the laser, lets the settings be changed and exports the G-code, but the window has not been looked at on a screen yet; it has not been tried on a machine and it has not been checked against a collection of real files.
+**Honesty check - what actually runs today:** a Rust library and a command line program (`phoenix-laser`) with 588 tests that run on a computer: turns an image into dots by dithering and writes the G-code of a laser that burns line by line with dynamic power and overscan, reads SVG and DXF drawings and writes the G-code that cuts their contours (the inside ones first, the width of the beam taken into account, bridges, several passes) and engraves their shapes with lines, with the settings of each layer in a file, and a power-against-feed test grid. It has a window (built with `--features gui`) that opens a picture or a drawing, shows the path of the laser, lets the settings be changed and exports the G-code, but the window has not been looked at on a screen yet; it has not been tried on a machine and it has not been checked against a collection of real files.
 
 ---
 
@@ -30,7 +30,7 @@
 |---|---|
 | Version | `0.1.1` |
 | Maturity | Functional |
-| Tests | 582 |
+| Tests | 588 |
 | Stack | Rust |
 | On real hardware | Not tried: nothing here has run on a machine |
 
@@ -46,7 +46,7 @@ Each line is one part of this repository and the light says how far it is today.
 |---|---|---|
 | Core | 🟡 | turns an image into dots by dithering and writes the G-code of a laser that burns line by line with dynamic power and overscan, reads SVG and DXF drawings and cuts or engraves them by layer (ordered contours, beam width, bridges, passes, hatch), and a power-against-feed test grid; tested on a computer with normal and damaged input, not with a collection of real files. |
 | Command line | 🟡 | `phoenix-laser` (`engrave`, `calibrate`, `info`, `cut`, `vector`, `layers`) runs the same functions as the library and prints the result; every error comes back as a message and a non-zero exit code. |
-| Tests | 🟡 | 582 tests pass (`cargo test`), with normal cases, edge cases and damaged input. |
+| Tests | 🟡 | 588 tests pass (`cargo test`), with normal cases, edge cases and damaged input. |
 | Security | 🟡 | Plain safe Rust (`forbid(unsafe_code)`): nothing panics on the files it is given and a bad value is an error with its reason; no independent review. |
 | Window | 🟠 | Written (egui, `--features gui`): open or drop a picture or an SVG or DXF drawing, see the path of the laser (the cut in one colour, the travel dim), edit the table of layers, a calibration grid, zoom and pan, estimate the time, export; its logic is tested, but it has not been built or looked at on a screen yet. |
 | Real hardware | 🔴 | Not tried: nothing here has been run on a machine. |
@@ -69,6 +69,7 @@ Each line is one part of this repository and the light says how far it is today.
 * **Barcode** (`src/barcode.rs`, `[barcode]` in the settings file): `phoenix-laser barcode OUT.nc --text DATA` burns some data as a Code 128 barcode of the program's own (the characters from space to `~` in set B, and a text of an even number of figures in set C, half as wide, with its check symbol), filling each bar with lines along its height; the tests read it back with their own reader, but it has not been read with a scanner. The width of the narrowest bar, the height, the distance between the lines, the power, the speed, the passes and the limits are settings; a byte that is not a printable character, more than `max_chars` characters, a barcode wider than `max_width_mm`, a fill of more than `max_lines` moves, a burning that would take more than `max_minutes`, a power or a speed over the limit or work outside of the bed is refused, never cut down or shrunk, and the data is never written into a comment of the program. `--mirror` burns the mirror image for the back of glass or acrylic.
 * **Cross hatch** (`src/cut.rs`, `hatch_cross` in a layer): an `engrave` layer with `hatch_cross = on` (or `--cross` in `vector` and `trace`) is filled a second time with lines at right angles to the first ones, with the same spacing, in every pass, and the limit of lines holds over each set; the energy of a square millimetre that the list of layers gives is doubled, and the preview and the check of the program see it as any other program.
 * **The frame of the work** (`src/frame.rs`, `[frame]` in the settings file): `phoenix-laser frame` writes a program that traces the rectangle of the work with the laser off, from a size or from the box of what a G-code program burns, so the person sees where it will land; a weak pilot power needs `--confirm-laser-on` every time, is capped at 5 % (`max_pilot_percent` of `[frame]` changes the cap) and obeys the limit of power, and a frame outside the bed is refused.
+* **Positioning marks** (`src/frame.rs`, `[marks]` in the settings file): `phoenix-laser marks OUT.nc --size W,H` burns an L at each corner of the rectangle of the work (on its edges, or `margin_mm` outside of them) and, with `--centre-cross`, a cross in the middle, at a low power, so that the material can be put back in the same place and a second job lined up with the first. Unlike the frame, the marks are burnt: the power and the speed obey the limits of the machine, and an arm longer than half a side of the rectangle or marks that would go outside of the bed are refused, never cut down. The length of the arms, the margin, the power, the speed and the passes are settings.
 * **The preview** (`src/preview.rs`): `phoenix-laser preview` reads a G-code program (its own or another's), prints the moves, the burnt and travelled length, the box, the powers and a time that counts the braking at the corners, warns of what looks dangerous (laser on during a rapid move, no feed, power above full, work outside the bed, no end) and draws the path as an SVG; the tests read back what the engraving writes and check the same length.
 * **The library of materials** (`src/materials.rs`, `examples/materials.cfg`): what suits each material and way of working is written once in a plain text file (`[material NAME]`: power, speed, passes, focus step, beam width, hatch, dot size, dithering and tone curve) and chosen with `--material NAME --materials FILE`; the options of the command line win over it and the limit of power holds over both. `phoenix-laser materials FILE` lists the library.
 * **The limit of power** (`src/safety.rs`, `max_power_percent` in `[machine]`, `--max-power`): a program whose power is over the limit is refused with an error that names the layer or the option, never lowered without a word; the limit is 100 % until a file or an option says less.
@@ -157,6 +158,7 @@ phoenix-laser calibrate OUT.nc --material NAME --materials FILE [--steps 5] [--s
 phoenix-laser text OUT.nc --text TEXT [--height-mm 10] [--spacing 25] [--line-spacing 50] [--power 20] [--feed 1000] [--passes 1] [--max-minutes 240] [--align left|center|right] [--mirror] [--origin X,Y] [--bed X,Y] [--smax 1000] [--max-power 100] [--max-speed MM/MIN] [--config FILE] [--profile NAME]
 phoenix-laser qr OUT.nc --text DATA [--ecc L|M|Q|H] [--module-mm 1] [--line-mm 0.1] [--power 20] [--feed 1000] [--passes 1] [--max-minutes 240] [--invert] [--border-modules 0] [--overscan-mm 0] [--mirror] [--origin X,Y] [--bed X,Y] [--smax 1000] [--max-power 100] [--max-speed MM/MIN] [--print] [--config FILE] [--profile NAME]
 phoenix-laser barcode OUT.nc --text DATA [--module-mm 0.4] [--height-mm 10] [--line-mm 0.1] [--power 20] [--feed 1000] [--passes 1] [--max-minutes 240] [--mirror] [--origin X,Y] [--bed X,Y] [--smax 1000] [--max-power 100] [--max-speed MM/MIN] [--config FILE] [--profile NAME]
+phoenix-laser marks OUT.nc --size W,H [--origin X,Y] [--arm-mm 5] [--margin-mm 0] [--power 10] [--feed 1000] [--passes 1] [--centre-cross|--no-centre-cross] [--bed X,Y] [--smax 1000] [--max-power 100] [--max-speed MM/MIN] [--config FILE] [--profile NAME]
 phoenix-laser info IMAGE
 phoenix-laser cut DRAWING OUT.nc [--config FILE] [--power P] [--speed MM/MIN] [--passes N] [--focus-step MM] [--kerf MM] [--kerf-side none|auto|inside|outside]
               [--tabs N] [--tab-width MM] [--smax N] [--overscan MM] [--origin X,Y] [--bed X,Y] [--max-power P] [--max-speed MM/MIN] [--profile NAME] [--material NAME --materials FILE] [--dpi N] [--tolerance MM] [--dry-run]
@@ -195,7 +197,7 @@ To take a picture of the window without opening it by hand, run it with `--shot 
 
 ## 🧪 Testing
 
-The suite has 582 tests (`cargo test`, run on Windows and Linux in the CI). They check the normal cases, the edge cases and damaged input: empty files, garbage and cut files never panic. The CI also runs `cargo fmt --check`, `cargo clippy` with warnings as errors and `python -I tools/ci_validate.py`.
+The suite has 588 tests (`cargo test`, run on Windows and Linux in the CI). They check the normal cases, the edge cases and damaged input: empty files, garbage and cut files never panic. The CI also runs `cargo fmt --check`, `cargo clippy` with warnings as errors and `python -I tools/ci_validate.py`.
 
 ## 🏗️ Build & Release
 
@@ -236,7 +238,7 @@ EH3D-PHOENIX-LASER/
 │   ├── vector.rs                                a drawing once read: shapes in mm, layers, limits and the small geometry
 │   ├── verify.rs                                the check of a program: its SHA-256, what it does and a verdict against the limits of the machine
 │   ├── flatten.rs                               curves cut into straight pieces within a tolerance (Bezier, arcs)
-│   ├── frame.rs                                 the frame of the work: the rectangle traced with the laser off
+│   ├── frame.rs                                 the frame of the work (the rectangle traced with the laser off) and the marks at its corners
 │   ├── svg.rs                                   the SVG reader: a safe subset, no scripts, images or entities
 │   ├── dxf.rs                                   the DXF reader: lines, polylines, arcs, circles and splines, with units
 │   ├── energy.rs                                the energy of a pass for each millimetre or square millimetre, from the optical power

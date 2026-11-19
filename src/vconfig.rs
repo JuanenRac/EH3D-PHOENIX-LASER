@@ -688,6 +688,66 @@ impl BarcodeSettings {
     }
 }
 
+/// The positioning marks (`phoenix-laser marks`): an L at each corner of the rectangle of the work, and a cross in the middle when it is asked for, burnt at a low power.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct MarksSettings {
+    /// The length of each arm of an L (mm); not more than half a side of the rectangle that the marks go round.
+    pub arm_mm: f64,
+    /// How far outside of the rectangle of the work the marks are burnt (mm), so that they stay outside of what is burnt later.
+    pub margin_mm: f64,
+    /// A percent of full power; the limit of power of the machine still holds over it.
+    pub power_percent: f64,
+    pub speed_mm_min: f64,
+    /// How many times the marks are burnt.
+    pub passes: u32,
+    /// A cross in the middle of the rectangle too, with arms half as long as an arm of an L (off by default).
+    pub centre_cross: bool,
+}
+
+impl Default for MarksSettings {
+    fn default() -> Self {
+        MarksSettings {
+            arm_mm: 5.0,
+            margin_mm: 0.0,
+            power_percent: 10.0,
+            speed_mm_min: 1000.0,
+            passes: 1,
+            centre_cross: false,
+        }
+    }
+}
+
+impl MarksSettings {
+    pub fn validate(&self) -> Result<(), String> {
+        let range = |name: &str, v: f64, lo: f64, hi: f64| {
+            if v.is_finite() && (lo..=hi).contains(&v) {
+                Ok(())
+            } else {
+                Err(format!("marks {name} is {v}: it must be from {lo} to {hi}"))
+            }
+        };
+        range("arm_mm", self.arm_mm, 1.0, 100.0)?;
+        range("margin_mm", self.margin_mm, 0.0, 50.0)?;
+        if !(self.power_percent.is_finite()
+            && self.power_percent > 0.0
+            && self.power_percent <= 100.0)
+        {
+            return Err(format!(
+                "marks power_percent is {}: it must be more than 0 up to 100",
+                self.power_percent
+            ));
+        }
+        range("speed_mm_min", self.speed_mm_min, 1.0, 30_000.0)?;
+        if self.passes == 0 || self.passes > 20 {
+            return Err(format!(
+                "marks passes is {}: it must be from 1 to 20",
+                self.passes
+            ));
+        }
+        Ok(())
+    }
+}
+
 /// Where the rows of a text of several lines start (`phoenix-laser text --align`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TextAlign {
@@ -930,6 +990,8 @@ pub struct Settings {
     pub qr: QrSettings,
     /// The Code 128 barcode (`phoenix-laser barcode`).
     pub barcode: BarcodeSettings,
+    /// The positioning marks (`phoenix-laser marks`).
+    pub marks: MarksSettings,
     /// The tone curve of a picture before it becomes dots (`phoenix-laser engrave` and the window).
     pub tone: Tone,
     pub defaults: LayerParams,
@@ -964,6 +1026,7 @@ impl Default for Settings {
             text: TextSettings::default(),
             qr: QrSettings::default(),
             barcode: BarcodeSettings::default(),
+            marks: MarksSettings::default(),
             tone: Tone::default(),
             defaults: LayerParams::default(),
             layers: Vec::new(),
@@ -1066,6 +1129,7 @@ impl Settings {
         self.text.validate()?;
         self.qr.validate()?;
         self.barcode.validate()?;
+        self.marks.validate()?;
         self.tone.validate()?;
         self.defaults.validate(m.max_passes)?;
         if self.defaults.mode != LayerMode::Skip {
@@ -1277,6 +1341,15 @@ fn set_global(s: &mut Settings, section: &str, key: &str, value: &str) -> Result
             s.qr.border_modules = u32::try_from(whole(value)?)
                 .map_err(|_| "border_modules is too large".to_string())?
         }
+        ("marks", "arm_mm") => s.marks.arm_mm = number(value)?,
+        ("marks", "margin_mm") => s.marks.margin_mm = number(value)?,
+        ("marks", "power_percent") => s.marks.power_percent = number(value)?,
+        ("marks", "speed_mm_min") => s.marks.speed_mm_min = number(value)?,
+        ("marks", "passes") => {
+            s.marks.passes =
+                u32::try_from(whole(value)?).map_err(|_| "passes is too large".to_string())?
+        }
+        ("marks", "centre_cross") => s.marks.centre_cross = switch(value)?,
         ("barcode", "module_mm") => s.barcode.module_mm = number(value)?,
         ("barcode", "height_mm") => s.barcode.height_mm = number(value)?,
         ("barcode", "line_mm") => s.barcode.line_mm = number(value)?,
@@ -1375,7 +1448,7 @@ pub fn parse(text: &str) -> Result<Settings, String> {
             let (word, rest) = head.split_once(char::is_whitespace).unwrap_or((head, ""));
             let word = word.to_ascii_lowercase();
             section = match word.as_str() {
-                "limits" | "read" | "order" | "offset" | "hatch" | "machine" | "frame" | "focus" | "trace" | "tone" | "verify" | "calibrate" | "text" | "qr" | "barcode" | "defaults" if rest.trim().is_empty() => word,
+                "limits" | "read" | "order" | "offset" | "hatch" | "machine" | "frame" | "focus" | "trace" | "tone" | "verify" | "calibrate" | "text" | "qr" | "barcode" | "marks" | "defaults" if rest.trim().is_empty() => word,
                 "layer" if !rest.trim().is_empty() => {
                     named.push(rest.trim().to_lowercase());
                     format!("layer {}", rest.trim().to_lowercase())
@@ -1384,7 +1457,7 @@ pub fn parse(text: &str) -> Result<Settings, String> {
                     named_profiles.push(rest.trim().to_lowercase());
                     format!("profile {}", rest.trim().to_lowercase())
                 }
-                _ => return Err(format!("line {line}: '[{head}]' is not a section (limits, read, order, offset, hatch, machine, frame, focus, trace, tone, verify, calibrate, text, qr, barcode, defaults, layer NAME or profile NAME)")),
+                _ => return Err(format!("line {line}: '[{head}]' is not a section (limits, read, order, offset, hatch, machine, frame, focus, trace, tone, verify, calibrate, text, qr, barcode, marks, defaults, layer NAME or profile NAME)")),
             };
             continue;
         }
@@ -2099,6 +2172,48 @@ mod tests {
         )))
         .unwrap();
         assert_eq!(example.qr, QrSettings::default());
+    }
+
+    #[test]
+    fn the_marks_settings_are_read_checked_and_the_defaults_are_the_ones_of_the_example() {
+        assert_eq!(Settings::default().marks, MarksSettings::default());
+        let s = parse(
+            "[marks]\narm_mm = 8\nmargin_mm = 2.5\npower_percent = 12\nspeed_mm_min = 1500\npasses = 2\ncentre_cross = on\n",
+        )
+        .unwrap();
+        assert_eq!(
+            s.marks,
+            MarksSettings {
+                arm_mm: 8.0,
+                margin_mm: 2.5,
+                power_percent: 12.0,
+                speed_mm_min: 1500.0,
+                passes: 2,
+                centre_cross: true,
+            }
+        );
+        for bad in [
+            "arm_mm = 0.5",
+            "arm_mm = 101",
+            "margin_mm = -1",
+            "margin_mm = 51",
+            "power_percent = 0",
+            "power_percent = 101",
+            "speed_mm_min = 0",
+            "passes = 0",
+            "passes = 21",
+            "centre_cross = maybe",
+            "passes = 1.5",
+            "arm_mm = x",
+        ] {
+            assert!(parse(&format!("[marks]\n{bad}\n")).is_err(), "{bad}");
+        }
+        let example = load(std::path::Path::new(&format!(
+            "{}/examples/plate.cfg",
+            env!("CARGO_MANIFEST_DIR")
+        )))
+        .unwrap();
+        assert_eq!(example.marks, MarksSettings::default());
     }
 
     #[test]

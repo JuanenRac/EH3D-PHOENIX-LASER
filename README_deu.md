@@ -17,7 +17,7 @@
 
 ---
 
-**Ehrlichkeitscheck - was heute wirklich läuft:** eine Rust-Bibliothek und ein Kommandozeilenprogramm (`phoenix-laser`) mit 582 Tests, die auf einem Computer laufen: wandelt ein Bild per Dithering in Punkte um und schreibt den G-Code eines Lasers, der Zeile für Zeile mit dynamischer Leistung und Überlauf brennt, liest SVG- und DXF-Zeichnungen und schreibt den G-Code, der ihre Konturen schneidet (die inneren zuerst, mit Strahlbreite, Stegen und mehreren Durchgängen) und ihre Formen mit Linien graviert, mit den Einstellungen jeder Ebene in einer Datei, sowie ein Testraster Leistung gegen Vorschub. Es hat ein Fenster (mit `--features gui` gebaut), das ein Bild oder eine Zeichnung öffnet, den Weg des Lasers zeigt, die Einstellungen ändern lässt und den G-Code exportiert, aber das Fenster wurde noch nicht auf einem Bildschirm angesehen; es wurde nicht an einer Maschine erprobt und nicht mit einer Sammlung echter Dateien geprüft.
+**Ehrlichkeitscheck - was heute wirklich läuft:** eine Rust-Bibliothek und ein Kommandozeilenprogramm (`phoenix-laser`) mit 588 Tests, die auf einem Computer laufen: wandelt ein Bild per Dithering in Punkte um und schreibt den G-Code eines Lasers, der Zeile für Zeile mit dynamischer Leistung und Überlauf brennt, liest SVG- und DXF-Zeichnungen und schreibt den G-Code, der ihre Konturen schneidet (die inneren zuerst, mit Strahlbreite, Stegen und mehreren Durchgängen) und ihre Formen mit Linien graviert, mit den Einstellungen jeder Ebene in einer Datei, sowie ein Testraster Leistung gegen Vorschub. Es hat ein Fenster (mit `--features gui` gebaut), das ein Bild oder eine Zeichnung öffnet, den Weg des Lasers zeigt, die Einstellungen ändern lässt und den G-Code exportiert, aber das Fenster wurde noch nicht auf einem Bildschirm angesehen; es wurde nicht an einer Maschine erprobt und nicht mit einer Sammlung echter Dateien geprüft.
 
 ---
 
@@ -30,7 +30,7 @@
 |---|---|
 | Version | `0.1.1` |
 | Reifegrad | Funktionsfähig |
-| Tests | 582 |
+| Tests | 588 |
 | Technologie-Stack | Rust |
 | Auf echter Hardware | Nicht erprobt: nichts davon lief an einer Maschine |
 
@@ -46,7 +46,7 @@ Jede Zeile ist ein Teil dieses Repositorys, und die Ampel sagt, wie weit er heut
 |---|---|---|
 | Kern | 🟡 | wandelt ein Bild per Dithering in Punkte um und schreibt den G-Code eines Lasers, der Zeile für Zeile mit dynamischer Leistung und Überlauf brennt, liest SVG- und DXF-Zeichnungen und schneidet oder graviert sie ebenenweise (geordnete Konturen, Strahlbreite, Stege, Durchgänge, Schraffur) sowie ein Testraster Leistung gegen Vorschub; auf einem Computer mit normalen und beschädigten Eingaben getestet, nicht mit einer Sammlung echter Dateien. |
 | Kommandozeile | 🟡 | `phoenix-laser` (`engrave`, `calibrate`, `info`, `cut`, `vector`, `layers`) führt dieselben Funktionen wie die Bibliothek aus und gibt das Ergebnis aus; jeder Fehler kommt als Meldung und mit einem Exit-Code ungleich null zurück. |
-| Tests | 🟡 | 582 Tests bestehen (`cargo test`), mit Normalfällen, Grenzfällen und beschädigten Eingaben. |
+| Tests | 🟡 | 588 Tests bestehen (`cargo test`), mit Normalfällen, Grenzfällen und beschädigten Eingaben. |
 | Sicherheit | 🟡 | Reines sicheres Rust (`forbid(unsafe_code)`): nichts gerät bei den übergebenen Dateien in Panik und ein schlechter Wert ist ein Fehler mit Begründung; keine unabhängige Prüfung. |
 | Fenster | 🟠 | Geschrieben (egui, `--features gui`): ein Bild oder eine SVG- oder DXF-Zeichnung öffnen oder ablegen, den Weg des Lasers sehen (der Schnitt in einer Farbe, der Leerweg abgeschwächt), die Ebenentabelle bearbeiten, ein Kalibrierraster, Zoom und Verschieben, die Zeit schätzen, exportieren; die Logik ist getestet, aber das Fenster wurde noch nicht gebaut oder auf einem Bildschirm angesehen. |
 | Echte Hardware | 🔴 | Nicht erprobt: nichts davon wurde an einer Maschine ausgeführt. |
@@ -69,6 +69,7 @@ Jede Zeile ist ein Teil dieses Repositorys, und die Ampel sagt, wie weit er heut
 * **Strichcode** (`src/barcode.rs`, `[barcode]` in der Einstellungsdatei): `phoenix-laser barcode OUT.nc --text DATEN` brennt Daten als eigenen Code-128-Strichcode des Programms (die Zeichen von Leerzeichen bis `~` im Zeichensatz B und ein Text aus einer geraden Anzahl Ziffern im Zeichensatz C, halb so breit, mit Prüfzeichen), wobei jeder Balken entlang seiner Höhe mit Linien gefüllt wird; die Tests lesen ihn mit einem eigenen Leser zurück, er wurde aber noch nicht mit einem Scanner gelesen. Die Breite des schmalsten Balkens, die Höhe, der Abstand der Linien, die Leistung, die Geschwindigkeit, die Durchgänge und die Grenzen sind Einstellungen; ein Byte, das kein druckbares Zeichen ist, mehr als `max_chars` Zeichen, ein Strichcode, der breiter als `max_width_mm` ist, eine Füllung mit mehr als `max_lines` Bewegungen, ein Brennvorgang, der länger als `max_minutes` dauern würde, eine Leistung oder Geschwindigkeit über der Grenze oder Arbeit außerhalb des Bettes werden abgelehnt, nie beschnitten oder verkleinert, und die Daten werden nie in einen Kommentar des Programms geschrieben. `--mirror` brennt das Spiegelbild für die Rückseite von Glas oder Acryl.
 * **Kreuzschraffur** (`src/cut.rs`, `hatch_cross` in einer Ebene): eine `engrave`-Ebene mit `hatch_cross = on` (oder `--cross` bei `vector` und `trace`) wird ein zweites Mal mit Linien im rechten Winkel zu den ersten gefüllt, mit demselben Abstand, in jedem Durchgang, und die Grenze der Linien gilt für jeden Satz; die Energie eines Quadratmillimeters, die die Liste der Ebenen angibt, verdoppelt sich, und die Vorschau und die Prüfung des Programms sehen es wie jedes andere Programm.
 * **Der Rahmen der Arbeit** (`src/frame.rs`, `[frame]` in der Einstellungsdatei): `phoenix-laser frame` schreibt ein Programm, das das Rechteck der Arbeit bei ausgeschaltetem Laser abfährt, aus einer Größe oder aus dem Kasten dessen, was ein G-Code-Programm brennt, damit man sieht, wo es landet; eine schwache Pilotleistung braucht jedes Mal `--confirm-laser-on`, ist auf 5 % begrenzt (`max_pilot_percent` in `[frame]` ändert die Grenze) und folgt der Leistungsgrenze, und ein Rahmen außerhalb des Betts wird abgelehnt.
+* **Positioniermarken** (`src/frame.rs`, `[marks]` in der Einstellungsdatei): `phoenix-laser marks OUT.nc --size W,H` brennt mit geringer Leistung ein L an jede Ecke des Rechtecks der Arbeit (auf seinen Kanten oder `margin_mm` außerhalb) und mit `--centre-cross` ein Kreuz in der Mitte, damit das Material an dieselbe Stelle zurückgelegt und eine zweite Arbeit an der ersten ausgerichtet werden kann. Anders als der Rahmen werden die Marken gebrannt: Leistung und Geschwindigkeit halten die Grenzen der Maschine ein, und ein Arm, der länger als eine halbe Seite des Rechtecks ist, oder Marken, die das Bett verlassen würden, werden abgelehnt, nie gekürzt. Die Länge der Arme, der Rand, die Leistung, die Geschwindigkeit und die Durchgänge sind Einstellungen.
 * **Die Vorschau** (`src/preview.rs`): `phoenix-laser preview` liest ein G-Code-Programm (das eigene oder ein fremdes), gibt die Bewegungen, die gebrannte und die gefahrene Länge, den Kasten, die Leistungen und eine Zeit aus, die das Bremsen in den Ecken zählt, warnt vor Gefährlichem (Laser an bei einer Eilbewegung, kein Vorschub, Leistung über Vollleistung, Arbeit außerhalb des Betts, kein Ende) und zeichnet den Weg als SVG; die Tests lesen zurück, was das Gravieren schreibt, und prüfen dieselbe Länge.
 * **Die Materialbibliothek** (`src/materials.rs`, `examples/materials.cfg`): Was zu einem Material und einer Arbeitsweise passt, steht einmal in einer Textdatei (`[material NAME]`: Leistung, Geschwindigkeit, Durchgänge, Fokusschritt, Strahlbreite, Schraffur, Punktgröße, Dithering und Tonkurve) und wird mit `--material NAME --materials DATEI` gewählt; die Optionen der Kommandozeile gehen vor, und die Leistungsgrenze gilt über beiden. `phoenix-laser materials DATEI` listet die Bibliothek.
 * **Die Leistungsgrenze** (`src/safety.rs`, `max_power_percent` in `[machine]`, `--max-power`): Ein Programm, dessen Leistung über der Grenze liegt, wird mit einem Fehler abgelehnt, der die Ebene oder die Option nennt, und nie stillschweigend gesenkt; die Grenze ist 100 %, bis eine Datei oder eine Option weniger sagt.
@@ -157,6 +158,7 @@ phoenix-laser calibrate OUT.nc --material NAME --materials FILE [--steps 5] [--s
 phoenix-laser text OUT.nc --text TEXT [--height-mm 10] [--spacing 25] [--line-spacing 50] [--power 20] [--feed 1000] [--passes 1] [--max-minutes 240] [--align left|center|right] [--mirror] [--origin X,Y] [--bed X,Y] [--smax 1000] [--max-power 100] [--max-speed MM/MIN] [--config FILE] [--profile NAME]
 phoenix-laser qr OUT.nc --text DATA [--ecc L|M|Q|H] [--module-mm 1] [--line-mm 0.1] [--power 20] [--feed 1000] [--passes 1] [--max-minutes 240] [--invert] [--border-modules 0] [--overscan-mm 0] [--mirror] [--origin X,Y] [--bed X,Y] [--smax 1000] [--max-power 100] [--max-speed MM/MIN] [--print] [--config FILE] [--profile NAME]
 phoenix-laser barcode OUT.nc --text DATA [--module-mm 0.4] [--height-mm 10] [--line-mm 0.1] [--power 20] [--feed 1000] [--passes 1] [--max-minutes 240] [--mirror] [--origin X,Y] [--bed X,Y] [--smax 1000] [--max-power 100] [--max-speed MM/MIN] [--config FILE] [--profile NAME]
+phoenix-laser marks OUT.nc --size W,H [--origin X,Y] [--arm-mm 5] [--margin-mm 0] [--power 10] [--feed 1000] [--passes 1] [--centre-cross|--no-centre-cross] [--bed X,Y] [--smax 1000] [--max-power 100] [--max-speed MM/MIN] [--config FILE] [--profile NAME]
 phoenix-laser info IMAGE
 phoenix-laser cut DRAWING OUT.nc [--config FILE] [--power P] [--speed MM/MIN] [--passes N] [--focus-step MM] [--kerf MM] [--kerf-side none|auto|inside|outside]
               [--tabs N] [--tab-width MM] [--smax N] [--overscan MM] [--origin X,Y] [--bed X,Y] [--max-power P] [--max-speed MM/MIN] [--profile NAME] [--material NAME --materials FILE] [--dpi N] [--tolerance MM] [--dry-run]
@@ -195,7 +197,7 @@ Um ein Bild des Fensters aufzunehmen, ohne es von Hand zu öffnen, starten Sie e
 
 ## 🧪 Tests
 
-Die Suite hat 582 Tests (`cargo test`, in der CI unter Windows und Linux). Sie prüfen Normalfälle, Grenzfälle und beschädigte Eingaben: leere Dateien, Datenmüll und abgeschnittene Dateien lösen nie eine Panik aus. Die CI führt außerdem `cargo fmt --check`, `cargo clippy` mit Warnungen als Fehlern und `python -I tools/ci_validate.py` aus.
+Die Suite hat 588 Tests (`cargo test`, in der CI unter Windows und Linux). Sie prüfen Normalfälle, Grenzfälle und beschädigte Eingaben: leere Dateien, Datenmüll und abgeschnittene Dateien lösen nie eine Panik aus. Die CI führt außerdem `cargo fmt --check`, `cargo clippy` mit Warnungen als Fehlern und `python -I tools/ci_validate.py` aus.
 
 ## 🏗️ Build und Veröffentlichung
 
@@ -236,7 +238,7 @@ EH3D-PHOENIX-LASER/
 │   ├── vector.rs                                eine gelesene Zeichnung: Formen in mm, Ebenen, Grenzen und einfache Geometrie
 │   ├── verify.rs                                die Prüfung eines Programms: sein SHA-256, was es tut und ein Urteil gegen die Grenzen der Maschine
 │   ├── flatten.rs                               Kurven in gerade Stücke innerhalb einer Toleranz (Bézier, Bögen)
-│   ├── frame.rs                                 der Rahmen der Arbeit: das Rechteck bei ausgeschaltetem Laser
+│   ├── frame.rs                                 der Rahmen der Arbeit (das Rechteck bei ausgeschaltetem Laser) und die Marken an seinen Ecken
 │   ├── svg.rs                                   der SVG-Leser: eine sichere Teilmenge, ohne Skripte, Bilder oder Entitäten
 │   ├── dxf.rs                                   der DXF-Leser: Linien, Polylinien, Bögen, Kreise und Splines, mit Einheiten
 │   ├── energy.rs                                die Energie eines Durchgangs je Millimeter oder Quadratmillimeter aus der optischen Leistung
