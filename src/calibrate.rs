@@ -1,4 +1,6 @@
-//! A test grid to find the power and the feed that suit a material: a square for every pair of power and feed, burned line by line.
+//! A test grid to find the power and the feed that suit a material: a square for every pair of power and feed, burned line by line. The powers and the feeds can be spread around what a
+//! material of the library says ([`ladder`]), and the grid can burn the number of each column (the power) and of each row (the feed) next to it with a font of strokes ([`Labels`]), so
+//! that the squares can be read on the material when the program is long gone.
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Grid {
@@ -23,8 +25,169 @@ pub const MAX_CELLS: usize = 12;
 
 use crate::gcode_out::number as n;
 
+/// The numbers that are burnt next to the squares: the height of the figures, and the power and the feed they are burnt with. A figure is a line, so it is burnt at the power and the feed of
+/// the material, not at the weak or strong ones of the squares.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Labels {
+    /// The height of a figure (mm).
+    pub height_mm: f64,
+    /// A percent of full power.
+    pub power_percent: f64,
+    pub feed_mm_min: f64,
+}
+
+/// The tallest figure that is burnt.
+pub const MAX_LABEL_MM: f64 = 20.0;
+
+/// The strokes of a figure on a lattice 2 wide and 4 high. Only the figures and the point are drawn.
+fn glyph(c: char) -> Option<&'static [&'static [(f64, f64)]]> {
+    Some(match c {
+        '0' => &[&[(0.0, 0.0), (2.0, 0.0), (2.0, 4.0), (0.0, 4.0), (0.0, 0.0)]],
+        '1' => &[&[(0.0, 3.0), (1.0, 4.0), (1.0, 0.0)]],
+        '2' => &[&[
+            (0.0, 4.0),
+            (2.0, 4.0),
+            (2.0, 2.0),
+            (0.0, 2.0),
+            (0.0, 0.0),
+            (2.0, 0.0),
+        ]],
+        '3' => &[
+            &[(0.0, 4.0), (2.0, 4.0), (2.0, 0.0), (0.0, 0.0)],
+            &[(0.0, 2.0), (2.0, 2.0)],
+        ],
+        '4' => &[
+            &[(0.0, 4.0), (0.0, 2.0), (2.0, 2.0)],
+            &[(2.0, 4.0), (2.0, 0.0)],
+        ],
+        '5' => &[&[
+            (2.0, 4.0),
+            (0.0, 4.0),
+            (0.0, 2.0),
+            (2.0, 2.0),
+            (2.0, 0.0),
+            (0.0, 0.0),
+        ]],
+        '6' => &[&[
+            (2.0, 4.0),
+            (0.0, 4.0),
+            (0.0, 0.0),
+            (2.0, 0.0),
+            (2.0, 2.0),
+            (0.0, 2.0),
+        ]],
+        '7' => &[&[(0.0, 4.0), (2.0, 4.0), (2.0, 0.0)]],
+        '8' => &[
+            &[(0.0, 0.0), (2.0, 0.0), (2.0, 4.0), (0.0, 4.0), (0.0, 0.0)],
+            &[(0.0, 2.0), (2.0, 2.0)],
+        ],
+        '9' => &[&[
+            (2.0, 2.0),
+            (0.0, 2.0),
+            (0.0, 4.0),
+            (2.0, 4.0),
+            (2.0, 0.0),
+            (0.0, 0.0),
+        ]],
+        '.' => &[&[(1.0, 0.0), (1.0, 0.4)]],
+        _ => return None,
+    })
+}
+
+/// A number as it is burnt: whole when it is whole, with one decimal otherwise.
+fn label_text(v: f64) -> String {
+    if (v - v.round()).abs() < 1e-9 {
+        format!("{}", v.round() as i64)
+    } else {
+        format!("{v:.1}")
+    }
+}
+
+/// How wide a text is when the figures are `height_mm` high (a figure is half as wide as it is high, with a quarter of the height between two).
+fn text_width(text: &str, height_mm: f64) -> f64 {
+    let unit = height_mm / 4.0;
+    (text.chars().count() as f64 * 3.0 - 1.0).max(0.0) * unit
+}
+
+/// The strokes of a text whose lower left corner is at `(x, y)`.
+fn text_strokes(text: &str, x: f64, y: f64, height_mm: f64) -> Vec<Vec<(f64, f64)>> {
+    let unit = height_mm / 4.0;
+    let mut out = Vec::new();
+    for (k, c) in text.chars().enumerate() {
+        let Some(strokes) = glyph(c) else { continue };
+        let left = x + k as f64 * 3.0 * unit;
+        for s in strokes {
+            out.push(
+                s.iter()
+                    .map(|&(gx, gy)| (left + gx * unit, y + gy * unit))
+                    .collect(),
+            );
+        }
+    }
+    out
+}
+
+/// `steps` values spread evenly around `center`, from `spread_percent` below it to `spread_percent` above it (one step gives the centre alone), rounded to `decimals` places and kept
+/// between `lo` and `hi`. A value that the range cuts off is held at the end of the range, and a value that comes out twice is given once, so the ladder never asks for more than the range
+/// allows and may be shorter than `steps`.
+pub fn ladder(
+    center: f64,
+    steps: usize,
+    spread_percent: f64,
+    decimals: u32,
+    lo: f64,
+    hi: f64,
+) -> Result<Vec<f64>, String> {
+    if !(1..=MAX_CELLS).contains(&steps) {
+        return Err(format!("the steps must be from 1 to {MAX_CELLS}"));
+    }
+    if !(spread_percent.is_finite() && (0.0..=90.0).contains(&spread_percent)) {
+        return Err("the spread must be a percent from 0 to 90".to_string());
+    }
+    if !(center.is_finite() && lo.is_finite() && hi.is_finite() && lo <= center && center <= hi) {
+        return Err(format!(
+            "the middle of the ladder, {center}, is outside of {lo} to {hi}"
+        ));
+    }
+    let scale = 10f64.powi(decimals as i32);
+    let mut out: Vec<f64> = Vec::new();
+    for k in 0..steps {
+        let t = if steps == 1 {
+            0.0
+        } else {
+            2.0 * k as f64 / (steps - 1) as f64 - 1.0
+        };
+        let v = (center * (1.0 + spread_percent / 100.0 * t) * scale).round() / scale;
+        let v = v.clamp(lo, hi);
+        if out.last() != Some(&v) {
+            out.push(v);
+        }
+    }
+    Ok(out)
+}
+
 /// The G-code of the grid: one column for each power (a percent of full power) and one row for each feed (mm/min).
 pub fn grid(powers_percent: &[f64], feeds_mm_min: &[f64], g: &Grid) -> Result<String, String> {
+    build(powers_percent, feeds_mm_min, g, None)
+}
+
+/// The grid with the power of each column burnt below it and the feed of each row burnt on its left, at the power and the feed of `labels`. The whole drawing starts at the corner `0, 0`:
+/// the squares are moved up and to the right to make room for the figures.
+pub fn labelled_grid(
+    powers_percent: &[f64],
+    feeds_mm_min: &[f64],
+    g: &Grid,
+    labels: &Labels,
+) -> Result<String, String> {
+    build(powers_percent, feeds_mm_min, g, Some(labels))
+}
+
+fn build(
+    powers_percent: &[f64],
+    feeds_mm_min: &[f64],
+    g: &Grid,
+    labels: Option<&Labels>,
+) -> Result<String, String> {
     if powers_percent.is_empty()
         || feeds_mm_min.is_empty()
         || powers_percent.len() > MAX_CELLS
@@ -63,13 +226,47 @@ pub fn grid(powers_percent: &[f64], feeds_mm_min: &[f64], g: &Grid) -> Result<St
                 .into(),
         );
     }
+    // the room for the figures: on the left, as wide as the widest feed, and below, as high as a figure
+    let (mut ox, mut oy) = (0.0, 0.0);
+    let mut label_strokes: Vec<Vec<(f64, f64)>> = Vec::new();
+    let mut label_s = 0u32;
+    if let Some(l) = labels {
+        if !(l.height_mm.is_finite() && (1.0..=MAX_LABEL_MM).contains(&l.height_mm)) {
+            return Err(format!(
+                "the height of the figures must be from 1 to {MAX_LABEL_MM} mm"
+            ));
+        }
+        if !(l.power_percent.is_finite() && (0.0..=100.0).contains(&l.power_percent))
+            || !(l.feed_mm_min.is_finite() && (1.0..=30_000.0).contains(&l.feed_mm_min))
+        {
+            return Err("the power or the feed of the figures is out of range".to_string());
+        }
+        label_s = (f64::from(g.s_max) * l.power_percent / 100.0).round() as u32;
+        let widest = feeds_mm_min
+            .iter()
+            .map(|f| text_width(&label_text(*f), l.height_mm))
+            .fold(0.0f64, f64::max);
+        (ox, oy) = (widest + 2.0, l.height_mm + 1.5);
+        let pitch = g.square_mm + g.gap_mm;
+        for (col, power) in powers_percent.iter().enumerate() {
+            let text = label_text(*power);
+            let x = ox + col as f64 * pitch + (g.square_mm - text_width(&text, l.height_mm)) / 2.0;
+            label_strokes.extend(text_strokes(&text, x, 0.5, l.height_mm));
+        }
+        for (row, feed) in feeds_mm_min.iter().enumerate() {
+            let text = label_text(*feed);
+            let x = ox - 1.5 - text_width(&text, l.height_mm);
+            let y = oy + row as f64 * pitch + (g.square_mm - l.height_mm) / 2.0;
+            label_strokes.extend(text_strokes(&text, x, y, l.height_mm));
+        }
+    }
     let mut out = String::from("G21\nG90\nM4 S0\n");
     let lines = (g.square_mm / g.line_spacing_mm).floor() as usize + 1;
     let mut last_s = 0u32;
     for (row, feed) in feeds_mm_min.iter().enumerate() {
         for (col, power) in powers_percent.iter().enumerate() {
-            let x0 = col as f64 * (g.square_mm + g.gap_mm);
-            let y0 = row as f64 * (g.square_mm + g.gap_mm);
+            let x0 = ox + col as f64 * (g.square_mm + g.gap_mm);
+            let y0 = oy + row as f64 * (g.square_mm + g.gap_mm);
             let s = (f64::from(g.s_max) * power / 100.0).round() as u32;
             // no rapid move with the power of the last square still set
             if last_s != 0 {
@@ -93,6 +290,28 @@ pub fn grid(powers_percent: &[f64], feeds_mm_min: &[f64], g: &Grid) -> Result<St
                 out.push_str(&format!("G1 X{} S{s} F{}\n", n(b)?, n(*feed)?));
             }
             last_s = s;
+        }
+    }
+    if let Some(l) = labels {
+        let feed = n(l.feed_mm_min)?;
+        out.push_str(&format!(
+            "(figures at {}% feed {feed})\n",
+            n(l.power_percent)?
+        ));
+        for stroke in &label_strokes {
+            // no rapid move with the power of the last stroke still set
+            if last_s != 0 {
+                out.push_str("S0\n");
+                last_s = 0;
+            }
+            let Some(((fx, fy), rest)) = stroke.split_first() else {
+                continue;
+            };
+            out.push_str(&format!("G0 X{} Y{}\n", n(*fx)?, n(*fy)?));
+            for (x, y) in rest {
+                out.push_str(&format!("G1 X{} Y{} S{label_s} F{feed}\n", n(*x)?, n(*y)?));
+                last_s = label_s;
+            }
         }
     }
     out.push_str("M5\nM2\n");
@@ -237,5 +456,187 @@ mod tests {
         ] {
             assert!(focus_test(&bad, 1000, 100.0).is_err(), "{bad:?}");
         }
+    }
+
+    #[test]
+    fn a_ladder_spreads_around_the_middle_and_stays_in_its_range() {
+        // 5 steps from 40 % below to 40 % above 50
+        assert_eq!(
+            ladder(50.0, 5, 40.0, 1, 1.0, 100.0).unwrap(),
+            vec![30.0, 40.0, 50.0, 60.0, 70.0]
+        );
+        // a single step is the middle alone, and a spread of 0 repeats nothing
+        assert_eq!(ladder(50.0, 1, 40.0, 1, 1.0, 100.0).unwrap(), vec![50.0]);
+        assert_eq!(ladder(50.0, 5, 0.0, 1, 1.0, 100.0).unwrap(), vec![50.0]);
+        // what goes over the end of the range is held at it and given once
+        assert_eq!(
+            ladder(90.0, 5, 40.0, 1, 1.0, 100.0).unwrap(),
+            vec![54.0, 72.0, 90.0, 100.0]
+        );
+        assert_eq!(
+            ladder(10.0, 3, 90.0, 1, 5.0, 100.0).unwrap(),
+            vec![5.0, 10.0, 19.0]
+        );
+        // the places after the point
+        assert_eq!(
+            ladder(33.0, 3, 10.0, 1, 1.0, 100.0).unwrap(),
+            vec![29.7, 33.0, 36.3]
+        );
+        assert_eq!(
+            ladder(333.0, 3, 10.0, 0, 10.0, 30_000.0).unwrap(),
+            vec![300.0, 333.0, 366.0]
+        );
+        // it never leaves the range, whatever it is given
+        for center in [1.0, 25.0, 100.0] {
+            for spread in [0.0, 33.0, 90.0] {
+                for v in ladder(center, 12, spread, 1, 1.0, 100.0).unwrap() {
+                    assert!((1.0..=100.0).contains(&v), "{center} {spread} {v}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn a_ladder_that_cannot_be_made_is_an_error() {
+        for (steps, spread, center) in [
+            (0, 40.0, 50.0),
+            (MAX_CELLS + 1, 40.0, 50.0),
+            (5, -1.0, 50.0),
+            (5, 90.5, 50.0),
+            (5, f64::NAN, 50.0),
+            (5, 40.0, 0.5),
+            (5, 40.0, 101.0),
+            (5, 40.0, f64::NAN),
+        ] {
+            assert!(
+                ladder(center, steps, spread, 1, 1.0, 100.0).is_err(),
+                "{steps} {spread} {center}"
+            );
+        }
+    }
+
+    fn labels() -> Labels {
+        Labels {
+            height_mm: 3.0,
+            power_percent: 50.0,
+            feed_mm_min: 1000.0,
+        }
+    }
+
+    #[test]
+    fn the_figures_of_a_label_are_strokes_inside_their_cell_and_a_missing_glyph_draws_nothing() {
+        for c in "0123456789.".chars() {
+            let strokes = glyph(c).unwrap();
+            assert!(!strokes.is_empty());
+            for s in strokes {
+                assert!(s.len() >= 2, "{c}");
+                for &(x, y) in *s {
+                    assert!((0.0..=2.0).contains(&x) && (0.0..=4.0).contains(&y), "{c}");
+                }
+            }
+        }
+        assert!(glyph('x').is_none() && glyph(' ').is_none());
+        // 4 pt high figures: a unit is 1 mm, a figure is 2 wide and the next one starts 3 on
+        let s = text_strokes("10", 5.0, 7.0, 4.0);
+        assert_eq!(s.len(), 2);
+        assert!(s[0].iter().all(|p| (5.0..=7.0).contains(&p.0)));
+        assert!(s[1].iter().all(|p| (8.0..=10.0).contains(&p.0)));
+        assert!(s.iter().flatten().all(|p| (7.0..=11.0).contains(&p.1)));
+        assert_eq!(text_width("10", 4.0), 5.0);
+        assert_eq!(text_width("", 4.0), 0.0);
+        assert!(text_strokes("x y", 0.0, 0.0, 4.0).is_empty());
+        assert_eq!(label_text(40.0), "40");
+        assert_eq!(label_text(37.5), "37.5");
+        assert_eq!(label_text(33.333), "33.3");
+    }
+
+    #[test]
+    fn the_grid_with_figures_is_the_grid_moved_to_make_room_and_passes_the_check_of_the_program() {
+        let (powers, feeds) = ([20.0, 40.0], [1000.0, 2000.0]);
+        let g = Grid::default();
+        let plain = grid(&powers, &feeds, &g).unwrap();
+        let text = labelled_grid(&powers, &feeds, &g, &labels()).unwrap();
+        let check = |program: &str| {
+            let v = crate::verify::verify(program.as_bytes(), &crate::verify::Limits::default());
+            assert!(v.as_ref().is_ok_and(|v| v.passes()), "{v:?}");
+        };
+        check(&text);
+        check(&plain);
+        let o = Options::default();
+        let a = analyse(&read(&plain), &o).unwrap();
+        let b = analyse(&read(&text), &o).unwrap();
+        // room for the widest feed ("2000" is 8.25 mm wide, 2 mm of air) on the left and for the figures below
+        let (ox, oy) = (8.25 + 2.0, 3.0 + 1.5);
+        let ((alx, aly), (ahx, ahy)) = a.bounds.unwrap();
+        let ((blx, bly), (bhx, bhy)) = b.bounds.unwrap();
+        assert!((ahx + ox - bhx).abs() < 1e-6 && (ahy + oy - bhy).abs() < 1e-6);
+        assert_eq!((alx, aly), (0.0, 0.0));
+        // the figures start at 0.5 mm from the edge and nothing goes below zero
+        assert!(blx >= 0.0 && bly >= 0.0);
+        let (lo, _) = b.burn_bounds.unwrap();
+        assert!(
+            (lo.0 - 0.5).abs() < 1e-6 && (lo.1 - 0.5).abs() < 1e-6,
+            "{lo:?}"
+        );
+        // one move to start each stroke, after the 4 squares: 5 strokes for "20" and "40" (the 4 has two) and 8 for "1000" and "2000"
+        let rapid = |t: &str| t.lines().filter(|l| l.starts_with("G0 ")).count();
+        assert_eq!(rapid(&plain), 4);
+        assert_eq!(rapid(&text), 4 + 5 + 8);
+        assert!(text.contains("(figures at 50% feed 1000)"));
+        // the figures are burnt at S500 (50 % of 1000), the squares at their own power
+        assert!(text.contains(" S500 F1000"));
+        // no rapid move with the power of the stroke before still set
+        let mut s = 0u32;
+        for line in text.lines() {
+            let words: Vec<&str> = line.split_whitespace().collect();
+            for w in &words {
+                if let Some(v) = w.strip_prefix('S').and_then(|v| v.parse::<u32>().ok()) {
+                    s = v;
+                }
+            }
+            if words.first() == Some(&"G0") {
+                assert_eq!(s, 0, "{line}");
+            }
+        }
+        // the squares of the grid with figures are the ones of the plain grid
+        let squares = |t: &str| t.lines().filter(|l| l.starts_with("(power ")).count();
+        assert_eq!(squares(&text), squares(&plain));
+    }
+
+    #[test]
+    fn the_figures_obey_their_own_ranges() {
+        let g = Grid::default();
+        for bad in [
+            Labels {
+                height_mm: 0.5,
+                ..labels()
+            },
+            Labels {
+                height_mm: MAX_LABEL_MM + 1.0,
+                ..labels()
+            },
+            Labels {
+                height_mm: f64::NAN,
+                ..labels()
+            },
+            Labels {
+                power_percent: 101.0,
+                ..labels()
+            },
+            Labels {
+                feed_mm_min: 0.0,
+                ..labels()
+            },
+        ] {
+            assert!(
+                labelled_grid(&[20.0], &[1000.0], &g, &bad).is_err(),
+                "{bad:?}"
+            );
+        }
+        // a grid with no figures is the grid it always was
+        assert_eq!(
+            grid(&[20.0], &[1000.0], &g).unwrap(),
+            build(&[20.0], &[1000.0], &g, None).unwrap()
+        );
     }
 }

@@ -17,7 +17,7 @@ key = value
 key = value
 ```
 
-Sections: `[limits]`, `[read]`, `[order]`, `[offset]`, `[hatch]`, `[machine]`, `[frame]`, `[focus]`, `[trace]`, `[tone]`, `[verify]`, `[defaults]`, one `[layer NAME]` for each layer or colour and one `[profile NAME]` for each machine. `[defaults]` is what a layer gets that the file
+Sections: `[limits]`, `[read]`, `[order]`, `[offset]`, `[hatch]`, `[machine]`, `[frame]`, `[focus]`, `[trace]`, `[tone]`, `[verify]`, `[calibrate]`, `[defaults]`, one `[layer NAME]` for each layer or colour and one `[profile NAME]` for each machine. `[defaults]` is what a layer gets that the file
 does not name, and also what every `[layer NAME]` starts from (wherever in the file `[defaults]` is written). The switches are `on` and `off`.
 
 ## What a layer is
@@ -223,6 +223,19 @@ The check of a program (`phoenix-laser verify`). Work outside the bed is a failu
 | `overscan_mm` | 0 | how far (mm) the head may go past the bed with the laser off, from 0 to 100; 0 allows none. A move that burns outside the bed fails whatever this says |
 
 The only key of `[verify]` is `overscan_mm`.
+
+### `[calibrate]`
+
+The test grid made from a material (`phoenix-laser calibrate --material NAME --materials FILE`): a grid of squares with the powers and the feeds spread around the power and the speed of the material, and, when asked, the power of each column and the feed of each row burnt next to the squares. The powers are held between 1 % and `max_power_percent`, the feeds between 10 mm/min and `max_speed_mm_min`, and a value that comes out twice is given once, so the grid never asks for more than the limits allow; the material itself over a limit is refused. `--powers` and `--feeds` give a list and win over the ladder, and the options `--steps`, `--spread`, `--labels`, `--no-labels` and `--label-mm` take the place of these keys.
+
+| Key | Default | Meaning |
+|---|---|---|
+| `steps` | 5 | how many powers and how many feeds the ladder has, from 1 to 12 |
+| `spread_percent` | 40 | how far the ladder goes below and above what the material says, as a percent of it, from 0 to 90 |
+| `labels` | off | burn the power of each column and the feed of each row next to the squares, at the power and the speed of the material (or the middle of the lists) |
+| `label_mm` | 3 | the height of the figures, from 1 to 20 mm |
+
+The keys of `[calibrate]` are `steps`, `spread_percent`, `labels` and `label_mm`.
 
 ### `[defaults]` and `[layer NAME]`
 

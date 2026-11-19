@@ -248,6 +248,219 @@ fn verify_allows_the_overscan_of_another_program_only_as_far_as_it_is_told() {
 }
 
 #[test]
+fn calibrate_spreads_the_powers_and_the_feeds_around_a_material_and_burns_the_figures() {
+    let lib = tmp("calibrate-lib.cfg");
+    std::fs::write(
+        &lib,
+        "[material test wood]\npower = 50\nspeed = 1000\n[material only power]\npower = 30\n",
+    )
+    .unwrap();
+    let out_file = tmp("calibrate-material.nc");
+    let (ok, out, err) = run(&[
+        "calibrate",
+        &out_file,
+        "--material",
+        "test wood",
+        "--materials",
+        &lib,
+    ]);
+    assert!(ok, "{err}");
+    // 5 powers from 30 to 70 % and 5 feeds from 600 to 1400 mm/min
+    assert!(out.contains("25 squares written"), "{out}");
+    assert!(
+        out.contains("powers 30, 40, 50, 60, 70 %, feeds 600, 800, 1000, 1200, 1400 mm/min"),
+        "{out}"
+    );
+    let text = std::fs::read_to_string(&out_file).unwrap();
+    assert!(
+        !text.contains("(figures"),
+        "no figures unless they are asked for"
+    );
+    // the figures, with the option, and the check of the program passes
+    let (ok, out, err) = run(&[
+        "calibrate",
+        &out_file,
+        "--material",
+        "test wood",
+        "--materials",
+        &lib,
+        "--labels",
+        "--steps",
+        "3",
+        "--spread",
+        "20",
+    ]);
+    assert!(ok, "{err}");
+    assert!(out.contains("9 squares written"), "{out}");
+    assert!(out.contains("powers 40, 50, 60 %"), "{out}");
+    let text = std::fs::read_to_string(&out_file).unwrap();
+    assert!(text.contains("(figures at 50% feed 1000)"), "{text}");
+    assert!(text.contains("grid of power against feed with figures"));
+    let (ok, out, err) = run(&["verify", &out_file]);
+    assert!(ok, "{out} {err}");
+    // the limits hold over the ladder: it is held at them and never goes over
+    let (ok, out, err) = run(&[
+        "calibrate",
+        &out_file,
+        "--material",
+        "test wood",
+        "--materials",
+        &lib,
+        "--max-power",
+        "55",
+        "--max-speed",
+        "1100",
+    ]);
+    assert!(ok, "{err}");
+    assert!(
+        out.contains("powers 30, 40, 50, 55 %, feeds 600, 800, 1000, 1100 mm/min"),
+        "{out}"
+    );
+    // a material over the limit is refused, never lowered
+    let (ok, _, err) = run(&[
+        "calibrate",
+        &out_file,
+        "--material",
+        "test wood",
+        "--materials",
+        &lib,
+        "--max-power",
+        "40",
+    ]);
+    assert!(!ok);
+    assert!(err.contains("the power of the material"), "{err}");
+    // the lists that are given win over the material, and then the ladder options have nothing to do
+    let (ok, out, err) = run(&[
+        "calibrate",
+        &out_file,
+        "--material",
+        "test wood",
+        "--materials",
+        &lib,
+        "--powers",
+        "10,20",
+    ]);
+    assert!(ok, "{err}");
+    assert!(out.contains("10 squares written"), "{out}");
+    let (ok, _, err) = run(&[
+        "calibrate",
+        &out_file,
+        "--powers",
+        "10,20",
+        "--feeds",
+        "1000",
+        "--steps",
+        "3",
+    ]);
+    assert!(!ok);
+    assert!(
+        err.contains("--steps and --spread need --material"),
+        "{err}"
+    );
+    // a material with no speed needs the feeds
+    let (ok, _, err) = run(&[
+        "calibrate",
+        &out_file,
+        "--material",
+        "only power",
+        "--materials",
+        &lib,
+    ]);
+    assert!(!ok);
+    assert!(err.contains("has no speed"), "{err}");
+    // the library is never written over
+    let (ok, _, err) = run(&[
+        "calibrate",
+        &lib,
+        "--material",
+        "test wood",
+        "--materials",
+        &lib,
+    ]);
+    assert!(!ok);
+    assert!(err.contains("written over"), "{err}");
+    let (ok, _, err) = run(&[
+        "calibrate",
+        &out_file,
+        "--powers",
+        "10",
+        "--feeds",
+        "1000",
+        "--labels",
+        "--no-labels",
+    ]);
+    assert!(!ok);
+    assert!(err.contains("cannot be given together"), "{err}");
+}
+
+#[test]
+fn the_figures_and_the_ladder_can_come_from_the_settings_file() {
+    let lib = tmp("calibrate-cfg-lib.cfg");
+    std::fs::write(&lib, "[material m]\npower = 50\nspeed = 1000\n").unwrap();
+    let cfg = tmp("calibrate-cfg.cfg");
+    std::fs::write(
+        &cfg,
+        "[calibrate]\nsteps = 3\nspread_percent = 20\nlabels = on\nlabel_mm = 4\n",
+    )
+    .unwrap();
+    let out_file = tmp("calibrate-cfg.nc");
+    let (ok, out, err) = run(&[
+        "calibrate",
+        &out_file,
+        "--material",
+        "m",
+        "--materials",
+        &lib,
+        "--config",
+        &cfg,
+    ]);
+    assert!(ok, "{err}");
+    assert!(out.contains("9 squares written"), "{out}");
+    assert!(std::fs::read_to_string(&out_file)
+        .unwrap()
+        .contains("(figures at 50% feed 1000)"));
+    // the options win over the file
+    let (ok, out, err) = run(&[
+        "calibrate",
+        &out_file,
+        "--material",
+        "m",
+        "--materials",
+        &lib,
+        "--config",
+        &cfg,
+        "--no-labels",
+        "--steps",
+        "2",
+    ]);
+    assert!(ok, "{err}");
+    assert!(out.contains("4 squares written"), "{out}");
+    assert!(!std::fs::read_to_string(&out_file)
+        .unwrap()
+        .contains("(figures"));
+    // a value out of range is an error that names it
+    for (key, bad) in [
+        ("steps", "13"),
+        ("spread_percent", "91"),
+        ("label_mm", "0.5"),
+    ] {
+        std::fs::write(&cfg, format!("[calibrate]\n{key} = {bad}\n")).unwrap();
+        let (ok, _, err) = run(&[
+            "calibrate",
+            &out_file,
+            "--powers",
+            "10",
+            "--feeds",
+            "1000",
+            "--config",
+            &cfg,
+        ]);
+        assert!(!ok, "{key}");
+        assert!(err.contains(key), "{err}");
+    }
+}
+
+#[test]
 fn inverting_the_picture_changes_what_burns() {
     let (plain, flipped) = (tmp("plain.nc"), tmp("flipped.nc"));
     let base = [

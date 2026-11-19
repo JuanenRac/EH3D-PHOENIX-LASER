@@ -394,6 +394,56 @@ impl FocusSettings {
     }
 }
 
+/// The test grid that is made from a material (`phoenix-laser calibrate --material`) and the figures burnt next to its squares.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct CalibrateSettings {
+    /// How many powers and how many feeds the ladder around the material has.
+    pub steps: u32,
+    /// How far the ladder goes below and above what the material says, as a percent of it.
+    pub spread_percent: f64,
+    /// The power of each column and the feed of each row are burnt next to the squares.
+    pub labels: bool,
+    /// The height of the figures (mm).
+    pub label_mm: f64,
+}
+
+impl Default for CalibrateSettings {
+    fn default() -> Self {
+        CalibrateSettings {
+            steps: 5,
+            spread_percent: 40.0,
+            labels: false,
+            label_mm: 3.0,
+        }
+    }
+}
+
+impl CalibrateSettings {
+    pub fn validate(&self) -> Result<(), String> {
+        let max = crate::calibrate::MAX_CELLS;
+        if self.steps < 1 || self.steps as usize > max {
+            return Err(format!(
+                "calibrate steps is {}: it must be from 1 to {max}",
+                self.steps
+            ));
+        }
+        if !(self.spread_percent.is_finite() && (0.0..=90.0).contains(&self.spread_percent)) {
+            return Err(format!(
+                "calibrate spread_percent is {}: it must be from 0 to 90",
+                self.spread_percent
+            ));
+        }
+        let top = crate::calibrate::MAX_LABEL_MM;
+        if !(self.label_mm.is_finite() && (1.0..=top).contains(&self.label_mm)) {
+            return Err(format!(
+                "calibrate label_mm is {}: it must be from 1 to {top}",
+                self.label_mm
+            ));
+        }
+        Ok(())
+    }
+}
+
 /// The check of a program (`phoenix-laser verify`).
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct VerifySettings {
@@ -510,6 +560,7 @@ pub struct Settings {
     pub focus: FocusSettings,
     pub trace: TraceSettings,
     pub verify: VerifySettings,
+    pub calibrate: CalibrateSettings,
     /// The tone curve of a picture before it becomes dots (`phoenix-laser engrave` and the window).
     pub tone: Tone,
     pub defaults: LayerParams,
@@ -540,6 +591,7 @@ impl Default for Settings {
             focus: FocusSettings::default(),
             trace: TraceSettings::default(),
             verify: VerifySettings::default(),
+            calibrate: CalibrateSettings::default(),
             tone: Tone::default(),
             defaults: LayerParams::default(),
             layers: Vec::new(),
@@ -638,6 +690,7 @@ impl Settings {
         self.focus.validate()?;
         self.trace.validate()?;
         self.verify.validate()?;
+        self.calibrate.validate()?;
         self.tone.validate()?;
         self.defaults.validate(m.max_passes)?;
         if self.defaults.mode != LayerMode::Skip {
@@ -792,6 +845,13 @@ fn set_global(s: &mut Settings, section: &str, key: &str, value: &str) -> Result
         ("tone", "invert") => s.tone.invert = switch(value)?,
         ("tone", "auto_level") => s.tone.auto_level = switch(value)?,
         ("verify", "overscan_mm") => s.verify.overscan_mm = number(value)?,
+        ("calibrate", "steps") => {
+            s.calibrate.steps =
+                u32::try_from(whole(value)?).map_err(|_| "steps is too large".to_string())?
+        }
+        ("calibrate", "spread_percent") => s.calibrate.spread_percent = number(value)?,
+        ("calibrate", "labels") => s.calibrate.labels = switch(value)?,
+        ("calibrate", "label_mm") => s.calibrate.label_mm = number(value)?,
         ("trace", "threshold") => {
             s.trace.threshold = u8::try_from(whole(value)?)
                 .map_err(|_| "trace threshold must be from 0 to 255".to_string())?
@@ -864,7 +924,7 @@ pub fn parse(text: &str) -> Result<Settings, String> {
             let (word, rest) = head.split_once(char::is_whitespace).unwrap_or((head, ""));
             let word = word.to_ascii_lowercase();
             section = match word.as_str() {
-                "limits" | "read" | "order" | "offset" | "hatch" | "machine" | "frame" | "focus" | "trace" | "tone" | "verify" | "defaults" if rest.trim().is_empty() => word,
+                "limits" | "read" | "order" | "offset" | "hatch" | "machine" | "frame" | "focus" | "trace" | "tone" | "verify" | "calibrate" | "defaults" if rest.trim().is_empty() => word,
                 "layer" if !rest.trim().is_empty() => {
                     named.push(rest.trim().to_lowercase());
                     format!("layer {}", rest.trim().to_lowercase())
@@ -873,7 +933,7 @@ pub fn parse(text: &str) -> Result<Settings, String> {
                     named_profiles.push(rest.trim().to_lowercase());
                     format!("profile {}", rest.trim().to_lowercase())
                 }
-                _ => return Err(format!("line {line}: '[{head}]' is not a section (limits, read, order, offset, hatch, machine, frame, focus, trace, tone, verify, defaults, layer NAME or profile NAME)")),
+                _ => return Err(format!("line {line}: '[{head}]' is not a section (limits, read, order, offset, hatch, machine, frame, focus, trace, tone, verify, calibrate, defaults, layer NAME or profile NAME)")),
             };
             continue;
         }
@@ -1482,5 +1542,34 @@ mod tests {
             assert!(parse(text).is_err(), "{text:?}");
         }
         assert!(parse("[verify]\noverscan_mm = 100\n").is_ok());
+    }
+
+    #[test]
+    fn the_calibrate_settings_are_read_and_the_defaults_are_the_ones_of_the_example() {
+        assert_eq!(Settings::default().calibrate, CalibrateSettings::default());
+        let s = parse("[calibrate]\nsteps = 7\nspread_percent = 25.5\nlabels = on\nlabel_mm = 4\n")
+            .unwrap();
+        assert_eq!(
+            s.calibrate,
+            CalibrateSettings {
+                steps: 7,
+                spread_percent: 25.5,
+                labels: true,
+                label_mm: 4.0,
+            }
+        );
+        for text in [
+            "[calibrate]\nsteps = 0\n",
+            "[calibrate]\nsteps = 13\n",
+            "[calibrate]\nsteps = 2.5\n",
+            "[calibrate]\nspread_percent = -1\n",
+            "[calibrate]\nspread_percent = 90.1\n",
+            "[calibrate]\nlabels = maybe\n",
+            "[calibrate]\nlabel_mm = 0.9\n",
+            "[calibrate]\nlabel_mm = 20.1\n",
+            "[calibrate]\nspeed = 5\n",
+        ] {
+            assert!(parse(text).is_err(), "{text:?}");
+        }
     }
 }

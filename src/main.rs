@@ -5,7 +5,7 @@
 mod cli_args;
 
 use cli_args::{finish, flag, num, switch};
-use eh3d_phoenix_laser::calibrate::{focus_test, grid, Grid};
+use eh3d_phoenix_laser::calibrate::{focus_test, grid, labelled_grid, ladder, Grid, Labels};
 use eh3d_phoenix_laser::cut::{layers as layer_list, plan, Plan};
 use eh3d_phoenix_laser::dither::{dither, Method};
 use eh3d_phoenix_laser::dxf::read_dxf;
@@ -39,6 +39,7 @@ const HELP: &str = "phoenix-laser: laser engraving from an image
                 [--gamma 1] [--contrast 0] [--brightness 0] [--invert] [--auto-level] [--max-power 100] [--max-speed MM/MIN] [--config FILE] [--profile NAME]
                 [--material NAME --materials FILE]
   phoenix-laser calibrate OUT.nc --powers 20,40,60,80 --feeds 1000,2000,3000 [--smax 1000] [--max-power 100] [--max-speed MM/MIN] [--config FILE] [--profile NAME]
+  phoenix-laser calibrate OUT.nc --material NAME --materials FILE [--steps 5] [--spread 40] [--labels|--no-labels] [--label-mm 3] [--smax 1000] [--max-power 100] [--max-speed MM/MIN] [--config FILE] [--profile NAME]
   phoenix-laser info IMAGE
   phoenix-laser cut DRAWING OUT.nc [--config FILE] [--power P] [--speed MM/MIN] [--passes N] [--focus-step MM] [--kerf MM] [--kerf-side none|auto|inside|outside]
                 [--tabs N] [--tab-width MM] [--smax N] [--overscan MM] [--origin X,Y] [--bed X,Y] [--max-power P] [--max-speed MM/MIN] [--profile NAME] [--material NAME --materials FILE] [--dpi N] [--tolerance MM] [--dry-run]
@@ -66,6 +67,7 @@ focus writes a focus test: short lines side by side, each burnt with the head at
 frame writes a program that traces the rectangle of the work with the laser OFF, to see where it will land: --size W,H from the corner --origin, or the box of what burns in --gcode PROGRAM.nc (its real place). --margin widens it. A --pilot power (a percent, at most max_pilot_percent of [frame], 5 unless the file says another, and at most the limit of power) turns the laser on weakly and only with --confirm-laser-on; the [frame] section of --config holds the usual values.
 preview reads a G-code program (this program's or another's) and says what it would do: moves, burnt and travelled length, the box, the powers, a time that counts the corners (--accel in mm/s2) and what looks dangerous (the laser on during a rapid move, a burning move with no feed, S above --smax, work outside --bed, no end); with OUT.svg it also draws the path. It only reads text.
 verify reads a G-code program as text (it never runs it) and says its SHA-256, what it does and whether it passes: under the limit of power and of speed, inside the bed (--overscan-mm lets the head go that far past the bed with the laser off, as the overscan of another program does; burning outside the bed always fails, and [verify] overscan_mm of --config sets the same), with the laser off during every rapid move and a feed on every burning move; --json gives the report for another program to keep, and the exit code is 1 when it fails.
+calibrate with --material takes the powers and the feeds from the library: a ladder of --steps values (5) from --spread percent (40) below to the same above the power and the speed of the material, held between the limits and given once each, unless --powers or --feeds give a list; --labels burns the power of each column below it and the feed of each row on its left, at the power and the speed of the material, so the squares can be read on the material (--label-mm is the height of the figures, [calibrate] of --config holds the usual values).
 --max-power is the limit of power, a percent of full power (100 when nothing says another): a program whose power is more than the limit is refused, never lowered. engrave and calibrate also read the limit and --smax from the [machine] section of the file of --config, and engrave the tone curve from its [tone] section (a material and the tone options win over it). --max-speed is the limit of speed (mm/min, 30000 when nothing says another) and works the same way: a feed over it is refused, never lowered.
 A [profile NAME] section of the file of --config describes a machine and laser (its travel, its limit of power and of speed, its S and its watts); --profile NAME (or profile = NAME in [machine]) makes it the machine, over [machine] and under the options of the command line.";
 
@@ -121,6 +123,8 @@ struct MachineLimits {
     tone: Tone,
     /// The settings file, when there is one.
     config: Option<String>,
+    /// The test grid made from a material and its figures (the defaults when there is no file).
+    calibrate: vconfig::CalibrateSettings,
 }
 
 /// The limits and the spindle value that `--config`, `--profile`, `--max-power` and `--max-speed` give to `engrave` and `calibrate`: the file is read as a whole (so it is checked), and
@@ -136,6 +140,7 @@ fn machine_limits(args: &mut Vec<String>) -> Result<MachineLimits, String> {
     let mut max_speed = s.machine.max_speed_mm_min;
     let s_max = config.as_ref().map(|_| s.machine.s_max);
     let tone = s.tone;
+    let calibrate = s.calibrate;
     if let Some(v) = flag(args, "--max-power")? {
         max_power = num(&v, "--max-power")?;
     }
@@ -150,6 +155,7 @@ fn machine_limits(args: &mut Vec<String>) -> Result<MachineLimits, String> {
         s_max,
         tone,
         config,
+        calibrate,
     })
 }
 
@@ -512,6 +518,165 @@ fn layers_job(mut args: Vec<String>) -> Result<(), String> {
     Ok(())
 }
 
+/// `calibrate`: the grid of squares of power against feed, from lists or spread around what a material of the library says, with the figures of each column and row burnt next to it when
+/// they are asked for.
+fn calibrate_job(mut args: Vec<String>) -> Result<(), String> {
+    let material = take_material(&mut args)?;
+    let powers_arg = flag(&mut args, "--powers")?;
+    let feeds_arg = flag(&mut args, "--feeds")?;
+    let steps_arg = flag(&mut args, "--steps")?;
+    let spread_arg = flag(&mut args, "--spread")?;
+    let label_mm_arg = flag(&mut args, "--label-mm")?;
+    let (labels_on, labels_off) = (
+        switch(&mut args, "--labels"),
+        switch(&mut args, "--no-labels"),
+    );
+    if labels_on && labels_off {
+        return Err("--labels and --no-labels cannot be given together".into());
+    }
+    let limits = machine_limits(&mut args)?;
+    let (max_power, max_speed, config) =
+        (limits.max_power, limits.max_speed, limits.config.clone());
+    let mut c = limits.calibrate;
+    if let Some(v) = &steps_arg {
+        c.steps = whole(v, "--steps")?;
+    }
+    if let Some(v) = &spread_arg {
+        c.spread_percent = num(v, "--spread")?;
+    }
+    if let Some(v) = &label_mm_arg {
+        c.label_mm = num(v, "--label-mm")?;
+    }
+    if labels_on {
+        c.labels = true;
+    }
+    if labels_off {
+        c.labels = false;
+    }
+    c.validate()?;
+    let mut g = Grid::default();
+    if let Some(s_max) = limits.s_max {
+        g.s_max = s_max;
+    }
+    if let Some(v) = flag(&mut args, "--smax")? {
+        g.s_max = whole(&v, "--smax")?;
+    }
+    // the powers and the feeds: the lists that were given, or a ladder around what the material says
+    let mut spread_used = false;
+    let mut mid: (Option<f64>, Option<f64>) = (None, None);
+    let powers = match (&powers_arg, &material) {
+        (Some(v), _) => list(v, "--powers")?,
+        (None, Some((m, _))) => {
+            let centre = m
+                .power
+                .ok_or_else(|| format!("the material {} has no power: give --powers", m.name))?;
+            safety::check_power("the power of the material", centre, max_power)?;
+            spread_used = true;
+            mid.0 = Some(centre);
+            ladder(
+                centre,
+                c.steps as usize,
+                c.spread_percent,
+                1,
+                1.0f64.min(max_power),
+                max_power,
+            )?
+        }
+        (None, None) => {
+            return Err(
+                "--powers is needed (or --material, to spread them around its power)".into(),
+            )
+        }
+    };
+    let feeds = match (&feeds_arg, &material) {
+        (Some(v), _) => list(v, "--feeds")?,
+        (None, Some((m, _))) => {
+            let centre = m
+                .speed
+                .ok_or_else(|| format!("the material {} has no speed: give --feeds", m.name))?;
+            safety::check_speed("the speed of the material", centre, max_speed)?;
+            spread_used = true;
+            mid.1 = Some(centre);
+            ladder(
+                centre,
+                c.steps as usize,
+                c.spread_percent,
+                0,
+                10.0f64.min(max_speed),
+                max_speed,
+            )?
+        }
+        (None, None) => {
+            return Err("--feeds is needed (or --material, to spread them around its speed)".into())
+        }
+    };
+    finish(&args, 1)?;
+    let out = args.first().ok_or("calibrate needs an output file")?;
+    if (steps_arg.is_some() || spread_arg.is_some()) && !spread_used {
+        return Err("--steps and --spread need --material: they spread the powers and the feeds around what it says".into());
+    }
+    if powers_arg.is_some() {
+        for p in &powers {
+            safety::check_power("a power of --powers", *p, max_power)?;
+        }
+    }
+    if feeds_arg.is_some() {
+        for f in &feeds {
+            safety::check_speed("a speed of --feeds", *f, max_speed)?;
+        }
+    }
+    let inputs = config.iter().chain(material.iter().map(|(_, f)| f));
+    for input in inputs {
+        if same_file(Path::new(input), Path::new(out)) {
+            return Err(format!(
+                "{out}: the output would be written over the file it is made from"
+            ));
+        }
+    }
+    let program = if c.labels {
+        // the figures are burnt with what the material says, or with the middle of the lists
+        let labels = Labels {
+            height_mm: c.label_mm,
+            power_percent: mid.0.unwrap_or(powers[powers.len() / 2]),
+            feed_mm_min: mid.1.unwrap_or(feeds[feeds.len() / 2]),
+        };
+        safety::check_power("the power of the figures", labels.power_percent, max_power)?;
+        safety::check_speed("the speed of the figures", labels.feed_mm_min, max_speed)?;
+        labelled_grid(&powers, &feeds, &g, &labels)?
+    } else {
+        grid(&powers, &feeds, &g)?
+    };
+    let head = header(&Header {
+        generator: "phoenix-laser",
+        version: env!("CARGO_PKG_VERSION"),
+        source: None,
+        tools: &format!(
+            "laser, S 0-{}, grid of power against feed{}",
+            g.s_max,
+            if c.labels { " with figures" } else { "" }
+        ),
+    });
+    write_atomic(Path::new(out), &format!("{head}{program}"))?;
+    println!("{} squares written to {out}", powers.len() * feeds.len());
+    if let Some((m, _)) = &material {
+        let join = |v: &[f64]| {
+            v.iter()
+                .map(|x| format!("{x}"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        };
+        if spread_used {
+            println!(
+                "material {}: powers {} %, feeds {} mm/min",
+                m.name,
+                join(&powers),
+                join(&feeds)
+            );
+        }
+    }
+    Ok(())
+}
+
 fn run(mut args: Vec<String>) -> Result<(), String> {
     if args.is_empty() || matches!(args[0].as_str(), "help" | "--help" | "-h") {
         println!("{HELP}");
@@ -644,53 +809,7 @@ fn run(mut args: Vec<String>) -> Result<(), String> {
             println!("{} x {} dots ({:.1} x {:.1} mm), {} lines, {} runs, {:.0} mm burned, about {:.0} s", dots.w, dots.h, dots.w as f64 * p.pixel_mm, dots.h as f64 * p.pixel_mm, e.rows, e.runs, e.burn_mm, e.seconds);
             Ok(())
         }
-        "calibrate" => {
-            let powers = list(
-                &flag(&mut args, "--powers")?.ok_or("--powers is needed")?,
-                "--powers",
-            )?;
-            let feeds = list(
-                &flag(&mut args, "--feeds")?.ok_or("--feeds is needed")?,
-                "--feeds",
-            )?;
-            let limits = machine_limits(&mut args)?;
-            let (max_power, config) = (limits.max_power, limits.config.clone());
-            let mut g = Grid::default();
-            if let Some(s_max) = limits.s_max {
-                g.s_max = s_max;
-            }
-            if let Some(v) = flag(&mut args, "--smax")? {
-                g.s_max = whole(&v, "--smax")?;
-            }
-            finish(&args, 1)?;
-            let out = args.first().ok_or("calibrate needs an output file")?;
-            for p in &powers {
-                safety::check_power("a power of --powers", *p, max_power)?;
-            }
-            for f in &feeds {
-                safety::check_speed("a speed of --feeds", *f, limits.max_speed)?;
-            }
-            if config
-                .as_deref()
-                .is_some_and(|c| same_file(Path::new(c), Path::new(out)))
-            {
-                return Err(format!(
-                    "{out}: the output would be written over the settings it is made from"
-                ));
-            }
-            let head = header(&Header {
-                generator: "phoenix-laser",
-                version: env!("CARGO_PKG_VERSION"),
-                source: None,
-                tools: &format!("laser, S 0-{}, grid of power against feed", g.s_max),
-            });
-            write_atomic(
-                Path::new(out),
-                &format!("{head}{}", grid(&powers, &feeds, &g)?),
-            )?;
-            println!("{} squares written to {out}", powers.len() * feeds.len());
-            Ok(())
-        }
+        "calibrate" => calibrate_job(args),
         "cut" => drawing_job(args, LayerMode::Cut),
         "vector" => drawing_job(args, LayerMode::Engrave),
         "layers" => layers_job(args),
