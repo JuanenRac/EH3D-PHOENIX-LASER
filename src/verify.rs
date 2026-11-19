@@ -214,9 +214,40 @@ fn json_list(items: &[String]) -> String {
     format!("[{}]", parts.join(", "))
 }
 
+/// Where the limits of a check came from, for the record that is kept next to an authorisation: the machine profile that was chosen and the SHA-256 of the settings file that was read, so
+/// that a change to either afterwards can be seen.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Provenance {
+    pub profile: Option<String>,
+    pub config_sha256: Option<String>,
+}
+
+/// The checks that decide the verdict, as they are named in the report. The bed is only checked when its size is known.
+pub fn validations(l: &Limits) -> Vec<String> {
+    let mut v: Vec<&str> = vec![
+        "has_moves",
+        "power_limit",
+        "speed_limit",
+        "laser_off_during_rapid_moves",
+        "feed_on_burning_moves",
+    ];
+    if l.bed_mm.is_some() {
+        v.push("inside_bed");
+    }
+    v.into_iter().map(str::to_string).collect()
+}
+
 impl Verdict {
     /// The report as JSON, one key per line, for another program to keep next to the authorisation.
     pub fn json(&self, l: &Limits) -> String {
+        self.json_with(l, &Provenance::default())
+    }
+
+    /// The report as JSON with the profile and the settings file the limits came from, and the names of the checks that were made.
+    pub fn json_with(&self, l: &Limits, p: &Provenance) -> String {
+        let text_or_null =
+            |v: &Option<String>| v.as_deref().map_or("null".to_string(), json_string);
+        let (profile, config) = (text_or_null(&p.profile), text_or_null(&p.config_sha256));
         let bounds = self.bounds.map_or("null".to_string(), |(lo, hi)| {
             format!("[{}, {}, {}, {}]", lo.0, lo.1, hi.0, hi.1)
         });
@@ -224,7 +255,7 @@ impl Verdict {
             .bed_mm
             .map_or("null".to_string(), |(x, y)| format!("[{x}, {y}]"));
         format!(
-            "{{\n  \"toolpath_sha256\": {},\n  \"bytes\": {},\n  \"verdict\": {},\n  \"moves\": {},\n  \"burn_mm\": {},\n  \"travel_mm\": {},\n  \"seconds\": {},\n  \"bounds_mm\": {},\n  \"max_s\": {},\n  \"max_power_percent\": {},\n  \"max_feed_mm_min\": {},\n  \"limits\": {{\"s_max\": {}, \"max_power_percent\": {}, \"max_speed_mm_min\": {}, \"bed_mm\": {}, \"overscan_mm\": {}}},\n  \"problems\": {},\n  \"notes\": {}\n}}\n",
+            "{{\n  \"toolpath_sha256\": {},\n  \"bytes\": {},\n  \"verdict\": {},\n  \"moves\": {},\n  \"burn_mm\": {},\n  \"travel_mm\": {},\n  \"seconds\": {},\n  \"bounds_mm\": {},\n  \"max_s\": {},\n  \"max_power_percent\": {},\n  \"max_feed_mm_min\": {},\n  \"limits\": {{\"s_max\": {}, \"max_power_percent\": {}, \"max_speed_mm_min\": {}, \"bed_mm\": {}, \"overscan_mm\": {}}},\n  \"machine\": {{\"profile\": {}, \"config_sha256\": {}}},\n  \"validations\": {},\n  \"problems\": {},\n  \"notes\": {}\n}}\n",
             json_string(&self.sha256),
             self.bytes,
             json_string(if self.passes() { "pass" } else { "fail" }),
@@ -241,6 +272,9 @@ impl Verdict {
             l.max_speed_mm_min,
             bed,
             l.overscan_mm,
+            profile,
+            config,
+            json_list(&validations(l)),
             json_list(&self.problems),
             json_list(&self.notes),
         )
@@ -540,5 +574,37 @@ mod tests {
             "{j}"
         );
         assert!(j.contains("\"verdict\": \"pass\""));
+    }
+
+    #[test]
+    fn the_report_tells_the_profile_the_settings_hash_and_the_checks_that_were_made() {
+        let l = bed10(0.0);
+        let v = verify(GOOD.as_bytes(), &l).unwrap();
+        // with nothing to say, the machine is null and the checks are named
+        let j = v.json(&l);
+        assert!(
+            j.contains("\"machine\": {\"profile\": null, \"config_sha256\": null}"),
+            "{j}"
+        );
+        assert!(
+            j.contains("\"validations\": [\"has_moves\", \"power_limit\", \"speed_limit\", \"laser_off_during_rapid_moves\", \"feed_on_burning_moves\", \"inside_bed\"]"),
+            "{j}"
+        );
+        // with a profile and a settings file
+        let p = Provenance {
+            profile: Some("small \"diode\"".to_string()),
+            config_sha256: Some("ab".repeat(32)),
+        };
+        let j = v.json_with(&l, &p);
+        assert!(
+            j.contains(&format!(
+                "\"machine\": {{\"profile\": \"small \\\"diode\\\"\", \"config_sha256\": \"{}\"}}",
+                "ab".repeat(32)
+            )),
+            "{j}"
+        );
+        // the bed is only a check when its size is known
+        let names = validations(&Limits::default());
+        assert!(!names.iter().any(|n| n == "inside_bed") && names.len() == 5);
     }
 }

@@ -140,6 +140,62 @@ fn verify_gives_the_hash_of_the_file_and_a_verdict_and_the_exit_code_follows_it(
 }
 
 #[test]
+fn the_json_of_verify_says_the_profile_and_the_hash_of_the_settings_it_used() {
+    let nc = tmp("verify-record.nc");
+    std::fs::write(&nc, GOOD_PROGRAM).unwrap();
+    // with no settings the machine of the record is empty and the checks are named
+    let (ok, out, err) = run(&["verify", &nc, "--json"]);
+    assert!(ok, "{err}");
+    assert!(
+        out.contains("\"machine\": {\"profile\": null, \"config_sha256\": null}"),
+        "{out}"
+    );
+    assert!(out.contains("\"validations\": [\"has_moves\""), "{out}");
+    // with a profile of a settings file, the record has its name and the SHA-256 of the file
+    let cfg = profiles_file("verify-record.cfg", "[defaults]\npower = 5\n");
+    let hash = eh3d_phoenix_laser::gcode_out::sha256_hex(&std::fs::read(&cfg).unwrap());
+    let (ok, out, err) = run(&[
+        "verify",
+        &nc,
+        "--config",
+        &cfg,
+        "--profile",
+        "BIG",
+        "--json",
+    ]);
+    assert!(ok, "{out} {err}");
+    assert!(
+        out.contains(&format!(
+            "\"machine\": {{\"profile\": \"big\", \"config_sha256\": \"{hash}\"}}"
+        )),
+        "{out}"
+    );
+    // a change to the file changes the hash of the record
+    std::fs::write(
+        &cfg,
+        format!(
+            "[defaults]\npower = 6\n{}",
+            "[profile big]\nmax_power_percent = 70\n"
+        ),
+    )
+    .unwrap();
+    let (ok, other, err) = run(&[
+        "verify",
+        &nc,
+        "--config",
+        &cfg,
+        "--profile",
+        "big",
+        "--json",
+    ]);
+    assert!(ok, "{other} {err}");
+    assert!(!other.contains(&hash), "{other}");
+    // the text form has no record to keep
+    let (ok, text, _) = run(&["verify", &nc, "--config", &cfg]);
+    assert!(ok && !text.contains("config_sha256"));
+}
+
+#[test]
 fn verify_refuses_what_it_cannot_read_and_what_is_not_a_program() {
     let (ok, _, err) = run(&["verify"]);
     assert!(!ok);

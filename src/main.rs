@@ -1182,7 +1182,17 @@ fn run(mut args: Vec<String>) -> Result<(), String> {
             let bytes = fs::read(input).map_err(|e| format!("{input}: {e}"))?;
             let v = verify::verify(&bytes, &l)?;
             if json {
-                print!("{}", v.json(&l));
+                // the profile and the settings file the limits came from are part of the record
+                let provenance = verify::Provenance {
+                    profile: settings.profile.clone(),
+                    config_sha256: match &config {
+                        Some(path) => Some(sha256_hex(
+                            &fs::read(path).map_err(|e| format!("{path}: {e}"))?,
+                        )),
+                        None => None,
+                    },
+                };
+                print!("{}", v.json_with(&l, &provenance));
             } else {
                 print!("{}", v.text());
             }
