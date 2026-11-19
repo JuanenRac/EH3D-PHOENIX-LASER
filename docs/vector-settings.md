@@ -17,7 +17,7 @@ key = value
 key = value
 ```
 
-Sections: `[limits]`, `[read]`, `[order]`, `[offset]`, `[hatch]`, `[machine]`, `[frame]`, `[focus]`, `[trace]`, `[tone]`, `[verify]`, `[calibrate]`, `[defaults]`, one `[layer NAME]` for each layer or colour and one `[profile NAME]` for each machine. `[defaults]` is what a layer gets that the file
+Sections: `[limits]`, `[read]`, `[order]`, `[offset]`, `[hatch]`, `[machine]`, `[frame]`, `[focus]`, `[trace]`, `[tone]`, `[verify]`, `[calibrate]`, `[text]`, `[defaults]`, one `[layer NAME]` for each layer or colour and one `[profile NAME]` for each machine. `[defaults]` is what a layer gets that the file
 does not name, and also what every `[layer NAME]` starts from (wherever in the file `[defaults]` is written). The switches are `on` and `off`.
 
 ## What a layer is
@@ -240,6 +240,23 @@ The test grid made from a material (`phoenix-laser calibrate --material NAME --m
 In the window, the calibration mode lists the materials of the library: with one picked the grid is made with this ladder and the keys are boxes of the side panel (the figures are a switch), and with none picked it is the grid of the two lists of boxes.
 
 The keys of `[calibrate]` are `steps`, `spread_percent`, `labels`, `label_mm`, `min_power_percent` and `min_feed_mm_min`.
+
+### `[text]`
+
+A line of text burnt with the font of strokes of the program (`phoenix-laser text OUT.nc --text TEXT`): capitals, figures, space and `. , - + / : ! ? ( ) = _ '`, each a few strokes on a lattice 4 wide and 6 high. Lower case is burnt as capitals and a new line starts a row; a character that the font has not is refused. The lower left corner of the text is at `--origin X,Y` (the machine origin otherwise), and a text that would go outside of the bed (`--bed X,Y` or the machine of the file) is refused. The power and the speed obey the limits of the machine (`--max-power`, `--max-speed`), and the options `--height-mm`, `--spacing`, `--line-spacing`, `--power`, `--feed` and `--passes` take the place of these keys.
+
+| Key | Default | Meaning |
+|---|---|---|
+| `height_mm` | 10 | the height of a capital, from 1 up to `max_height_mm` |
+| `max_height_mm` | 100 | the tallest letter that is accepted, from 1 to 1000 mm: a bigger one is refused, never cut down |
+| `spacing_percent` | 25 | the gap between two letters, as a percent of the height, from 0 to 200 |
+| `line_spacing_percent` | 50 | the gap between two rows, as a percent of the height, from 0 to 300 |
+| `power_percent` | 20 | more than 0 up to 100, a percent of `s_max` |
+| `speed_mm_min` | 1000 | from 1 to 30000 |
+| `passes` | 1 | how many times the whole text is burnt, from 1 to 20 |
+| `max_chars` | 200 | the most characters a text may have, from 1 to 5000 |
+
+The keys of `[text]` are `height_mm`, `max_height_mm`, `spacing_percent`, `line_spacing_percent`, `power_percent`, `speed_mm_min`, `passes` and `max_chars`.
 
 ### `[defaults]` and `[layer NAME]`
 

@@ -25,6 +25,7 @@ pub mod raster;
 pub mod safety;
 pub mod shot;
 pub mod svg;
+pub mod text;
 pub mod tone;
 pub mod trace;
 pub mod vconfig;

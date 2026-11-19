@@ -468,6 +468,85 @@ impl CalibrateSettings {
     }
 }
 
+/// A line of text burnt with the font of strokes of the program (`phoenix-laser text`).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct TextSettings {
+    /// The height of a capital letter (mm).
+    pub height_mm: f64,
+    /// The tallest letter that is accepted (mm): a bigger one is refused, never cut down.
+    pub max_height_mm: f64,
+    /// The gap between two letters, as a percent of the height.
+    pub spacing_percent: f64,
+    /// The gap between two lines, as a percent of the height.
+    pub line_spacing_percent: f64,
+    /// A percent of full power; the limit of power of the machine still holds over it.
+    pub power_percent: f64,
+    pub speed_mm_min: f64,
+    /// How many times the whole text is burnt.
+    pub passes: u32,
+    /// The most characters that a text may have.
+    pub max_chars: u32,
+}
+
+impl Default for TextSettings {
+    fn default() -> Self {
+        TextSettings {
+            height_mm: 10.0,
+            max_height_mm: 100.0,
+            spacing_percent: 25.0,
+            line_spacing_percent: 50.0,
+            power_percent: 20.0,
+            speed_mm_min: 1000.0,
+            passes: 1,
+            max_chars: 200,
+        }
+    }
+}
+
+impl TextSettings {
+    pub fn validate(&self) -> Result<(), String> {
+        let range = |name: &str, v: f64, lo: f64, hi: f64| {
+            if v.is_finite() && (lo..=hi).contains(&v) {
+                Ok(())
+            } else {
+                Err(format!("text {name} is {v}: it must be from {lo} to {hi}"))
+            }
+        };
+        range("max_height_mm", self.max_height_mm, 1.0, 1000.0)?;
+        range("height_mm", self.height_mm, 1.0, self.max_height_mm)?;
+        range("spacing_percent", self.spacing_percent, 0.0, 200.0)?;
+        range(
+            "line_spacing_percent",
+            self.line_spacing_percent,
+            0.0,
+            300.0,
+        )?;
+        if !(self.power_percent.is_finite()
+            && self.power_percent > 0.0
+            && self.power_percent <= 100.0)
+        {
+            return Err(format!(
+                "text power_percent is {}: it must be more than 0 up to 100",
+                self.power_percent
+            ));
+        }
+        range("speed_mm_min", self.speed_mm_min, 1.0, 30_000.0)?;
+        if self.passes == 0 || self.passes > 20 {
+            return Err(format!(
+                "text passes is {}: it must be from 1 to 20",
+                self.passes
+            ));
+        }
+        if self.max_chars == 0 || self.max_chars > 5_000 {
+            return Err(format!(
+                "text max_chars is {}: it must be from 1 to 5000",
+                self.max_chars
+            ));
+        }
+        Ok(())
+    }
+}
+
 /// The check of a program (`phoenix-laser verify`).
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct VerifySettings {
@@ -585,6 +664,7 @@ pub struct Settings {
     pub trace: TraceSettings,
     pub verify: VerifySettings,
     pub calibrate: CalibrateSettings,
+    pub text: TextSettings,
     /// The tone curve of a picture before it becomes dots (`phoenix-laser engrave` and the window).
     pub tone: Tone,
     pub defaults: LayerParams,
@@ -616,6 +696,7 @@ impl Default for Settings {
             trace: TraceSettings::default(),
             verify: VerifySettings::default(),
             calibrate: CalibrateSettings::default(),
+            text: TextSettings::default(),
             tone: Tone::default(),
             defaults: LayerParams::default(),
             layers: Vec::new(),
@@ -715,6 +796,7 @@ impl Settings {
         self.trace.validate()?;
         self.verify.validate()?;
         self.calibrate.validate()?;
+        self.text.validate()?;
         self.tone.validate()?;
         self.defaults.validate(m.max_passes)?;
         if self.defaults.mode != LayerMode::Skip {
@@ -878,6 +960,20 @@ fn set_global(s: &mut Settings, section: &str, key: &str, value: &str) -> Result
         ("calibrate", "label_mm") => s.calibrate.label_mm = number(value)?,
         ("calibrate", "min_power_percent") => s.calibrate.min_power_percent = number(value)?,
         ("calibrate", "min_feed_mm_min") => s.calibrate.min_feed_mm_min = number(value)?,
+        ("text", "height_mm") => s.text.height_mm = number(value)?,
+        ("text", "max_height_mm") => s.text.max_height_mm = number(value)?,
+        ("text", "spacing_percent") => s.text.spacing_percent = number(value)?,
+        ("text", "line_spacing_percent") => s.text.line_spacing_percent = number(value)?,
+        ("text", "power_percent") => s.text.power_percent = number(value)?,
+        ("text", "speed_mm_min") => s.text.speed_mm_min = number(value)?,
+        ("text", "passes") => {
+            s.text.passes =
+                u32::try_from(whole(value)?).map_err(|_| "passes is too large".to_string())?
+        }
+        ("text", "max_chars") => {
+            s.text.max_chars =
+                u32::try_from(whole(value)?).map_err(|_| "max_chars is too large".to_string())?
+        }
         ("trace", "threshold") => {
             s.trace.threshold = u8::try_from(whole(value)?)
                 .map_err(|_| "trace threshold must be from 0 to 255".to_string())?
@@ -950,7 +1046,7 @@ pub fn parse(text: &str) -> Result<Settings, String> {
             let (word, rest) = head.split_once(char::is_whitespace).unwrap_or((head, ""));
             let word = word.to_ascii_lowercase();
             section = match word.as_str() {
-                "limits" | "read" | "order" | "offset" | "hatch" | "machine" | "frame" | "focus" | "trace" | "tone" | "verify" | "calibrate" | "defaults" if rest.trim().is_empty() => word,
+                "limits" | "read" | "order" | "offset" | "hatch" | "machine" | "frame" | "focus" | "trace" | "tone" | "verify" | "calibrate" | "text" | "defaults" if rest.trim().is_empty() => word,
                 "layer" if !rest.trim().is_empty() => {
                     named.push(rest.trim().to_lowercase());
                     format!("layer {}", rest.trim().to_lowercase())
@@ -959,7 +1055,7 @@ pub fn parse(text: &str) -> Result<Settings, String> {
                     named_profiles.push(rest.trim().to_lowercase());
                     format!("profile {}", rest.trim().to_lowercase())
                 }
-                _ => return Err(format!("line {line}: '[{head}]' is not a section (limits, read, order, offset, hatch, machine, frame, focus, trace, tone, verify, calibrate, defaults, layer NAME or profile NAME)")),
+                _ => return Err(format!("line {line}: '[{head}]' is not a section (limits, read, order, offset, hatch, machine, frame, focus, trace, tone, verify, calibrate, text, defaults, layer NAME or profile NAME)")),
             };
             continue;
         }
@@ -1568,6 +1664,54 @@ mod tests {
             assert!(parse(text).is_err(), "{text:?}");
         }
         assert!(parse("[verify]\noverscan_mm = 100\n").is_ok());
+    }
+
+    #[test]
+    fn the_text_settings_are_read_checked_and_the_defaults_are_the_ones_of_the_example() {
+        assert_eq!(Settings::default().text, TextSettings::default());
+        let s = parse(
+            "[text]\nheight_mm = 12.5\nmax_height_mm = 40\nspacing_percent = 10\nline_spacing_percent = 80\npower_percent = 35\nspeed_mm_min = 1500\npasses = 2\nmax_chars = 50\n",
+        )
+        .unwrap();
+        assert_eq!(
+            s.text,
+            TextSettings {
+                height_mm: 12.5,
+                max_height_mm: 40.0,
+                spacing_percent: 10.0,
+                line_spacing_percent: 80.0,
+                power_percent: 35.0,
+                speed_mm_min: 1500.0,
+                passes: 2,
+                max_chars: 50,
+            }
+        );
+        for text in [
+            "[text]\nheight_mm = 0.5\n",
+            "[text]\nheight_mm = 101\n",
+            "[text]\nmax_height_mm = 1001\n",
+            "[text]\nspacing_percent = -1\n",
+            "[text]\nline_spacing_percent = 301\n",
+            "[text]\npower_percent = 0\n",
+            "[text]\npower_percent = 100.5\n",
+            "[text]\nspeed_mm_min = 0\n",
+            "[text]\npasses = 0\n",
+            "[text]\npasses = 21\n",
+            "[text]\nmax_chars = 0\n",
+            "[text]\nmax_chars = 5001\n",
+            "[text]\ncolour = red\n",
+        ] {
+            assert!(parse(text).is_err(), "{text:?}");
+        }
+        // the example file says the same as the defaults, for every section that has keys of this kind
+        let example = load(std::path::Path::new(&format!(
+            "{}/examples/plate.cfg",
+            env!("CARGO_MANIFEST_DIR")
+        )))
+        .unwrap();
+        assert_eq!(example.text, TextSettings::default());
+        assert_eq!(example.calibrate, CalibrateSettings::default());
+        assert_eq!(example.verify, VerifySettings::default());
     }
 
     #[test]

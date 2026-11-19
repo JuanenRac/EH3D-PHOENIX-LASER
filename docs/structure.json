@@ -145,6 +145,19 @@
           }
         },
         {
+          "name": "text.rs",
+          "desc": {
+            "en": "a line of text burnt with a font of strokes of its own, inside limits",
+            "es": "una línea de texto grabada con una fuente de trazos propia, dentro de límites",
+            "de": "eine Textzeile, mit einer eigenen Strichschrift gebrannt, innerhalb von Grenzen",
+            "fr": "une ligne de texte gravée avec une police de traits propre, dans des limites",
+            "it": "una riga di testo incisa con un carattere a tratti proprio, entro limiti",
+            "ja": "独自のストローク書体で焼き付ける文字列（上限つき）",
+            "zh": "用自带笔画字体烧刻的文字，受限制约束",
+            "pt": "uma linha de texto queimada com uma fonte de traços própria, dentro de limites"
+          }
+        },
+        {
           "name": "gcode_out.rs",
           "desc": {
             "en": "the one way a G-code number is written and the standard header",

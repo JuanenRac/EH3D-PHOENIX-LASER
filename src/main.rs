@@ -18,6 +18,7 @@ use eh3d_phoenix_laser::preview;
 use eh3d_phoenix_laser::raster::{engrave, overscan_for, Params};
 use eh3d_phoenix_laser::safety;
 use eh3d_phoenix_laser::svg::read_svg;
+use eh3d_phoenix_laser::text as laser_text;
 use eh3d_phoenix_laser::tone::Tone;
 use eh3d_phoenix_laser::trace;
 use eh3d_phoenix_laser::vconfig::{self, KerfSide, LayerMode, LayerParams, Settings};
@@ -48,6 +49,8 @@ const HELP: &str = "phoenix-laser: laser engraving from an image
   phoenix-laser trace IMAGE OUT.nc --width-mm W [--threshold 128] [--invert] [--simplify MM] [--min-area MM2] [--engrave] [the options of cut]
   phoenix-laser materials FILE
   phoenix-laser focus OUT.nc --z-step MM [--z-start MM] [--steps 9] [--length 10] [--spacing 2] [--feed 1000] [--power 30] [--smax 1000] [--max-power P] [--max-speed MM/MIN] [--config FILE] [--profile NAME]
+  phoenix-laser text OUT.nc --text TEXT [--height-mm 10] [--spacing 25] [--line-spacing 50] [--power 20] [--feed 1000] [--passes 1] [--origin X,Y] [--bed X,Y] [--smax N]
+                [--max-power P] [--max-speed MM/MIN] [--config FILE] [--profile NAME]
   phoenix-laser frame OUT.nc --size W,H | --gcode PROGRAM.nc [--origin X,Y] [--margin MM] [--feed 3000] [--laps 1] [--bed X,Y] [--smax N]
                 [--pilot P --confirm-laser-on] [--max-power P] [--max-speed MM/MIN] [--config FILE] [--profile NAME]
   phoenix-laser preview PROGRAM.nc [OUT.svg] [--accel 1000] [--rapid 6000] [--smax N] [--bed X,Y] [--width-px 900] [--config FILE] [--profile NAME]
@@ -64,6 +67,7 @@ layers lists the layers of a drawing with what would be done with each.
 trace follows the outline of a picture (a PNG or a PGM of a logo, a silhouette or a stencil) instead of burning it dot by dot: grey levels under --threshold are ink (over it with --invert), the border is found with sub-pixel precision, simplified until no point is farther than --simplify mm from the line, and specks smaller than --min-area mm2 are dropped. The result is a layer called trace that is cut, or filled with lines with --engrave, with the settings of --config, the options of cut and every limit of the file ([trace] holds max_pixels, max_contours and max_segments).
 materials FILE lists the materials of a library: a plain text file with a [material NAME] section for each material and way of working (see the documentation). --material NAME takes the power, the speed, the passes and the rest that the library says for it, before the other options, which win; the library is --materials FILE or the file named by PHOENIX_LASER_MATERIALS.
 focus writes a focus test: short lines side by side, each burnt with the head at another height (Z); the sharpest and thinnest line shows where the beam is in focus. --z-step has no default because which way is down depends on the machine: check it before running the program, which moves Z. The usual values live in the [focus] section of --config.
+text burns TEXT with a font of strokes of the program (capitals, figures, space and . , - + / : ! ? ( ) = _ '; lower case is burnt as capitals, a new line starts a row, and a character the font has not is refused): --height-mm is the height of a capital (at most max_height_mm, 100 unless the file says another), --spacing and --line-spacing are the gaps between letters and rows as a percent of the height, --passes burns the whole text that many times, and --origin X,Y is the lower left corner. A text of more than max_chars characters, a power or a speed over the limit, or work that would go outside of the bed (--bed X,Y or the machine of --config) is refused, never cut down; the [text] section of --config holds the usual values.
 frame writes a program that traces the rectangle of the work with the laser OFF, to see where it will land: --size W,H from the corner --origin, or the box of what burns in --gcode PROGRAM.nc (its real place). --margin widens it. A --pilot power (a percent, at most max_pilot_percent of [frame], 5 unless the file says another, and at most the limit of power) turns the laser on weakly and only with --confirm-laser-on; the [frame] section of --config holds the usual values.
 preview reads a G-code program (this program's or another's) and says what it would do: moves, burnt and travelled length, the box, the powers, a time that counts the corners (--accel in mm/s2) and what looks dangerous (the laser on during a rapid move, a burning move with no feed, S above --smax, work outside --bed, no end); with OUT.svg it also draws the path. It only reads text.
 verify reads a G-code program as text (it never runs it) and says its SHA-256, what it does and whether it passes: under the limit of power and of speed, inside the bed (--overscan-mm lets the head go that far past the bed with the laser off, as the overscan of another program does; burning outside the bed always fails, and [verify] overscan_mm of --config sets the same), with the laser off during every rapid move and a feed on every burning move; --json gives the report for another program to keep, and the exit code is 1 when it fails.
@@ -518,6 +522,94 @@ fn layers_job(mut args: Vec<String>) -> Result<(), String> {
     Ok(())
 }
 
+/// `text`: a line of text, or several, burnt with the font of strokes of the program.
+fn text_job(mut args: Vec<String>) -> Result<(), String> {
+    let config = flag(&mut args, "--config")?;
+    let mut settings = match &config {
+        Some(path) => vconfig::load(Path::new(path))?,
+        None => Settings::default(),
+    };
+    take_profile(&mut args, &mut settings, config.is_some())?;
+    let mut machine = settings.machine;
+    let mut t = settings.text;
+    let words = flag(&mut args, "--text")?.ok_or("text needs --text TEXT")?;
+    if let Some(v) = flag(&mut args, "--height-mm")? {
+        t.height_mm = num(&v, "--height-mm")?;
+    }
+    if let Some(v) = flag(&mut args, "--spacing")? {
+        t.spacing_percent = num(&v, "--spacing")?;
+    }
+    if let Some(v) = flag(&mut args, "--line-spacing")? {
+        t.line_spacing_percent = num(&v, "--line-spacing")?;
+    }
+    if let Some(v) = flag(&mut args, "--power")? {
+        t.power_percent = num(&v, "--power")?;
+    }
+    if let Some(v) = flag(&mut args, "--feed")? {
+        t.speed_mm_min = num(&v, "--feed")?;
+    }
+    if let Some(v) = flag(&mut args, "--passes")? {
+        t.passes = whole(&v, "--passes")?;
+    }
+    if let Some(v) = flag(&mut args, "--smax")? {
+        machine.s_max = whole(&v, "--smax")?;
+    }
+    if let Some(v) = flag(&mut args, "--max-power")? {
+        machine.max_power_percent = num(&v, "--max-power")?;
+    }
+    if let Some(v) = flag(&mut args, "--max-speed")? {
+        machine.max_speed_mm_min = num(&v, "--max-speed")?;
+    }
+    if let Some(v) = flag(&mut args, "--origin")? {
+        let o = list(&v, "--origin")?;
+        if o.len() != 2 {
+            return Err("--origin needs X,Y".into());
+        }
+        machine.origin = (o[0], o[1]);
+    }
+    if let Some(v) = flag(&mut args, "--bed")? {
+        let b = list(&v, "--bed")?;
+        if b.len() != 2 {
+            return Err("--bed needs X,Y".into());
+        }
+        machine.bed_mm = Some((b[0], b[1]));
+    }
+    finish(&args, 1)?;
+    let out = args.first().ok_or("text needs an output file")?;
+    if config
+        .as_deref()
+        .is_some_and(|c| same_file(Path::new(c), Path::new(out)))
+    {
+        return Err(format!(
+            "{out}: the output would be written over the settings it is made from"
+        ));
+    }
+    let m = laser_text::Machine {
+        s_max: machine.s_max,
+        max_power_percent: machine.max_power_percent,
+        max_speed_mm_min: machine.max_speed_mm_min,
+        bed_mm: machine.bed_mm,
+    };
+    let (gcode, l) = laser_text::program(&words, machine.origin, &t, &m)?;
+    let head = header(&Header {
+        generator: "phoenix-laser",
+        version: env!("CARGO_PKG_VERSION"),
+        source: None,
+        tools: &format!("laser, S 0-{}, text with a font of strokes", machine.s_max),
+    });
+    write_atomic(Path::new(out), &format!("{head}{gcode}"))?;
+    println!(
+        "{} characters, {:.1} x {:.1} mm, {} strokes, at {} % and {} mm/min, written to {out}",
+        words.chars().count(),
+        l.width_mm,
+        l.height_mm,
+        l.strokes.len(),
+        t.power_percent,
+        t.speed_mm_min
+    );
+    Ok(())
+}
+
 /// `calibrate`: the grid of squares of power against feed, from lists or spread around what a material of the library says, with the figures of each column and row burnt next to it when
 /// they are asked for.
 fn calibrate_job(mut args: Vec<String>) -> Result<(), String> {
@@ -806,6 +898,7 @@ fn run(mut args: Vec<String>) -> Result<(), String> {
             Ok(())
         }
         "calibrate" => calibrate_job(args),
+        "text" => text_job(args),
         "cut" => drawing_job(args, LayerMode::Cut),
         "vector" => drawing_job(args, LayerMode::Engrave),
         "layers" => layers_job(args),

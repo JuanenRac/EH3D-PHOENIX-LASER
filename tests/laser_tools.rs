@@ -1750,3 +1750,113 @@ fn the_focus_test_reads_the_settings_file_and_never_lands_on_it() {
     assert!(err.contains("written over"), "{err}");
     assert_eq!(written(&cfg), before);
 }
+
+#[test]
+fn text_is_burnt_with_the_font_of_strokes_inside_the_limits() {
+    let out_file = tmp("text.nc");
+    let (ok, out, err) = run(&[
+        "text",
+        &out_file,
+        "--text",
+        "Phoenix 42",
+        "--height-mm",
+        "8",
+        "--power",
+        "25",
+        "--feed",
+        "1500",
+        "--origin",
+        "5,5",
+        "--bed",
+        "200,100",
+    ]);
+    assert!(ok, "{err}");
+    assert!(out.contains("10 characters"), "{out}");
+    let text = std::fs::read_to_string(&out_file).unwrap();
+    assert!(text.contains("text with a font of strokes"), "{text}");
+    assert!(text.contains("S250 F1500"), "{text}");
+    // the program passes the check, inside the bed
+    let (ok, out, err) = run(&["verify", &out_file, "--bed", "200,100"]);
+    assert!(ok, "{out} {err}");
+    // lower case is the same as capitals
+    let upper = tmp("text-upper.nc");
+    let (ok, _, err) = run(&[
+        "text",
+        &upper,
+        "--text",
+        "PHOENIX 42",
+        "--height-mm",
+        "8",
+        "--power",
+        "25",
+        "--feed",
+        "1500",
+        "--origin",
+        "5,5",
+        "--bed",
+        "200,100",
+    ]);
+    assert!(ok, "{err}");
+    let body = |f: &str| {
+        std::fs::read_to_string(f)
+            .unwrap()
+            .lines()
+            .filter(|l| !l.starts_with(';'))
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+    assert_eq!(body(&out_file), body(&upper));
+    // what is not allowed is refused and nothing is written
+    let refused = tmp("text-refused.nc");
+    let _ = std::fs::remove_file(&refused);
+    for (args, word) in [
+        (vec!["--text", "caf\u{e9}"], "not in the font"),
+        (vec!["--text", "   "], "nothing to burn"),
+        (
+            vec!["--text", "A", "--max-power", "10"],
+            "the power of the text",
+        ),
+        (
+            vec!["--text", "A", "--max-speed", "500"],
+            "the speed of the text",
+        ),
+        (vec!["--text", "A", "--height-mm", "150"], "height_mm"),
+        (vec!["--text", "A", "--passes", "0"], "passes"),
+        (
+            vec!["--text", "AAAAAAAAAA", "--bed", "20,20"],
+            "outside of the bed",
+        ),
+        (vec!["--text", "A", "--origin", "1"], "--origin needs X,Y"),
+        (vec![], "--text"),
+    ] {
+        let mut a = vec!["text", refused.as_str()];
+        a.extend(args.iter().copied());
+        let (ok, _, err) = run(&a);
+        assert!(!ok, "{args:?}");
+        assert!(err.contains(word), "{args:?}: {err}");
+        assert!(!err.contains("panicked"), "{err}");
+    }
+    assert!(!std::path::Path::new(&refused).exists());
+    // the settings file holds the usual values, and an option wins over it
+    let cfg = tmp("text.cfg");
+    std::fs::write(
+        &cfg,
+        "[text]\nheight_mm = 6\nmax_height_mm = 20\npower_percent = 15\nspeed_mm_min = 800\npasses = 2\nmax_chars = 4\n",
+    )
+    .unwrap();
+    let (ok, out, err) = run(&["text", &out_file, "--text", "ABCD", "--config", &cfg]);
+    assert!(ok, "{err}");
+    assert!(out.contains("at 15 % and 800 mm/min"), "{out}");
+    let (ok, _, err) = run(&["text", &out_file, "--text", "ABCDE", "--config", &cfg]);
+    assert!(!ok);
+    assert!(err.contains("max_chars"), "{err}");
+    let (ok, out, err) = run(&[
+        "text", &out_file, "--text", "AB", "--config", &cfg, "--power", "30",
+    ]);
+    assert!(ok, "{err}");
+    assert!(out.contains("at 30 %"), "{out}");
+    // the settings are never written over
+    let (ok, _, err) = run(&["text", &cfg, "--text", "A", "--config", &cfg]);
+    assert!(!ok);
+    assert!(err.contains("written over"), "{err}");
+}
