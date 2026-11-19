@@ -4,6 +4,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+- **The power of the laser in the window:** a box for the optical power of the laser (0 means it is not known; the settings file and a machine profile fill it from `laser_watts`) makes the preview of what the window works out or opens tell the energy that the program burns and its mean power, with the same arithmetic as `phoenix-laser preview --laser-watts`, and a value that is not a number from 0 to 1000 is refused with the box named.
+
 ## [0.1.2] - Code 128 barcodes, positioning marks, energy in the preview and focus grids by power
 
 - **Tests with a fixed seed for what the program writes and reads:** random data (figures, printable characters, controls, accents and characters of several bytes) goes through the text, the QR code and the barcode and is refused or burnt, and what is burnt passes the check, stays inside the bed, never holds the data and, for the barcode, reads back into the data; random numbers in the settings of the barcode and of the marks, in the powers and the steps of the focus grid and in the machine are refused or burn inside the limits of the machine; G-code and a settings file with bytes changed, cut or inserted are read by the preview, the check and the settings reader without a panic and with finite numbers; the same work is written byte for byte every time; and every command of the help has its line in the eight READMEs. A barcode whose origin is not a number from -100000 to 100000 is now refused, as the marks already did.

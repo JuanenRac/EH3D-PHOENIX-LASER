@@ -494,7 +494,7 @@ impl App {
                 }
                 self.fields_of(ui, Section::Calibration);
                 // the full power value and the limits are the same settings as the ones of the laser
-                for key in [Key::SMax, Key::MaxPower, Key::MaxSpeed] {
+                for key in [Key::SMax, Key::MaxPower, Key::MaxSpeed, Key::LaserWatts] {
                     self.field_for(ui, key);
                 }
             });
@@ -529,7 +529,7 @@ impl App {
                 if ui.button(Msg::OpenGcode.tr(lang)).clicked() {
                     self.ask(Job::OpenGcode);
                 }
-                for key in [Key::SMax, Key::Accel, Key::VerifyOverscan] {
+                for key in [Key::SMax, Key::Accel, Key::LaserWatts, Key::VerifyOverscan] {
                     self.field_for(ui, key);
                 }
             });
@@ -542,6 +542,7 @@ impl App {
             return;
         }
         let check = self.win.check_lines();
+        let energy = self.win.energy_line();
         egui::CollapsingHeader::new(self.heading(Msg::SectionPreview))
             .default_open(true)
             .show(ui, |ui| {
@@ -552,6 +553,10 @@ impl App {
                     } else {
                         text.color(DANGER).small()
                     });
+                }
+                // the energy and the mean power, when the power of the laser is known
+                if let Some(energy) = &energy {
+                    ui.label(egui::RichText::new(energy.as_str()));
                 }
                 // the check of the program: green when it passes, red with what is wrong when it does not
                 let passes = self.win.check.as_ref().is_some_and(|v| v.passes());
@@ -613,7 +618,7 @@ impl App {
             .default_open(true)
             .show(ui, |ui| {
                 self.fields_of(ui, Section::Focus);
-                for key in [Key::SMax, Key::MaxPower, Key::MaxSpeed] {
+                for key in [Key::SMax, Key::MaxPower, Key::MaxSpeed, Key::LaserWatts] {
                     self.field_for(ui, key);
                 }
                 ui.label(
@@ -669,6 +674,7 @@ impl App {
                     Key::OriginY,
                     Key::MaxPower,
                     Key::MaxSpeed,
+                    Key::LaserWatts,
                 ] {
                     self.field_for(ui, key);
                 }
@@ -716,6 +722,7 @@ impl App {
                     Key::OriginY,
                     Key::MaxPower,
                     Key::MaxSpeed,
+                    Key::LaserWatts,
                 ] {
                     self.field_for(ui, key);
                 }
@@ -735,6 +742,7 @@ impl App {
                     Key::OriginY,
                     Key::MaxPower,
                     Key::MaxSpeed,
+                    Key::LaserWatts,
                 ] {
                     self.field_for(ui, key);
                 }

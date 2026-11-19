@@ -267,10 +267,13 @@ pub enum Msg {
     VerifyOverscan,
     VerifyPass,
     VerifyFail,
+    LaserWatts,
+    PreviewEnergy,
+    PreviewEnergyNone,
 }
 
 impl Msg {
-    pub const ALL: [Msg; 179] = [
+    pub const ALL: [Msg; 182] = [
         Msg::Language,
         Msg::Fit,
         Msg::Cancel,
@@ -450,6 +453,9 @@ impl Msg {
         Msg::VerifyOverscan,
         Msg::VerifyPass,
         Msg::VerifyFail,
+        Msg::LaserWatts,
+        Msg::PreviewEnergy,
+        Msg::PreviewEnergyNone,
     ];
 
     /// The words in the order English, Spanish, German, French, Italian, Japanese, Chinese, Portuguese.
@@ -2244,6 +2250,36 @@ impl Msg {
                 "検査：不合格",
                 "检查：未通过",
                 "Verificação: falhou",
+            ],
+            Msg::LaserWatts => [
+                "Laser power (W, 0 = not known)",
+                "Potencia del láser (W, 0 = desconocida)",
+                "Laserleistung (W, 0 = unbekannt)",
+                "Puissance du laser (W, 0 = inconnue)",
+                "Potenza del laser (W, 0 = sconosciuta)",
+                "レーザー出力（W、0 = 不明）",
+                "激光功率（W，0 = 未知）",
+                "Potência do laser (W, 0 = desconhecida)",
+            ],
+            Msg::PreviewEnergy => [
+                "Energy {0} J from a laser of {1} W: {2} W on average over {3} of burning",
+                "Energía {0} J de un láser de {1} W: {2} W de media durante {3} de grabado",
+                "Energie {0} J von einem Laser mit {1} W: im Mittel {2} W während {3} Brenndauer",
+                "Énergie {0} J d'un laser de {1} W : {2} W en moyenne pendant {3} de gravure",
+                "Energia {0} J da un laser di {1} W: {2} W in media per {3} di incisione",
+                "エネルギー {0} J（{1} W のレーザー）：焼き付け {3} の間、平均 {2} W",
+                "能量 {0} J（{1} W 激光）：烧刻 {3} 内平均 {2} W",
+                "Energia {0} J de um laser de {1} W: {2} W em média durante {3} de gravação",
+            ],
+            Msg::PreviewEnergyNone => [
+                "Energy 0.0 J from a laser of {0} W: nothing burns",
+                "Energía 0.0 J de un láser de {0} W: no se quema nada",
+                "Energie 0.0 J von einem Laser mit {0} W: nichts wird gebrannt",
+                "Énergie 0.0 J d'un laser de {0} W : rien ne brûle",
+                "Energia 0.0 J da un laser di {0} W: non brucia nulla",
+                "エネルギー 0.0 J（{0} W のレーザー）：何も焼き付けません",
+                "能量 0.0 J（{0} W 激光）：没有烧刻",
+                "Energia 0.0 J de um laser de {0} W: nada é queimado",
             ],
         }
     }

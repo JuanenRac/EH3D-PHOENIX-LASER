@@ -196,6 +196,7 @@ pub enum Key {
     QrOverscan,
     QrMaxMinutes,
     QrBorder,
+    LaserWatts,
 }
 
 /// The group of the side panel a setting belongs to.
@@ -247,6 +248,7 @@ fn default_fields() -> Vec<Field> {
         f(Key::OriginY, Msg::OriginY, Section::Laser, "0"),
         f(Key::MaxPower, Msg::MaxPower, Section::Laser, "100"),
         f(Key::MaxSpeed, Msg::MaxSpeed, Section::Laser, "30000"),
+        f(Key::LaserWatts, Msg::LaserWatts, Section::Laser, "0"),
         f(
             Key::Powers,
             Msg::Powers,
@@ -1652,6 +1654,7 @@ impl Window {
                 self.put(Key::FrameFeed, t(s.frame.feed_mm_min));
                 self.put(Key::MaxPower, t(s.machine.max_power_percent));
                 self.put(Key::MaxSpeed, t(s.machine.max_speed_mm_min));
+                self.put(Key::LaserWatts, t(s.machine.laser_watts));
                 self.put(Key::Gamma, t(s.tone.gamma));
                 self.put(Key::Contrast, t(s.tone.contrast));
                 self.put(Key::Brightness, t(s.tone.brightness));
@@ -1767,6 +1770,7 @@ impl Window {
         self.put(Key::SMax, m.s_max.to_string());
         self.put(Key::MaxPower, format!("{}", m.max_power_percent));
         self.put(Key::MaxSpeed, format!("{}", m.max_speed_mm_min));
+        self.put(Key::LaserWatts, format!("{}", m.laser_watts));
         self.status = Status::ProfileApplied {
             name: s.profile.clone().unwrap_or_default(),
             s_max: m.s_max,
@@ -1887,6 +1891,11 @@ impl Window {
 
     /// Works the G-code out for what is chosen (the engraving or the grid), like the command line, and the passes to draw.
     pub fn compute(&mut self) -> bool {
+        // a power of the laser that is not a number from 0 to 1000 is refused, whatever is worked out
+        if let Err(s) = self.laser_watts() {
+            self.status = s;
+            return false;
+        }
         let made = match self.mode {
             Mode::Engrave => self.engrave_job(),
             Mode::Calibrate => self.calibrate_job(),
@@ -2057,12 +2066,23 @@ impl Window {
         })
     }
 
-    /// What the preview is told about the machine: the acceleration of the box, the speed of the moves with the laser off and the bed of the settings file.
+    /// The optical power of the laser at full power (W) that the box holds: `None` while it says 0 (not known), and a box that is not a number from 0 to 1000 is refused.
+    pub fn laser_watts(&self) -> Result<Option<f64>, Status> {
+        let w = self.number(Key::LaserWatts)?;
+        if (0.0..=1000.0).contains(&w) {
+            Ok((w > 0.0).then_some(w))
+        } else {
+            Err(Status::BadValue(Msg::LaserWatts))
+        }
+    }
+
+    /// What the preview is told about the machine: the acceleration of the box, the speed of the moves with the laser off, the bed of the settings file and the power of the laser.
     fn preview_options(&self, s_max: u32) -> preview::Options {
         let mut o = preview::Options {
             rapid_mm_min: self.settings.machine.rapid_mm_min,
             s_max: Some(s_max),
             bed_mm: self.settings.machine.bed_mm,
+            laser_watts: self.laser_watts().ok().flatten(),
             ..preview::Options::default()
         };
         if let Ok(a) = self.number(Key::Accel) {
@@ -2087,6 +2107,26 @@ impl Window {
         )];
         lines.extend(r.notes.iter().take(8).cloned());
         lines
+    }
+
+    /// The energy that the program burns and its mean power, in words, when the power of the laser is known (the box of the laser power is more than 0).
+    pub fn energy_line(&self) -> Option<String> {
+        let (r, _) = (self.report.as_ref()?, self.done.as_ref()?);
+        let watts = self.laser_watts().ok().flatten()?;
+        let e = r.energy_j?;
+        let w = format!("{watts}");
+        Some(match r.mean_power_w {
+            Some(mean) => fill(
+                Msg::PreviewEnergy.tr(self.lang),
+                &[
+                    &format!("{e:.1}"),
+                    &w,
+                    &format!("{mean:.2}"),
+                    &preview::clock(r.burn_seconds),
+                ],
+            ),
+            None => fill(Msg::PreviewEnergyNone.tr(self.lang), &[&w]),
+        })
     }
 
     /// How far past the bed the check lets the head go with the laser off (the box of the check), from 0 to the most `verify` allows.
@@ -4281,6 +4321,96 @@ hatch_cross = on
                 assert!(!m.tr(l).is_empty());
             }
             assert!(w.status.text(l).contains("21"), "{}", w.status.text(l));
+        }
+    }
+
+    #[test]
+    fn the_laser_power_box_makes_the_preview_tell_the_energy_and_the_mean_power() {
+        let s = Scratch::new("watts");
+        let burn = s.write(
+            "burn.nc",
+            "G21\nG90\nM4 S0\nG0 X0 Y0\nG1 X10 Y0 S500 F600\nS0\nM5\nM2\n",
+        );
+        let mut w = Window::new(Lang::En);
+        // the power of the laser is not known: no energy
+        assert_eq!(text_of(&w, Key::LaserWatts), "0");
+        assert!(w.open_gcode(&burn));
+        assert_eq!(w.energy_line(), None);
+        assert_eq!(w.report.as_ref().unwrap().energy_j, None);
+        // 10 W at half of the full power for the second that the 10 mm take: 5 J, 5 W on average
+        set(&mut w, Key::LaserWatts, "10");
+        assert!(w.compute());
+        let r = w.report.as_ref().unwrap();
+        assert!((r.energy_j.unwrap() - 5.0).abs() < 1e-9);
+        assert!((r.mean_power_w.unwrap() - 5.0).abs() < 1e-9);
+        assert_eq!(
+            w.energy_line().unwrap(),
+            "Energy 5.0 J from a laser of 10 W: 5.00 W on average over 1 s of burning"
+        );
+        // the same numbers as the command line gets from the same options
+        let o = preview::Options {
+            laser_watts: Some(10.0),
+            s_max: Some(1000),
+            ..preview::Options::default()
+        };
+        let direct = preview::analyse(&preview::read(&w.done.as_ref().unwrap().gcode), &o).unwrap();
+        assert_eq!(direct.energy_j, r.energy_j);
+        assert_eq!(direct.mean_power_w, r.mean_power_w);
+        w.lang = Lang::Pt;
+        assert!(w
+            .energy_line()
+            .unwrap()
+            .starts_with("Energia 5.0 J de um laser de 10 W"));
+        // a program that burns nothing has no energy
+        let dry = s.write("dry.nc", "G21\nG90\nG0 X0 Y0\nG0 X5 Y5\nM2\n");
+        w.lang = Lang::En;
+        assert!(w.open_gcode(&dry));
+        assert_eq!(
+            w.energy_line().unwrap(),
+            "Energy 0.0 J from a laser of 10 W: nothing burns"
+        );
+        // back to unknown
+        set(&mut w, Key::LaserWatts, "0");
+        assert!(w.compute());
+        assert_eq!(w.energy_line(), None);
+    }
+
+    #[test]
+    fn the_energy_is_told_for_what_the_window_works_out_too_and_a_bad_box_is_refused() {
+        let mut w = Window::new(Lang::En);
+        w.set_mode(Mode::Text);
+        w.set_words("A".to_string());
+        set(&mut w, Key::LaserWatts, "5");
+        assert!(w.compute());
+        let line = w.energy_line().unwrap();
+        assert!(
+            line.starts_with("Energy ") && line.contains("from a laser of 5 W"),
+            "{line}"
+        );
+        // a power that is not a number from 0 to 1000 names the box and works nothing out
+        for text in ["", "x", "-1", "1000.5", "inf", "1e9"] {
+            set(&mut w, Key::LaserWatts, text);
+            assert!(!w.compute(), "{text}");
+            assert_eq!(w.status, Status::BadValue(Msg::LaserWatts), "{text}");
+        }
+        set(&mut w, Key::LaserWatts, "1000");
+        assert!(w.compute());
+        // the settings file and a machine profile fill the box
+        let s = Scratch::new("watts-config");
+        let cfg = s.write(
+            "w.cfg",
+            "[machine]\nlaser_watts = 12.5\n[profile diode]\nlaser_watts = 7\n",
+        );
+        assert!(w.load_config(&cfg));
+        assert_eq!(text_of(&w, Key::LaserWatts), "12.5");
+        assert!(w.compute());
+        assert!(w.energy_line().unwrap().contains("laser of 12.5 W"));
+        assert!(w.apply_profile("diode"));
+        assert_eq!(text_of(&w, Key::LaserWatts), "7");
+        for l in Lang::ALL {
+            for m in [Msg::LaserWatts, Msg::PreviewEnergy, Msg::PreviewEnergyNone] {
+                assert!(!m.tr(l).is_empty());
+            }
         }
     }
 
