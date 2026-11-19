@@ -4,6 +4,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+- **A run-up for the fill of a QR code:** `phoenix-laser qr --overscan-mm MM` (or `overscan_mm` in `[qr]`, from 0 to 20 mm and 0 by default) runs the head up to each burnt line from MM before its start and out MM past its end with the laser off, so the head is at speed all along the burnt part. The same lines are burnt at the same power; only the moves with the power at zero are added, and no rapid move comes with the power set. A run-up that would leave the bed (the first and the last modules of the symbol plus the run-up on each side) or a value out of range is refused and nothing is written, never trimmed. The window has a box for it, filled by a settings file.
+
 - **An inverted QR code:** `phoenix-laser qr --invert` (or `invert = on` in `[qr]`, and `--no-invert` to undo it) burns the light modules of the symbol instead of the dark ones, so the symbol is left bare in a burnt plate. It is off by default. The same limits hold over the light modules (the most burning moves, the power, the speed and the bed), the comment of the program says it is inverted, and the window has a switch for it that a settings file fills.
 
 - **Screenshots in the README:** a Screenshots section in the eight languages shows two pictures of the window taken by the program itself with `--shot` (a drawing being cut, with its table of layers, and a picture being engraved, coloured by power), kept in `images/screens/` under 400 KiB each, and the tree of files and the Repository Structure picture list the folder.

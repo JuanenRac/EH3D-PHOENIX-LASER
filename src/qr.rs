@@ -459,7 +459,7 @@ pub struct Machine {
 
 /// The G-code of a symbol whose lower left corner is at `origin`: each dark module (each light one when `invert` is on) is filled with lines `line_mm` apart, burnt at the power and the speed of the settings as many times as
 /// `passes` says, with the laser off between the runs. Data over `max_bytes`, a symbol that needs a version over `max_version` or is larger than `max_size_mm`, a fill of more than
-/// `max_lines` moves, a power or a speed over the limit, or a symbol outside of the bed is refused and nothing is written. The data is never written into a comment of the program.
+/// `max_lines` moves, a power or a speed over the limit, or a symbol (with the run-up of `overscan_mm` past each end of a line) outside of the bed is refused and nothing is written. The data is never written into a comment of the program.
 pub fn program(
     data: &str,
     origin: (f64, f64),
@@ -540,6 +540,21 @@ pub fn program(
             q.max_lines
         ));
     }
+    // the run-up goes past each end of a burnt line with the laser off: it must stay inside the bed too
+    let over = q.overscan_mm;
+    if let (Some((bx, _)), true) = (m.bed_mm, over > 0.0) {
+        let first = rows.iter().flatten().map(|r| r.0).min();
+        let last = rows.iter().flatten().map(|r| r.1).max();
+        if let (Some(a), Some(b)) = (first, last) {
+            let lo = origin.0 + a as f64 * q.module_mm - over;
+            let hi = origin.0 + (b + 1) as f64 * q.module_mm + over;
+            if lo < -1e-9 || hi > bx + 1e-9 {
+                return Err(format!(
+                    "the run-up of {over} mm at each end of a line goes from X{lo:.1} to X{hi:.1}, outside of the bed of {bx} mm (overscan_mm in [qr])"
+                ));
+            }
+        }
+    }
     let s = (f64::from(m.s_max) * q.power_percent / 100.0).round() as u32;
     let feed = n(q.speed_mm_min)?;
     let mut out = String::from("G21\nG90\nM4 S0\n");
@@ -575,9 +590,23 @@ pub fn program(
                     if lit {
                         out.push_str("S0\n");
                     }
-                    out.push_str(&format!("G0 X{} Y{}\n", n(from)?, n(y)?));
-                    out.push_str(&format!("G1 X{} Y{} S{s} F{feed}\n", n(to)?, n(y)?));
-                    lit = true;
+                    if over > 0.0 {
+                        // the head runs up to the line with the laser off and runs out past its end, so it is at speed all along the burnt part
+                        let dir = if backwards { -1.0 } else { 1.0 };
+                        out.push_str(&format!("G0 X{} Y{}\n", n(from - dir * over)?, n(y)?));
+                        out.push_str(&format!("G1 X{} Y{} S0 F{feed}\n", n(from)?, n(y)?));
+                        out.push_str(&format!("G1 X{} Y{} S{s} F{feed}\n", n(to)?, n(y)?));
+                        out.push_str(&format!(
+                            "G1 X{} Y{} S0 F{feed}\n",
+                            n(to + dir * over)?,
+                            n(y)?
+                        ));
+                        lit = false;
+                    } else {
+                        out.push_str(&format!("G0 X{} Y{}\n", n(from)?, n(y)?));
+                        out.push_str(&format!("G1 X{} Y{} S{s} F{feed}\n", n(to)?, n(y)?));
+                        lit = true;
+                    }
                 }
                 backwards = !backwards;
             }
@@ -1063,6 +1092,120 @@ mod tests {
                 assert!(!lit, "{line}");
             }
         }
+    }
+
+    #[test]
+    fn the_overscan_runs_the_head_up_to_each_line_and_out_past_it_with_the_laser_off() {
+        let q = QrSettings {
+            line_mm: 0.5,
+            overscan_mm: 2.0,
+            ..settings()
+        };
+        let plain = QrSettings {
+            overscan_mm: 0.0,
+            ..q
+        };
+        let (g, _) = program("EH3D 42", (5.0, 5.0), &q, &machine()).unwrap();
+        let (p, _) = program("EH3D 42", (5.0, 5.0), &plain, &machine()).unwrap();
+        let x_of = |line: &str| -> f64 {
+            line.split(' ')
+                .find_map(|w| w.strip_prefix('X'))
+                .unwrap()
+                .parse()
+                .unwrap()
+        };
+        let rows: Vec<&str> = g.lines().collect();
+        let mut burning = 0;
+        for (i, line) in rows.iter().enumerate() {
+            if line.starts_with("G1") && !line.contains(" S0 ") {
+                burning += 1;
+                // before it, the run-up with the laser off, 2 mm long, on the line of its start
+                let before = rows[i - 1];
+                let after = rows[i + 1];
+                assert!(
+                    before.starts_with("G1") && before.contains(" S0 "),
+                    "{before}"
+                );
+                assert!(after.starts_with("G1") && after.contains(" S0 "), "{after}");
+                let (a, b) = (x_of(rows[i - 2]), x_of(before));
+                assert!(((b - a).abs() - 2.0).abs() < 1e-9, "{a} {b}");
+                let (end, out) = (x_of(line), x_of(after));
+                assert!(((out - end).abs() - 2.0).abs() < 1e-9, "{end} {out}");
+                // the run-out goes on the way the line went
+                assert_eq!((out - end).signum(), (end - b).signum());
+            }
+        }
+        // the same lines are burnt, and nothing that moves fast has the power set
+        assert_eq!(burning, p.lines().filter(|l| l.starts_with("G1")).count());
+        let lim = Limits::default();
+        let (v, w) = (
+            verify(g.as_bytes(), &lim).unwrap(),
+            verify(p.as_bytes(), &lim).unwrap(),
+        );
+        assert!(v.passes(), "{:?}", v.problems);
+        assert!((v.burn_mm - w.burn_mm).abs() < 1e-6);
+        assert!(v.travel_mm > w.travel_mm);
+        let mut lit = false;
+        for line in g.lines() {
+            if line.starts_with("G1") && !line.contains(" S0 ") && line.contains(" S") {
+                lit = true;
+            } else if line.starts_with("S0") || line.contains(" S0 ") {
+                lit = false;
+            } else if line.starts_with("G0") {
+                assert!(!lit, "{line}");
+            }
+        }
+        // two passes and an inverted symbol keep the same run-up
+        let both = QrSettings {
+            passes: 2,
+            invert: true,
+            ..q
+        };
+        let (g2, _) = program("EH3D 42", (5.0, 5.0), &both, &machine()).unwrap();
+        assert!(verify(g2.as_bytes(), &lim).unwrap().passes());
+    }
+
+    #[test]
+    fn the_run_up_must_stay_inside_the_bed_and_inside_its_range() {
+        let q = QrSettings {
+            overscan_mm: 2.0,
+            ..settings()
+        };
+        let bed = |x: f64| Machine {
+            bed_mm: Some((x, 50.0)),
+            ..machine()
+        };
+        // the first module of a row touches the left edge: 2 mm before it is outside of the bed
+        let e = program("A", (0.0, 0.0), &q, &bed(50.0)).unwrap_err();
+        assert!(
+            e.contains("overscan_mm") && e.contains("outside of the bed"),
+            "{e}"
+        );
+        assert!(program("A", (2.0, 0.0), &q, &bed(50.0)).is_ok());
+        // and past the right end
+        let e = program("A", (2.0, 0.0), &q, &bed(24.0)).unwrap_err();
+        assert!(e.contains("overscan_mm"), "{e}");
+        assert!(program("A", (2.0, 0.0), &q, &bed(25.0)).is_ok());
+        // without a run-up the same place is fine, and with no bed it is never refused
+        let none = QrSettings {
+            overscan_mm: 0.0,
+            ..q
+        };
+        assert!(program("A", (0.0, 0.0), &none, &bed(21.0)).is_ok());
+        assert!(program("A", (0.0, 0.0), &q, &machine()).is_ok());
+        // the range of the setting
+        for bad in [-0.1, 20.5, f64::NAN, f64::INFINITY] {
+            let b = QrSettings {
+                overscan_mm: bad,
+                ..q
+            };
+            assert!(program("A", (5.0, 5.0), &b, &machine()).is_err(), "{bad}");
+        }
+        let top = QrSettings {
+            overscan_mm: 20.0,
+            ..q
+        };
+        assert!(program("A", (25.0, 5.0), &top, &machine()).is_ok());
     }
 
     #[test]

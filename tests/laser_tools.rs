@@ -2075,6 +2075,85 @@ fn a_qr_code_can_burn_its_light_modules_from_an_option_or_from_the_settings() {
 }
 
 #[test]
+fn a_qr_code_can_run_the_head_up_to_each_line_with_the_laser_off_and_never_out_of_the_bed() {
+    let plain = tmp("qr-run-plain.nc");
+    let up = tmp("qr-run-up.nc");
+    let base = ["--text", "EH3D 42", "--line-mm", "0.5", "--origin", "5,5"];
+    let mut a = vec!["qr", plain.as_str()];
+    a.extend(base);
+    let (ok, _, err) = run(&a);
+    assert!(ok, "{err}");
+    let mut b = vec!["qr", up.as_str()];
+    b.extend(base);
+    b.extend(["--overscan-mm", "2", "--bed", "100,100"]);
+    let (ok, _, err) = run(&b);
+    assert!(ok, "{err}");
+    let (p, u) = (
+        std::fs::read_to_string(&plain).unwrap(),
+        std::fs::read_to_string(&up).unwrap(),
+    );
+    // the same lines are burnt, each with a run-up and a run-out that have the power at zero
+    let burnt = |g: &str| g.lines().filter(|l| l.contains(" S200 ")).count();
+    assert!(burnt(&p) > 0 && burnt(&p) == burnt(&u));
+    assert!(
+        u.lines()
+            .filter(|l| l.starts_with("G1") && l.contains(" S0 "))
+            .count()
+            == 2 * burnt(&u)
+    );
+    assert!(!p.lines().any(|l| l.starts_with("G1") && l.contains(" S0 ")));
+    let (ok, out, err) = run(&["verify", &up, "--bed", "100,100"]);
+    assert!(ok, "{out} {err}");
+    // a run-up that leaves the bed, or one out of its range, is refused and nothing is written
+    let refused = tmp("qr-run-refused.nc");
+    let _ = std::fs::remove_file(&refused);
+    let (ok, _, err) = run(&[
+        "qr",
+        &refused,
+        "--text",
+        "A",
+        "--overscan-mm",
+        "2",
+        "--bed",
+        "21,21",
+    ]);
+    assert!(!ok);
+    assert!(
+        err.contains("overscan_mm") && err.contains("outside of the bed"),
+        "{err}"
+    );
+    for bad in ["21", "-1", "x"] {
+        let (ok, _, err) = run(&["qr", &refused, "--text", "A", "--overscan-mm", bad]);
+        assert!(!ok, "{bad}");
+        assert!(!err.contains("panicked"), "{err}");
+    }
+    assert!(!std::path::Path::new(&refused).exists());
+    // the settings file can ask for it, and the option wins
+    let cfg = tmp("qr-run.cfg");
+    std::fs::write(&cfg, "[qr]\noverscan_mm = 3\n").unwrap();
+    let from_file = tmp("qr-run-file.nc");
+    let (ok, _, err) = run(&["qr", &from_file, "--text", "A", "--config", &cfg]);
+    assert!(ok, "{err}");
+    assert!(std::fs::read_to_string(&from_file)
+        .unwrap()
+        .contains(" S0 F"));
+    let (ok, _, err) = run(&[
+        "qr",
+        &from_file,
+        "--text",
+        "A",
+        "--config",
+        &cfg,
+        "--overscan-mm",
+        "0",
+    ]);
+    assert!(ok, "{err}");
+    assert!(!std::fs::read_to_string(&from_file)
+        .unwrap()
+        .contains(" S0 F"));
+}
+
+#[test]
 fn the_cross_option_fills_an_engraved_layer_a_second_time() {
     let engraved = |out: &str| -> f64 {
         let end = out.find(" mm engraved").unwrap_or_else(|| panic!("{out}"));

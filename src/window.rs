@@ -192,6 +192,7 @@ pub enum Key {
     QrMaxVersion,
     QrMaxSize,
     QrMaxLines,
+    QrOverscan,
 }
 
 /// The group of the side panel a setting belongs to.
@@ -373,6 +374,12 @@ fn default_fields() -> Vec<Field> {
             Msg::QrMaxLines,
             Section::Qr,
             &qd.max_lines.to_string(),
+        ),
+        f(
+            Key::QrOverscan,
+            Msg::Overscan,
+            Section::Qr,
+            &t(qd.overscan_mm),
         ),
     ]
 }
@@ -1628,6 +1635,7 @@ impl Window {
                 self.put(Key::QrMaxVersion, s.qr.max_version.to_string());
                 self.put(Key::QrMaxSize, t(s.qr.max_size_mm));
                 self.put(Key::QrMaxLines, s.qr.max_lines.to_string());
+                self.put(Key::QrOverscan, t(s.qr.overscan_mm));
                 self.qr_ecc = s.qr.ecc;
                 self.qr_invert = s.qr.invert;
                 self.settings = s;
@@ -2254,6 +2262,7 @@ impl Window {
             max_size_mm: self.number(Key::QrMaxSize)?,
             max_lines: self.whole(Key::QrMaxLines, 1.0, 1_000_000.0)?,
             invert: self.qr_invert,
+            overscan_mm: self.number(Key::QrOverscan)?,
         };
         let s_max = self.whole(Key::SMax, 1.0, 100_000.0)?;
         let (max_power, max_speed) = self.limits()?;
@@ -3913,6 +3922,21 @@ hatch_cross = on
         assert!(matches!(&w.status, Status::Failed(e) if e.contains("outside of the bed")));
         w.settings.machine.bed_mm = None;
         assert!(w.compute());
+        // the run-up of the overscan goes out of the bed before the symbol does, and a value out of range names its box
+        set(&mut w, Key::QrOverscan, "2");
+        w.settings.machine.bed_mm = Some((26.0, 50.0));
+        assert!(!w.compute());
+        assert!(
+            matches!(&w.status, Status::Failed(e) if e.contains("overscan_mm")),
+            "{:?}",
+            w.status
+        );
+        w.settings.machine.bed_mm = None;
+        assert!(w.compute());
+        set(&mut w, Key::QrOverscan, "21");
+        assert!(!w.compute());
+        assert!(matches!(&w.status, Status::Failed(e) if e.contains("overscan_mm")));
+        set(&mut w, Key::QrOverscan, "0");
         // a box that is not a number or not a whole number says which one
         for (key, text, label) in [
             (Key::QrModule, "", Msg::QrModuleMm),
@@ -3922,6 +3946,7 @@ hatch_cross = on
             (Key::QrMaxBytes, "79", Msg::QrMaxBytes),
             (Key::QrMaxVersion, "5", Msg::QrMaxVersion),
             (Key::QrMaxLines, "0", Msg::QrMaxLines),
+            (Key::QrOverscan, "x", Msg::Overscan),
         ] {
             let before = text_of(&w, key);
             set(&mut w, key, text);
@@ -3944,7 +3969,7 @@ hatch_cross = on
         let s = Scratch::new("qr-config");
         let cfg = s.write(
             "q.cfg",
-            "[qr]\nmodule_mm = 0.5\nline_mm = 0.25\npower_percent = 12\nspeed_mm_min = 800\npasses = 2\nmax_bytes = 30\nmax_version = 3\necc = Q\nmax_size_mm = 40\nmax_lines = 5000\n",
+            "[qr]\nmodule_mm = 0.5\nline_mm = 0.25\npower_percent = 12\nspeed_mm_min = 800\npasses = 2\nmax_bytes = 30\nmax_version = 3\necc = Q\nmax_size_mm = 40\nmax_lines = 5000\noverscan_mm = 2\n",
         );
         let mut w = Window::new(Lang::En);
         assert!(w.load_config(&cfg));
@@ -3958,6 +3983,7 @@ hatch_cross = on
             (Key::QrMaxVersion, "3"),
             (Key::QrMaxSize, "40"),
             (Key::QrMaxLines, "5000"),
+            (Key::QrOverscan, "2"),
         ] {
             assert_eq!(text_of(&w, key), text, "{key:?}");
         }

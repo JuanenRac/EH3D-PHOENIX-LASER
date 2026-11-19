@@ -529,6 +529,8 @@ pub struct QrSettings {
     pub max_lines: u32,
     /// Burn the light modules instead of the dark ones, so that the symbol is left bare in a burnt plate (off by default).
     pub invert: bool,
+    /// The run-up at each end of a burnt line (mm), burnt with the laser off so that the head is at speed when the laser comes on (0 is none, the default).
+    pub overscan_mm: f64,
 }
 
 impl Default for QrSettings {
@@ -545,6 +547,7 @@ impl Default for QrSettings {
             max_size_mm: 100.0,
             max_lines: 100_000,
             invert: false,
+            overscan_mm: 0.0,
         }
     }
 }
@@ -571,6 +574,7 @@ impl QrSettings {
         }
         range("speed_mm_min", self.speed_mm_min, 1.0, 30_000.0)?;
         range("max_size_mm", self.max_size_mm, 1.0, 1000.0)?;
+        range("overscan_mm", self.overscan_mm, 0.0, 20.0)?;
         for (name, v, hi) in [
             ("passes", self.passes, 20),
             ("max_bytes", self.max_bytes, 78),
@@ -1122,6 +1126,7 @@ fn set_global(s: &mut Settings, section: &str, key: &str, value: &str) -> Result
                 u32::try_from(whole(value)?).map_err(|_| "max_lines is too large".to_string())?
         }
         ("qr", "invert") => s.qr.invert = switch(value)?,
+        ("qr", "overscan_mm") => s.qr.overscan_mm = number(value)?,
         ("trace", "threshold") => {
             s.trace.threshold = u8::try_from(whole(value)?)
                 .map_err(|_| "trace threshold must be from 0 to 255".to_string())?
@@ -1835,8 +1840,17 @@ mod tests {
                 max_size_mm: 40.0,
                 max_lines: 5000,
                 invert: false,
+                overscan_mm: 0.0,
             }
         );
+        assert_eq!(
+            parse("[qr]\noverscan_mm = 2.5\n").unwrap().qr.overscan_mm,
+            2.5
+        );
+        assert!(parse("[qr]\noverscan_mm = 20\n").is_ok());
+        assert!(parse("[qr]\noverscan_mm = -1\n").is_err());
+        assert!(parse("[qr]\noverscan_mm = 20.5\n").is_err());
+        assert!(parse("[qr]\noverscan_mm = x\n").is_err());
         assert!(parse("[qr]\ninvert = on\n").unwrap().qr.invert);
         assert!(!parse("[qr]\ninvert = off\n").unwrap().qr.invert);
         assert!(parse("[qr]\ninvert = maybe\n").is_err());
