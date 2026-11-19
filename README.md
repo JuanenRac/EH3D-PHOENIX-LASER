@@ -17,7 +17,7 @@
 
 ---
 
-**Honesty check - what actually runs today:** a Rust library and a command line program (`phoenix-laser`) with 532 tests that run on a computer: turns an image into dots by dithering and writes the G-code of a laser that burns line by line with dynamic power and overscan, reads SVG and DXF drawings and writes the G-code that cuts their contours (the inside ones first, the width of the beam taken into account, bridges, several passes) and engraves their shapes with lines, with the settings of each layer in a file, and a power-against-feed test grid. It has a window (built with `--features gui`) that opens a picture or a drawing, shows the path of the laser, lets the settings be changed and exports the G-code, but the window has not been looked at on a screen yet; it has not been tried on a machine and it has not been checked against a collection of real files.
+**Honesty check - what actually runs today:** a Rust library and a command line program (`phoenix-laser`) with 545 tests that run on a computer: turns an image into dots by dithering and writes the G-code of a laser that burns line by line with dynamic power and overscan, reads SVG and DXF drawings and writes the G-code that cuts their contours (the inside ones first, the width of the beam taken into account, bridges, several passes) and engraves their shapes with lines, with the settings of each layer in a file, and a power-against-feed test grid. It has a window (built with `--features gui`) that opens a picture or a drawing, shows the path of the laser, lets the settings be changed and exports the G-code, but the window has not been looked at on a screen yet; it has not been tried on a machine and it has not been checked against a collection of real files.
 
 ---
 
@@ -30,7 +30,7 @@
 |---|---|
 | Version | `0.0.9` |
 | Maturity | Functional |
-| Tests | 532 |
+| Tests | 545 |
 | Stack | Rust |
 | On real hardware | Not tried: nothing here has run on a machine |
 
@@ -46,7 +46,7 @@ Each line is one part of this repository and the light says how far it is today.
 |---|---|---|
 | Core | 🟡 | turns an image into dots by dithering and writes the G-code of a laser that burns line by line with dynamic power and overscan, reads SVG and DXF drawings and cuts or engraves them by layer (ordered contours, beam width, bridges, passes, hatch), and a power-against-feed test grid; tested on a computer with normal and damaged input, not with a collection of real files. |
 | Command line | 🟡 | `phoenix-laser` (`engrave`, `calibrate`, `info`, `cut`, `vector`, `layers`) runs the same functions as the library and prints the result; every error comes back as a message and a non-zero exit code. |
-| Tests | 🟡 | 532 tests pass (`cargo test`), with normal cases, edge cases and damaged input. |
+| Tests | 🟡 | 545 tests pass (`cargo test`), with normal cases, edge cases and damaged input. |
 | Security | 🟡 | Plain safe Rust (`forbid(unsafe_code)`): nothing panics on the files it is given and a bad value is an error with its reason; no independent review. |
 | Window | 🟠 | Written (egui, `--features gui`): open or drop a picture or an SVG or DXF drawing, see the path of the laser (the cut in one colour, the travel dim), edit the table of layers, a calibration grid, zoom and pan, estimate the time, export; its logic is tested, but it has not been built or looked at on a screen yet. |
 | Real hardware | 🔴 | Not tried: nothing here has been run on a machine. |
@@ -65,6 +65,7 @@ Each line is one part of this repository and the light says how far it is today.
 * **The focus test** (`src/calibrate.rs`, `[focus]` in the settings file): `phoenix-laser focus` burns a ladder of short lines, each with the head at another height, so the sharpest line shows where the beam is in focus; the step of the height has no default (which way is down depends on the machine), the power obeys the limit of power and the head returns to its first height.
 * **The test grid of a material** (`src/calibrate.rs`, `[calibrate]` in the settings file): `phoenix-laser calibrate --material NAME --materials FILE` spreads the powers and the feeds of the grid around what the material of the library says, held between the limits and given once each, and `--labels` burns the power of each column and the feed of each row next to the squares with a font of strokes, so the grid can be read on the material afterwards; a material over a limit is refused, never lowered. With a material the figures come by default (`--no-labels` takes them away) and the lowest power and feed of the ladder are the keys `min_power_percent` and `min_feed_mm_min`.
 * **Text** (`src/text.rs`, `[text]` in the settings file): `phoenix-laser text OUT.nc --text TEXT` burns a name, a serial number or a mark with a font of strokes of the program (capitals, figures, space and `. , - + / : ! ? ( ) = _ '`; lower case is burnt as capitals, a new line starts a row) and no font file. The height of a capital, the gaps between letters and rows, the power, the speed and the passes are settings; a character the font has not, a text of more than `max_chars` characters, a height over `max_height_mm`, a power or a speed over the limit, or work that would go outside of the bed is refused, never cut down, and the text is never written into a comment of the program.
+* **QR code** (`src/qr.rs`, `[qr]` in the settings file): `phoenix-laser qr OUT.nc --text DATA` burns some data as a QR code of the program's own (versions 1 to 4, from 21 to 33 modules a side, in byte mode, with the four levels of error correction by Reed-Solomon and the mask of the lowest penalty), filling each dark module with lines; the symbol was read back with an independent decoder in all its versions and levels, and the tests read it back with their own reader. The side of a module, the distance between the lines, the level, the power, the speed, the passes and the limits are settings; data over `max_bytes`, a version over `max_version`, a symbol larger than `max_size_mm`, a fill of more than `max_lines` moves, a power or a speed over the limit or work outside of the bed is refused, never cut down or shrunk, and the data is never written into a comment of the program. `--print` shows the symbol as text.
 * **Cross hatch** (`src/cut.rs`, `hatch_cross` in a layer): an `engrave` layer with `hatch_cross = on` (or `--cross` in `vector` and `trace`) is filled a second time with lines at right angles to the first ones, with the same spacing, in every pass, and the limit of lines holds over each set; the energy of a square millimetre that the list of layers gives is doubled, and the preview and the check of the program see it as any other program.
 * **The frame of the work** (`src/frame.rs`, `[frame]` in the settings file): `phoenix-laser frame` writes a program that traces the rectangle of the work with the laser off, from a size or from the box of what a G-code program burns, so the person sees where it will land; a weak pilot power needs `--confirm-laser-on` every time, is capped at 5 % (`max_pilot_percent` of `[frame]` changes the cap) and obeys the limit of power, and a frame outside the bed is refused.
 * **The preview** (`src/preview.rs`): `phoenix-laser preview` reads a G-code program (its own or another's), prints the moves, the burnt and travelled length, the box, the powers and a time that counts the braking at the corners, warns of what looks dangerous (laser on during a rapid move, no feed, power above full, work outside the bed, no end) and draws the path as an SVG; the tests read back what the engraving writes and check the same length.
@@ -123,6 +124,7 @@ How the parts of this repository fit together: who uses it, what it holds and wh
 | The laser turning on just to position the work | the frame is traced with the laser off (no power set, the spindle never on); a pilot power needs `--confirm-laser-on` on every run, even when the settings file asks for it, stays at or under the cap (5 % unless `max_pilot_percent` says another), under the limit of power and is turned off before the program ends |
 | A head sent the wrong way in Z by a focus test | the step of the height has no default and the test is refused until the person gives it; the program says that it moves Z, the range is limited (50 mm in all), the head returns to the first height and the power obeys the limit of power |
 | A text that is too long, too tall or too strong, or that would burn outside of the bed | only the characters of the font are accepted (a letter it has not is refused, never skipped), the number of characters, the height, the power and the speed are held between limits that the settings can narrow, work outside of the bed is refused instead of cut down, and the text is never written into a comment of the program |
+| Data that does not fit in the QR code, a symbol that is too big, too dense or too strong, or one that would burn outside of the bed | the version, the number of bytes, the size, the number of burning moves, the power and the speed are held between limits that the settings can narrow, and anything over them is refused instead of cut down or shrunk; the data is never written into a comment of the program |
 | The output file chosen over the drawing or the settings it is made from | refused, in the window and in the commands |
 
 **What is not defended:** a result that was produced cleanly is not a verified result. Nothing here knows the limits of a machine, and the program has had no independent review. Report a vulnerability privately (see [SECURITY.md](SECURITY.md)).
@@ -139,6 +141,7 @@ phoenix-laser engrave IMAGE OUT.nc --width-mm 50 [--dot-mm 0.1] [--feed 3000] [-
 phoenix-laser calibrate OUT.nc --powers 20,40,60,80 --feeds 1000,2000,3000 [--smax 1000] [--max-power 100] [--max-speed MM/MIN] [--config FILE] [--profile NAME]
 phoenix-laser calibrate OUT.nc --material NAME --materials FILE [--steps 5] [--spread 40] [--labels|--no-labels] [--label-mm 3] [--smax 1000] [--max-power 100] [--max-speed MM/MIN] [--config FILE] [--profile NAME]
 phoenix-laser text OUT.nc --text TEXT [--height-mm 10] [--spacing 25] [--line-spacing 50] [--power 20] [--feed 1000] [--passes 1] [--origin X,Y] [--bed X,Y] [--smax 1000] [--max-power 100] [--max-speed MM/MIN] [--config FILE] [--profile NAME]
+phoenix-laser qr OUT.nc --text DATA [--ecc L|M|Q|H] [--module-mm 1] [--line-mm 0.1] [--power 20] [--feed 1000] [--passes 1] [--origin X,Y] [--bed X,Y] [--smax 1000] [--max-power 100] [--max-speed MM/MIN] [--print] [--config FILE] [--profile NAME]
 phoenix-laser info IMAGE
 phoenix-laser cut DRAWING OUT.nc [--config FILE] [--power P] [--speed MM/MIN] [--passes N] [--focus-step MM] [--kerf MM] [--kerf-side none|auto|inside|outside]
               [--tabs N] [--tab-width MM] [--smax N] [--overscan MM] [--origin X,Y] [--bed X,Y] [--max-power P] [--max-speed MM/MIN] [--profile NAME] [--material NAME --materials FILE] [--dpi N] [--tolerance MM] [--dry-run]
@@ -177,7 +180,7 @@ To take a picture of the window without opening it by hand, run it with `--shot 
 
 ## 🧪 Testing
 
-The suite has 532 tests (`cargo test`, run on Windows and Linux in the CI). They check the normal cases, the edge cases and damaged input: empty files, garbage and cut files never panic. The CI also runs `cargo fmt --check`, `cargo clippy` with warnings as errors and `python -I tools/ci_validate.py`.
+The suite has 545 tests (`cargo test`, run on Windows and Linux in the CI). They check the normal cases, the edge cases and damaged input: empty files, garbage and cut files never panic. The CI also runs `cargo fmt --check`, `cargo clippy` with warnings as errors and `python -I tools/ci_validate.py`.
 
 ## 🏗️ Build & Release
 
@@ -209,6 +212,7 @@ EH3D-PHOENIX-LASER/
 │   ├── tone.rs                                  the tone curve of a picture: levels, contrast, brightness, gamma and inversion before the dots
 │   ├── trace.rs                                 the contours of a picture: threshold, marching squares and simplified rings, with limits
 │   ├── text.rs                                  a line of text burnt with a font of strokes of its own, inside limits
+│   ├── qr.rs                                    a QR code of its own, versions 1 to 4 with error correction, burnt by filling its modules
 │   ├── gcode_out.rs                             the one way a G-code number is written and the standard header
 │   ├── raster.rs                                a part of the logic
 │   ├── safety.rs                                the limit of power, and the rules that keep the laser off while the work is shown

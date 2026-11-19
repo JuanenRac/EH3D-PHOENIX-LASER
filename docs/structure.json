@@ -158,6 +158,19 @@
           }
         },
         {
+          "name": "qr.rs",
+          "desc": {
+            "en": "a QR code of its own, versions 1 to 4 with error correction, burnt by filling its modules",
+            "es": "un código QR propio, versiones 1 a 4 con corrección de errores, grabado rellenando sus módulos",
+            "de": "ein eigener QR-Code, Versionen 1 bis 4 mit Fehlerkorrektur, durch Füllen der Module gebrannt",
+            "fr": "un code QR propre, versions 1 à 4 avec correction d'erreurs, gravé en remplissant ses modules",
+            "it": "un codice QR proprio, versioni da 1 a 4 con correzione degli errori, inciso riempiendo i moduli",
+            "ja": "独自の QR コード（バージョン1〜4、誤り訂正つき）をモジュールの塗りつぶしで焼き付ける",
+            "zh": "自带的二维码，1 至 4 版并带纠错，通过填充模块烧刻",
+            "pt": "um código QR próprio, versões 1 a 4 com correção de erros, queimado a preencher os módulos"
+          }
+        },
+        {
           "name": "gcode_out.rs",
           "desc": {
             "en": "the one way a G-code number is written and the standard header",

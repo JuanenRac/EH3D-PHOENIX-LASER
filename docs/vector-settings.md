@@ -17,7 +17,7 @@ key = value
 key = value
 ```
 
-Sections: `[limits]`, `[read]`, `[order]`, `[offset]`, `[hatch]`, `[machine]`, `[frame]`, `[focus]`, `[trace]`, `[tone]`, `[verify]`, `[calibrate]`, `[text]`, `[defaults]`, one `[layer NAME]` for each layer or colour and one `[profile NAME]` for each machine. `[defaults]` is what a layer gets that the file
+Sections: `[limits]`, `[read]`, `[order]`, `[offset]`, `[hatch]`, `[machine]`, `[frame]`, `[focus]`, `[trace]`, `[tone]`, `[verify]`, `[calibrate]`, `[text]`, `[qr]`, `[defaults]`, one `[layer NAME]` for each layer or colour and one `[profile NAME]` for each machine. `[defaults]` is what a layer gets that the file
 does not name, and also what every `[layer NAME]` starts from (wherever in the file `[defaults]` is written). The switches are `on` and `off`.
 
 ## What a layer is
@@ -259,6 +259,27 @@ A line of text burnt with the font of strokes of the program (`phoenix-laser tex
 The keys of `[text]` are `height_mm`, `max_height_mm`, `spacing_percent`, `line_spacing_percent`, `power_percent`, `speed_mm_min`, `passes` and `max_chars`.
 
 In the window, the text mode has a box for the words and one box for each of these keys (a file of settings fills them); the text is worked out with the same function as the command, from the origin of the machine, and is refused for the same reasons, with the status line naming the box that is wrong. The bed is the one of the machine of the file.
+
+### `[qr]`
+
+A QR code burnt by filling its dark modules with lines (`phoenix-laser qr OUT.nc --text DATA`): versions 1 to 4 (21 to 33 modules a side) in byte mode, with the four levels of error correction and the mask with the lowest penalty. A module is a square of `module_mm`, filled with lines `line_mm` apart, so the symbol is dark where the laser burns; leave a light margin of four modules around it on the material. The lower left corner is at `--origin X,Y` (the machine origin otherwise). The options `--ecc`, `--module-mm`, `--line-mm`, `--power`, `--feed` and `--passes` take the place of the keys with the same meaning, and `--print` shows the symbol as text.
+
+Data that does not fit is refused, never cut down: more than `max_bytes` bytes, a version over `max_version` at the level that is asked for, a symbol larger than `max_size_mm`, a fill of more than `max_lines` burning moves, a power or a speed over the limits of the machine (`--max-power`, `--max-speed`) or a symbol that would go outside of the bed (`--bed X,Y` or the machine of the file). The data is never written into a comment of the program.
+
+| Key | Default | Meaning |
+|---|---|---|
+| `module_mm` | 1 | the side of a module, from 0.2 to 10 mm |
+| `line_mm` | 0.1 | the distance between the lines that fill a module, from 0.02 mm up to `module_mm` |
+| `power_percent` | 20 | more than 0 up to 100, a percent of `s_max` |
+| `speed_mm_min` | 1000 | from 1 to 30000 |
+| `passes` | 1 | how many times the whole symbol is burnt, from 1 to 20 |
+| `max_bytes` | 40 | the most bytes of data, from 1 to 78 |
+| `max_version` | 4 | the largest version of the symbol, from 1 to 4 (a version holds 14, 26, 42 or 62 bytes at level M) |
+| `ecc` | M | the level of error correction: `L`, `M`, `Q` or `H` |
+| `max_size_mm` | 100 | the largest side of the symbol, from 1 to 1000 mm |
+| `max_lines` | 100000 | the most burning moves of the program, all the passes together, from 1 to 1000000 |
+
+The keys of `[qr]` are `module_mm`, `line_mm`, `power_percent`, `speed_mm_min`, `passes`, `max_bytes`, `max_version`, `ecc`, `max_size_mm` and `max_lines`.
 
 ### `[defaults]` and `[layer NAME]`
 

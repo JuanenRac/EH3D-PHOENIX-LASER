@@ -17,7 +17,7 @@
 
 ---
 
-**Verifica di onestà - cosa funziona oggi:** una libreria Rust e un programma a riga di comando (`phoenix-laser`) con 532 test che girano su un computer: trasforma un'immagine in punti con la retinatura e scrive il G-code di un laser che brucia riga per riga con potenza dinamica ed extracorsa, legge disegni SVG e DXF e scrive il G-code che ne taglia i contorni (prima quelli interni, con la larghezza del fascio, ponticelli e più passate) e ne incide le forme con linee, con le impostazioni di ogni livello in un file, e una griglia di prova potenza contro avanzamento. Ha una finestra (compilata con `--features gui`) che apre un'immagine o un disegno, mostra il percorso del laser, permette di cambiare le impostazioni ed esporta il G-code, ma la finestra non è ancora stata vista su uno schermo; non è stato provato su una macchina e non è stato verificato con una raccolta di file reali.
+**Verifica di onestà - cosa funziona oggi:** una libreria Rust e un programma a riga di comando (`phoenix-laser`) con 545 test che girano su un computer: trasforma un'immagine in punti con la retinatura e scrive il G-code di un laser che brucia riga per riga con potenza dinamica ed extracorsa, legge disegni SVG e DXF e scrive il G-code che ne taglia i contorni (prima quelli interni, con la larghezza del fascio, ponticelli e più passate) e ne incide le forme con linee, con le impostazioni di ogni livello in un file, e una griglia di prova potenza contro avanzamento. Ha una finestra (compilata con `--features gui`) che apre un'immagine o un disegno, mostra il percorso del laser, permette di cambiare le impostazioni ed esporta il G-code, ma la finestra non è ancora stata vista su uno schermo; non è stato provato su una macchina e non è stato verificato con una raccolta di file reali.
 
 ---
 
@@ -30,7 +30,7 @@
 |---|---|
 | Versione | `0.0.9` |
 | Maturità | Funzionale |
-| Test | 532 |
+| Test | 545 |
 | Stack tecnologico | Rust |
 | Su hardware reale | Non provato: nulla di questo ha girato su una macchina |
 
@@ -46,7 +46,7 @@ Ogni riga è una parte di questo repository e il semaforo dice a che punto è og
 |---|---|---|
 | Nucleo | 🟡 | trasforma un'immagine in punti con la retinatura e scrive il G-code di un laser che brucia riga per riga con potenza dinamica ed extracorsa, legge disegni SVG e DXF e li taglia o li incide per livello (contorni ordinati, larghezza del fascio, ponticelli, passate, tratteggio), e una griglia di prova potenza contro avanzamento; provato su un computer con input normali e danneggiati, non con una raccolta di file reali. |
 | Riga di comando | 🟡 | `phoenix-laser` (`engrave`, `calibrate`, `info`, `cut`, `vector`, `layers`) esegue le stesse funzioni della libreria e stampa il risultato; ogni errore torna come messaggio e codice di uscita diverso da zero. |
-| Test | 🟡 | 532 test passano (`cargo test`), con casi normali, casi limite e input danneggiati. |
+| Test | 🟡 | 545 test passano (`cargo test`), con casi normali, casi limite e input danneggiati. |
 | Sicurezza | 🟡 | Rust sicuro e semplice (`forbid(unsafe_code)`): nulla va in panico con i file ricevuti e un valore errato è un errore con il suo motivo; nessuna revisione indipendente. |
 | Finestra | 🟠 | Scritta (egui, `--features gui`): aprire o trascinare un'immagine o un disegno SVG o DXF, vedere il percorso del laser (il taglio in un colore, lo spostamento attenuato), modificare la tabella dei livelli, una griglia di calibrazione, zoom e spostamento, stimare il tempo, esportare; la sua logica è testata, ma non è ancora stata compilata né vista su uno schermo. |
 | Hardware reale | 🔴 | Non provato: nulla di questo è stato eseguito su una macchina. |
@@ -65,6 +65,7 @@ Ogni riga è una parte di questo repository e il semaforo dice a che punto è og
 * **La prova di fuoco** (`src/calibrate.rs`, `[focus]` nel file delle impostazioni): `phoenix-laser focus` brucia una scala di linee corte, ciascuna con la testa a un'altra altezza, e la linea più nitida mostra dove il fascio è a fuoco; il passo di altezza non ha un valore predefinito (cosa sia giù dipende dalla macchina), la potenza rispetta il limite di potenza e la testa torna alla prima altezza.
 * **La griglia di prova di un materiale** (`src/calibrate.rs`, `[calibrate]` nel file delle impostazioni): `phoenix-laser calibrate --material NOME --materials FILE` distribuisce le potenze e le velocità della griglia intorno a ciò che dice il materiale della libreria, entro i limiti e senza ripetere valori, e `--labels` brucia la potenza di ogni colonna e la velocità di ogni riga accanto ai quadrati con un carattere a tratti, così la griglia si può leggere poi sul materiale; un materiale oltre un limite viene rifiutato, mai abbassato. Con un materiale le cifre escono per impostazione predefinita (`--no-labels` le toglie) e la potenza e la velocità minime della scala sono le chiavi `min_power_percent` e `min_feed_mm_min`.
 * **Testo** (`src/text.rs`, `[text]` nel file delle impostazioni): `phoenix-laser text OUT.nc --text TESTO` incide un nome, un numero di serie o un marchio con un carattere a tratti del programma (maiuscole, cifre, spazio e `. , - + / : ! ? ( ) = _ '`; una minuscola è incisa come maiuscola, un a capo inizia una riga) e senza file di carattere. L'altezza di una maiuscola, gli spazi tra lettere e righe, la potenza, la velocità e i passaggi sono impostazioni; un carattere che il font non ha, un testo di più di `max_chars` caratteri, un'altezza oltre `max_height_mm`, una potenza o una velocità oltre il limite, o un lavoro che uscirebbe dal piano sono rifiutati, mai tagliati, e il testo non è mai scritto in un commento del programma.
+* **Codice QR** (`src/qr.rs`, `[qr]` nel file delle impostazioni): `phoenix-laser qr OUT.nc --text DATI` incide dei dati come un codice QR proprio del programma (versioni da 1 a 4, da 21 a 33 moduli per lato, in modalità byte, con i quattro livelli di correzione degli errori di Reed-Solomon e la maschera con la penalità più bassa), riempiendo ogni modulo scuro con delle linee; il simbolo è stato riletto con un decodificatore indipendente in tutte le versioni e i livelli, e i test lo rileggono con un lettore proprio. Il lato del modulo, la distanza tra le linee, il livello, la potenza, la velocità, i passaggi e i limiti sono impostazioni; dati oltre `max_bytes`, una versione oltre `max_version`, un simbolo più grande di `max_size_mm`, un riempimento di più di `max_lines` movimenti, una potenza o una velocità oltre il limite o un lavoro fuori dal piano vengono rifiutati, mai tagliati né ridotti, e i dati non vengono mai scritti in un commento del programma. `--print` mostra il simbolo come testo.
 * **Tratteggio incrociato** (`src/cut.rs`, `hatch_cross` in un livello): un livello `engrave` con `hatch_cross = on` (o `--cross` in `vector` e `trace`) è riempito una seconda volta con linee ad angolo retto con le prime, con la stessa spaziatura, a ogni passaggio, e il limite di linee vale per ogni gruppo; l'energia di un millimetro quadrato che dà l'elenco dei livelli è raddoppiata, e l'anteprima e la verifica del programma lo vedono come qualsiasi altro programma.
 * **La cornice del lavoro** (`src/frame.rs`, `[frame]` nel file delle impostazioni): `phoenix-laser frame` scrive un programma che percorre il rettangolo del lavoro con il laser spento, da una dimensione o dal riquadro di ciò che un programma G-code brucia, per vedere dove cadrà; una debole potenza pilota richiede ogni volta `--confirm-laser-on`, è limitata al 5 % (`max_pilot_percent` di `[frame]` cambia il tetto) e rispetta il limite di potenza, e una cornice fuori dal piano viene rifiutata.
 * **L'anteprima** (`src/preview.rs`): `phoenix-laser preview` legge un programma G-code (proprio o altrui), stampa i movimenti, la lunghezza bruciata e percorsa, il riquadro, le potenze e un tempo che conta la frenata negli angoli, avverte di ciò che sembra pericoloso (laser acceso in uno spostamento rapido, nessun avanzamento, potenza oltre il massimo, lavoro fuori dal piano, nessuna fine) e disegna il percorso come SVG; i test rileggono ciò che scrive l'incisione e verificano la stessa lunghezza.
@@ -123,6 +124,7 @@ Come si incastrano le parti di questo repository: chi lo usa, cosa contiene e da
 | Il laser che si accende solo per posizionare il lavoro | la cornice si percorre con il laser spento (nessuna potenza, mandrino mai acceso); una potenza pilota richiede `--confirm-laser-on` a ogni esecuzione, anche se la chiede il file delle impostazioni, resta al tetto o sotto (5 % se `max_pilot_percent` non ne indica un altro), sotto il limite di potenza e si spegne prima della fine del programma |
 | Una testa mandata nel verso sbagliato in Z da una prova di fuoco | il passo di altezza non ha un valore predefinito e la prova è rifiutata finché la persona non lo dà; il programma dice che muove Z, la corsa è limitata (50 mm in tutto), la testa torna alla prima altezza e la potenza rispetta il limite di potenza |
 | Un testo troppo lungo, alto o forte, o che brucerebbe fuori dal piano | si accettano solo i caratteri del carattere tipografico (una lettera che non ha viene rifiutata, mai saltata), il numero di caratteri, l'altezza, la potenza e la velocità restano entro limiti che le impostazioni possono restringere, il lavoro fuori dal piano è rifiutato invece di essere tagliato, e il testo non viene mai scritto in un commento del programma |
+| Dati che non entrano nel codice QR, un simbolo troppo grande, denso o forte, o che brucerebbe fuori dal piano | la versione, il numero di byte, la dimensione, il numero di movimenti di incisione, la potenza e la velocità restano entro limiti che le impostazioni possono restringere, e ciò che li supera è rifiutato invece di essere tagliato o ridotto; i dati non vengono mai scritti in un commento del programma |
 | Il file di uscita scelto sopra il disegno o le impostazioni da cui deriva | rifiutato, nella finestra e nei comandi |
 
 **Cosa non è difeso:** un risultato prodotto senza errori non è un risultato verificato. Nulla qui conosce i limiti di una macchina e il programma non ha avuto revisione indipendente. Segnalate una vulnerabilità in privato (vedi [SECURITY.md](SECURITY.md)).
@@ -139,6 +141,7 @@ phoenix-laser engrave IMAGE OUT.nc --width-mm 50 [--dot-mm 0.1] [--feed 3000] [-
 phoenix-laser calibrate OUT.nc --powers 20,40,60,80 --feeds 1000,2000,3000 [--smax 1000] [--max-power 100] [--max-speed MM/MIN] [--config FILE] [--profile NAME]
 phoenix-laser calibrate OUT.nc --material NAME --materials FILE [--steps 5] [--spread 40] [--labels|--no-labels] [--label-mm 3] [--smax 1000] [--max-power 100] [--max-speed MM/MIN] [--config FILE] [--profile NAME]
 phoenix-laser text OUT.nc --text TEXT [--height-mm 10] [--spacing 25] [--line-spacing 50] [--power 20] [--feed 1000] [--passes 1] [--origin X,Y] [--bed X,Y] [--smax 1000] [--max-power 100] [--max-speed MM/MIN] [--config FILE] [--profile NAME]
+phoenix-laser qr OUT.nc --text DATA [--ecc L|M|Q|H] [--module-mm 1] [--line-mm 0.1] [--power 20] [--feed 1000] [--passes 1] [--origin X,Y] [--bed X,Y] [--smax 1000] [--max-power 100] [--max-speed MM/MIN] [--print] [--config FILE] [--profile NAME]
 phoenix-laser info IMAGE
 phoenix-laser cut DRAWING OUT.nc [--config FILE] [--power P] [--speed MM/MIN] [--passes N] [--focus-step MM] [--kerf MM] [--kerf-side none|auto|inside|outside]
               [--tabs N] [--tab-width MM] [--smax N] [--overscan MM] [--origin X,Y] [--bed X,Y] [--max-power P] [--max-speed MM/MIN] [--profile NAME] [--material NAME --materials FILE] [--dpi N] [--tolerance MM] [--dry-run]
@@ -177,7 +180,7 @@ Per fare un'immagine della finestra senza aprirla a mano, eseguila con `--shot F
 
 ## 🧪 Test
 
-La suite ha 532 test (`cargo test`, eseguiti su Windows e Linux nella CI). Verificano i casi normali, i casi limite e gli input danneggiati: file vuoti, spazzatura e file tagliati non causano mai un panico. La CI esegue anche `cargo fmt --check`, `cargo clippy` con gli avvisi come errori e `python -I tools/ci_validate.py`.
+La suite ha 545 test (`cargo test`, eseguiti su Windows e Linux nella CI). Verificano i casi normali, i casi limite e gli input danneggiati: file vuoti, spazzatura e file tagliati non causano mai un panico. La CI esegue anche `cargo fmt --check`, `cargo clippy` con gli avvisi come errori e `python -I tools/ci_validate.py`.
 
 ## 🏗️ Compilazione e rilascio
 
@@ -209,6 +212,7 @@ EH3D-PHOENIX-LASER/
 │   ├── tone.rs                                  la curva dei toni di un'immagine: livelli, contrasto, luminosità, gamma e inversione prima dei punti
 │   ├── trace.rs                                 i contorni di un'immagine: soglia, marching squares e anelli semplificati, con limiti
 │   ├── text.rs                                  una riga di testo incisa con un carattere a tratti proprio, entro limiti
+│   ├── qr.rs                                    un codice QR proprio, versioni da 1 a 4 con correzione degli errori, inciso riempiendo i moduli
 │   ├── gcode_out.rs                             l'unico modo di scrivere un numero G-code e l'intestazione standard
 │   ├── raster.rs                                una parte della logica
 │   ├── safety.rs                                il limite di potenza e le regole che tengono spento il laser mentre si mostra il lavoro

@@ -21,6 +21,7 @@ pub mod materials;
 pub mod offset;
 pub mod order;
 pub mod preview;
+pub mod qr;
 pub mod raster;
 pub mod safety;
 pub mod shot;

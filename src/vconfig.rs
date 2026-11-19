@@ -471,6 +471,117 @@ impl CalibrateSettings {
     }
 }
 
+/// How much of a QR symbol can be damaged and still be read: the more, the larger the symbol.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum QrEcc {
+    /// About 7 % of the symbol.
+    L,
+    /// About 15 %.
+    M,
+    /// About 25 %.
+    Q,
+    /// About 30 %.
+    H,
+}
+
+impl QrEcc {
+    /// The level a word names (`l`, `m`, `q` or `h`, in any case).
+    pub fn from_word(word: &str) -> Option<QrEcc> {
+        match word.trim().to_ascii_lowercase().as_str() {
+            "l" => Some(QrEcc::L),
+            "m" => Some(QrEcc::M),
+            "q" => Some(QrEcc::Q),
+            "h" => Some(QrEcc::H),
+            _ => None,
+        }
+    }
+
+    pub fn word(self) -> &'static str {
+        match self {
+            QrEcc::L => "L",
+            QrEcc::M => "M",
+            QrEcc::Q => "Q",
+            QrEcc::H => "H",
+        }
+    }
+}
+
+/// A QR symbol burnt by filling its dark modules (`phoenix-laser qr`).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct QrSettings {
+    /// The side of a module (mm).
+    pub module_mm: f64,
+    /// The distance between the lines that fill a module (mm); not more than a module.
+    pub line_mm: f64,
+    /// A percent of full power; the limit of power of the machine still holds over it.
+    pub power_percent: f64,
+    pub speed_mm_min: f64,
+    /// How many times the whole symbol is burnt.
+    pub passes: u32,
+    /// The most bytes that the data may have.
+    pub max_bytes: u32,
+    /// The largest version of the symbol (1 to 4); data that does not fit is refused, never cut.
+    pub max_version: u32,
+    pub ecc: QrEcc,
+    /// The largest side of the symbol (mm); a bigger one is refused, never shrunk.
+    pub max_size_mm: f64,
+    /// The most burning moves of the program, all passes together.
+    pub max_lines: u32,
+}
+
+impl Default for QrSettings {
+    fn default() -> Self {
+        QrSettings {
+            module_mm: 1.0,
+            line_mm: 0.1,
+            power_percent: 20.0,
+            speed_mm_min: 1000.0,
+            passes: 1,
+            max_bytes: 40,
+            max_version: 4,
+            ecc: QrEcc::M,
+            max_size_mm: 100.0,
+            max_lines: 100_000,
+        }
+    }
+}
+
+impl QrSettings {
+    pub fn validate(&self) -> Result<(), String> {
+        let range = |name: &str, v: f64, lo: f64, hi: f64| {
+            if v.is_finite() && (lo..=hi).contains(&v) {
+                Ok(())
+            } else {
+                Err(format!("qr {name} is {v}: it must be from {lo} to {hi}"))
+            }
+        };
+        range("module_mm", self.module_mm, 0.2, 10.0)?;
+        range("line_mm", self.line_mm, 0.02, self.module_mm)?;
+        if !(self.power_percent.is_finite()
+            && self.power_percent > 0.0
+            && self.power_percent <= 100.0)
+        {
+            return Err(format!(
+                "qr power_percent is {}: it must be more than 0 up to 100",
+                self.power_percent
+            ));
+        }
+        range("speed_mm_min", self.speed_mm_min, 1.0, 30_000.0)?;
+        range("max_size_mm", self.max_size_mm, 1.0, 1000.0)?;
+        for (name, v, hi) in [
+            ("passes", self.passes, 20),
+            ("max_bytes", self.max_bytes, 78),
+            ("max_version", self.max_version, 4),
+            ("max_lines", self.max_lines, 1_000_000),
+        ] {
+            if v == 0 || v > hi {
+                return Err(format!("qr {name} is {v}: it must be from 1 to {hi}"));
+            }
+        }
+        Ok(())
+    }
+}
+
 /// A line of text burnt with the font of strokes of the program (`phoenix-laser text`).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct TextSettings {
@@ -668,6 +779,8 @@ pub struct Settings {
     pub verify: VerifySettings,
     pub calibrate: CalibrateSettings,
     pub text: TextSettings,
+    /// The QR symbol (`phoenix-laser qr`).
+    pub qr: QrSettings,
     /// The tone curve of a picture before it becomes dots (`phoenix-laser engrave` and the window).
     pub tone: Tone,
     pub defaults: LayerParams,
@@ -700,6 +813,7 @@ impl Default for Settings {
             verify: VerifySettings::default(),
             calibrate: CalibrateSettings::default(),
             text: TextSettings::default(),
+            qr: QrSettings::default(),
             tone: Tone::default(),
             defaults: LayerParams::default(),
             layers: Vec::new(),
@@ -800,6 +914,7 @@ impl Settings {
         self.verify.validate()?;
         self.calibrate.validate()?;
         self.text.validate()?;
+        self.qr.validate()?;
         self.tone.validate()?;
         self.defaults.validate(m.max_passes)?;
         if self.defaults.mode != LayerMode::Skip {
@@ -978,6 +1093,31 @@ fn set_global(s: &mut Settings, section: &str, key: &str, value: &str) -> Result
             s.text.max_chars =
                 u32::try_from(whole(value)?).map_err(|_| "max_chars is too large".to_string())?
         }
+        ("qr", "module_mm") => s.qr.module_mm = number(value)?,
+        ("qr", "line_mm") => s.qr.line_mm = number(value)?,
+        ("qr", "power_percent") => s.qr.power_percent = number(value)?,
+        ("qr", "speed_mm_min") => s.qr.speed_mm_min = number(value)?,
+        ("qr", "passes") => {
+            s.qr.passes =
+                u32::try_from(whole(value)?).map_err(|_| "passes is too large".to_string())?
+        }
+        ("qr", "max_bytes") => {
+            s.qr.max_bytes =
+                u32::try_from(whole(value)?).map_err(|_| "max_bytes is too large".to_string())?
+        }
+        ("qr", "max_version") => {
+            s.qr.max_version =
+                u32::try_from(whole(value)?).map_err(|_| "max_version is too large".to_string())?
+        }
+        ("qr", "ecc") => {
+            s.qr.ecc = QrEcc::from_word(value)
+                .ok_or_else(|| format!("'{}' is not L, M, Q or H", value.trim()))?
+        }
+        ("qr", "max_size_mm") => s.qr.max_size_mm = number(value)?,
+        ("qr", "max_lines") => {
+            s.qr.max_lines =
+                u32::try_from(whole(value)?).map_err(|_| "max_lines is too large".to_string())?
+        }
         ("trace", "threshold") => {
             s.trace.threshold = u8::try_from(whole(value)?)
                 .map_err(|_| "trace threshold must be from 0 to 255".to_string())?
@@ -1050,7 +1190,7 @@ pub fn parse(text: &str) -> Result<Settings, String> {
             let (word, rest) = head.split_once(char::is_whitespace).unwrap_or((head, ""));
             let word = word.to_ascii_lowercase();
             section = match word.as_str() {
-                "limits" | "read" | "order" | "offset" | "hatch" | "machine" | "frame" | "focus" | "trace" | "tone" | "verify" | "calibrate" | "text" | "defaults" if rest.trim().is_empty() => word,
+                "limits" | "read" | "order" | "offset" | "hatch" | "machine" | "frame" | "focus" | "trace" | "tone" | "verify" | "calibrate" | "text" | "qr" | "defaults" if rest.trim().is_empty() => word,
                 "layer" if !rest.trim().is_empty() => {
                     named.push(rest.trim().to_lowercase());
                     format!("layer {}", rest.trim().to_lowercase())
@@ -1059,7 +1199,7 @@ pub fn parse(text: &str) -> Result<Settings, String> {
                     named_profiles.push(rest.trim().to_lowercase());
                     format!("profile {}", rest.trim().to_lowercase())
                 }
-                _ => return Err(format!("line {line}: '[{head}]' is not a section (limits, read, order, offset, hatch, machine, frame, focus, trace, tone, verify, calibrate, text, defaults, layer NAME or profile NAME)")),
+                _ => return Err(format!("line {line}: '[{head}]' is not a section (limits, read, order, offset, hatch, machine, frame, focus, trace, tone, verify, calibrate, text, qr, defaults, layer NAME or profile NAME)")),
             };
             continue;
         }
@@ -1668,6 +1808,70 @@ mod tests {
             assert!(parse(text).is_err(), "{text:?}");
         }
         assert!(parse("[verify]\noverscan_mm = 100\n").is_ok());
+    }
+
+    #[test]
+    fn the_qr_settings_are_read_checked_and_the_defaults_are_the_ones_of_the_example() {
+        assert_eq!(Settings::default().qr, QrSettings::default());
+        let s = parse(
+            "[qr]\nmodule_mm = 0.8\nline_mm = 0.2\npower_percent = 35\nspeed_mm_min = 1500\npasses = 2\nmax_bytes = 30\nmax_version = 3\necc = q\nmax_size_mm = 40\nmax_lines = 5000\n",
+        )
+        .unwrap();
+        assert_eq!(
+            s.qr,
+            QrSettings {
+                module_mm: 0.8,
+                line_mm: 0.2,
+                power_percent: 35.0,
+                speed_mm_min: 1500.0,
+                passes: 2,
+                max_bytes: 30,
+                max_version: 3,
+                ecc: QrEcc::Q,
+                max_size_mm: 40.0,
+                max_lines: 5000,
+            }
+        );
+        for text in [
+            "[qr]\nmodule_mm = 0.1\n",
+            "[qr]\nmodule_mm = 11\n",
+            "[qr]\nline_mm = 0.01\n",
+            "[qr]\nline_mm = 1.5\n",
+            "[qr]\nmodule_mm = 0.5\nline_mm = 0.6\n",
+            "[qr]\npower_percent = 0\n",
+            "[qr]\npower_percent = 100.5\n",
+            "[qr]\nspeed_mm_min = 0\n",
+            "[qr]\npasses = 0\n",
+            "[qr]\npasses = 21\n",
+            "[qr]\nmax_bytes = 0\n",
+            "[qr]\nmax_bytes = 79\n",
+            "[qr]\nmax_version = 0\n",
+            "[qr]\nmax_version = 5\n",
+            "[qr]\necc = x\n",
+            "[qr]\nmax_size_mm = 0.5\n",
+            "[qr]\nmax_size_mm = 1001\n",
+            "[qr]\nmax_lines = 0\n",
+            "[qr]\nmax_lines = 1000001\n",
+            "[qr]\ncolour = red\n",
+        ] {
+            assert!(parse(text).is_err(), "{text:?}");
+        }
+        for (word, ecc) in [
+            ("L", QrEcc::L),
+            (" m ", QrEcc::M),
+            ("q", QrEcc::Q),
+            ("H", QrEcc::H),
+        ] {
+            assert_eq!(QrEcc::from_word(word), Some(ecc));
+            assert_eq!(QrEcc::from_word(ecc.word()), Some(ecc));
+        }
+        assert_eq!(QrEcc::from_word(""), None);
+        let example = load(std::path::Path::new(&format!(
+            "{}/examples/plate.cfg",
+            env!("CARGO_MANIFEST_DIR")
+        )))
+        .unwrap();
+        assert_eq!(example.qr, QrSettings::default());
     }
 
     #[test]

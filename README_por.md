@@ -17,7 +17,7 @@
 
 ---
 
-**Verificação de honestidade - o que funciona hoje:** uma biblioteca Rust e um programa de linha de comandos (`phoenix-laser`) com 532 testes que correm num computador: converte uma imagem em pontos por tramagem e escreve o G-code de um laser que queima linha a linha com potência dinâmica e sobrecurso, lê desenhos SVG e DXF e escreve o G-code que corta os seus contornos (os de dentro primeiro, com a largura do feixe, pontes e várias passagens) e grava as suas formas com linhas, com as definições de cada camada num ficheiro, e uma grelha de teste de potência contra avanço. Tem uma janela (compilada com `--features gui`) que abre uma imagem ou um desenho, mostra o percurso do laser, permite alterar as definições e exporta o G-code, mas a janela ainda não foi vista num ecrã; não foi experimentado numa máquina e não foi verificado com uma coleção de ficheiros reais.
+**Verificação de honestidade - o que funciona hoje:** uma biblioteca Rust e um programa de linha de comandos (`phoenix-laser`) com 545 testes que correm num computador: converte uma imagem em pontos por tramagem e escreve o G-code de um laser que queima linha a linha com potência dinâmica e sobrecurso, lê desenhos SVG e DXF e escreve o G-code que corta os seus contornos (os de dentro primeiro, com a largura do feixe, pontes e várias passagens) e grava as suas formas com linhas, com as definições de cada camada num ficheiro, e uma grelha de teste de potência contra avanço. Tem uma janela (compilada com `--features gui`) que abre uma imagem ou um desenho, mostra o percurso do laser, permite alterar as definições e exporta o G-code, mas a janela ainda não foi vista num ecrã; não foi experimentado numa máquina e não foi verificado com uma coleção de ficheiros reais.
 
 ---
 
@@ -30,7 +30,7 @@
 |---|---|
 | Versão | `0.0.9` |
 | Maturidade | Funcional |
-| Testes | 532 |
+| Testes | 545 |
 | Tecnologias | Rust |
 | Em hardware real | Não experimentado: nada disto correu numa máquina |
 
@@ -46,7 +46,7 @@ Cada linha é uma parte deste repositório e a luz diz até onde chega hoje. É 
 |---|---|---|
 | Núcleo | 🟡 | converte uma imagem em pontos por tramagem e escreve o G-code de um laser que queima linha a linha com potência dinâmica e sobrecurso, lê desenhos SVG e DXF e corta-os ou grava-os por camada (contornos ordenados, largura do feixe, pontes, passagens, hachura), e uma grelha de teste de potência contra avanço; testado num computador com entradas normais e danificadas, não com uma coleção de ficheiros reais. |
 | Linha de comandos | 🟡 | `phoenix-laser` (`engrave`, `calibrate`, `info`, `cut`, `vector`, `layers`) executa as mesmas funções que a biblioteca e imprime o resultado; cada erro volta como mensagem e código de saída diferente de zero. |
-| Testes | 🟡 | 532 testes passam (`cargo test`), com casos normais, casos-limite e entradas danificadas. |
+| Testes | 🟡 | 545 testes passam (`cargo test`), com casos normais, casos-limite e entradas danificadas. |
 | Segurança | 🟡 | Rust seguro e simples (`forbid(unsafe_code)`): nada entra em pânico com os ficheiros recebidos e um valor mau é um erro com o seu motivo; sem revisão independente. |
 | Janela | 🟠 | Escrita (egui, `--features gui`): abrir ou largar uma imagem ou um desenho SVG ou DXF, ver o percurso do laser (o corte numa cor, a deslocação atenuada), editar a tabela de camadas, uma grelha de calibração, zoom e deslocamento, estimar o tempo, exportar; a sua lógica está testada, mas ainda não foi compilada nem vista num ecrã. |
 | Hardware real | 🔴 | Não experimentado: nada disto foi executado numa máquina. |
@@ -65,6 +65,7 @@ Cada linha é uma parte deste repositório e a luz diz até onde chega hoje. É 
 * **O teste de foco** (`src/calibrate.rs`, `[focus]` no ficheiro de definições): `phoenix-laser focus` queima uma escada de linhas curtas, cada uma com a cabeça a outra altura, e a linha mais nítida mostra onde o feixe está focado; o passo de altura não tem valor por omissão (qual é baixo depende da máquina), a potência obedece ao limite de potência e a cabeça volta à primeira altura.
 * **A grelha de teste de um material** (`src/calibrate.rs`, `[calibrate]` no ficheiro de definições): `phoenix-laser calibrate --material NOME --materials FICHEIRO` distribui as potências e as velocidades da grelha em redor do que diz o material da biblioteca, dentro dos limites e sem repetir valores, e `--labels` queima a potência de cada coluna e a velocidade de cada linha ao lado dos quadrados com um tipo de letra de traços, para que a grelha possa ser lida depois no material; um material acima de um limite é recusado, nunca baixado. Com um material os algarismos saem por omissão (`--no-labels` retira-os) e a potência e a velocidade mínimas da escada são as chaves `min_power_percent` e `min_feed_mm_min`.
 * **Texto** (`src/text.rs`, `[text]` no ficheiro de definições): `phoenix-laser text OUT.nc --text TEXTO` queima um nome, um número de série ou uma marca com uma fonte de traços do programa (maiúsculas, algarismos, espaço e `. , - + / : ! ? ( ) = _ '`; a minúscula é queimada como maiúscula, uma mudança de linha começa uma fila) e sem ficheiro de fonte. A altura de uma maiúscula, os espaços entre letras e filas, a potência, a velocidade e as passagens são definições; um carácter que a fonte não tem, um texto com mais de `max_chars` caracteres, uma altura acima de `max_height_mm`, uma potência ou uma velocidade acima do limite, ou um trabalho que sairia da cama são recusados, nunca cortados, e o texto nunca é escrito num comentário do programa.
+* **Código QR** (`src/qr.rs`, `[qr]` no ficheiro de definições): `phoenix-laser qr OUT.nc --text DADOS` grava uns dados como um código QR próprio do programa (versões 1 a 4, de 21 a 33 módulos por lado, em modo de bytes, com os quatro níveis de correção de erros de Reed-Solomon e a máscara de menor penalização), a preencher cada módulo escuro com linhas; o símbolo foi lido de volta com um descodificador independente em todas as versões e níveis, e os testes leem-no de volta com o seu próprio leitor. O lado do módulo, a distância entre as linhas, o nível, a potência, a velocidade, as passagens e os limites são definições; dados acima de `max_bytes`, uma versão acima de `max_version`, um símbolo maior do que `max_size_mm`, um preenchimento de mais de `max_lines` movimentos, uma potência ou uma velocidade acima do limite ou um trabalho fora da mesa são recusados, nunca cortados nem reduzidos, e os dados nunca são escritos num comentário do programa. `--print` mostra o símbolo como texto.
 * **Trama cruzada** (`src/cut.rs`, `hatch_cross` numa camada): uma camada `engrave` com `hatch_cross = on` (ou `--cross` em `vector` e `trace`) é preenchida uma segunda vez com linhas em ângulo reto com as primeiras, com o mesmo espaçamento, em cada passagem, e o limite de linhas vale para cada conjunto; a energia de um milímetro quadrado que a lista de camadas dá é duplicada, e a pré-visualização e a verificação do programa veem-no como qualquer outro programa.
 * **A moldura do trabalho** (`src/frame.rs`, `[frame]` no ficheiro de definições): `phoenix-laser frame` escreve um programa que percorre o retângulo do trabalho com o laser desligado, a partir de um tamanho ou da caixa do que um programa G-code queima, para ver onde vai cair; uma potência piloto fraca exige `--confirm-laser-on` de cada vez, tem teto de 5 % (`max_pilot_percent` de `[frame]` muda o teto) e obedece ao limite de potência, e uma moldura fora da mesa é recusada.
 * **A pré-visualização** (`src/preview.rs`): `phoenix-laser preview` lê um programa G-code (o próprio ou de outro), imprime os movimentos, o comprimento queimado e percorrido, a caixa, as potências e um tempo que conta a travagem nos cantos, avisa do que parece perigoso (laser ligado num movimento rápido, sem avanço, potência acima da plena, trabalho fora da mesa, sem fim) e desenha o percurso como SVG; os testes voltam a ler o que a gravação escreve e verificam o mesmo comprimento.
@@ -123,6 +124,7 @@ Como as partes deste repositório se encaixam: quem o usa, o que contém e de qu
 | O laser a ligar só para posicionar o trabalho | a moldura é percorrida com o laser desligado (sem potência, o fuso nunca ligado); uma potência piloto exige `--confirm-laser-on` em cada execução, mesmo que o ficheiro de definições a peça, fica no teto ou abaixo (5 % se `max_pilot_percent` não indicar outro), sob o limite de potência e é desligada antes de o programa acabar |
 | Uma cabeça enviada no sentido errado em Z por um teste de foco | o passo de altura não tem valor por omissão e o teste é recusado até a pessoa o dar; o programa avisa de que move Z, o curso é limitado (50 mm no total), a cabeça volta à primeira altura e a potência obedece ao limite de potência |
 | Um texto demasiado comprido, alto ou forte, ou que gravaria fora da mesa | só se aceitam os caracteres do tipo de letra (uma letra que não tem é recusada, nunca saltada), o número de caracteres, a altura, a potência e a velocidade mantêm-se entre limites que as definições podem apertar, o trabalho fora da mesa é recusado em vez de cortado e o texto nunca é escrito num comentário do programa |
+| Dados que não cabem no código QR, um símbolo demasiado grande, denso ou forte, ou que gravaria fora da mesa | a versão, o número de bytes, o tamanho, o número de movimentos de gravação, a potência e a velocidade mantêm-se entre limites que as definições podem apertar, e o que os ultrapassa é recusado em vez de cortado ou reduzido; os dados nunca são escritos num comentário do programa |
 | O ficheiro de saída escolhido por cima do desenho ou das definições de que provém | recusado, na janela e nos comandos |
 
 **O que não é defendido:** um resultado produzido sem erros não é um resultado verificado. Nada aqui conhece os limites de uma máquina e o programa não teve revisão independente. Comunique uma vulnerabilidade em privado (ver [SECURITY.md](SECURITY.md)).
@@ -139,6 +141,7 @@ phoenix-laser engrave IMAGE OUT.nc --width-mm 50 [--dot-mm 0.1] [--feed 3000] [-
 phoenix-laser calibrate OUT.nc --powers 20,40,60,80 --feeds 1000,2000,3000 [--smax 1000] [--max-power 100] [--max-speed MM/MIN] [--config FILE] [--profile NAME]
 phoenix-laser calibrate OUT.nc --material NAME --materials FILE [--steps 5] [--spread 40] [--labels|--no-labels] [--label-mm 3] [--smax 1000] [--max-power 100] [--max-speed MM/MIN] [--config FILE] [--profile NAME]
 phoenix-laser text OUT.nc --text TEXT [--height-mm 10] [--spacing 25] [--line-spacing 50] [--power 20] [--feed 1000] [--passes 1] [--origin X,Y] [--bed X,Y] [--smax 1000] [--max-power 100] [--max-speed MM/MIN] [--config FILE] [--profile NAME]
+phoenix-laser qr OUT.nc --text DATA [--ecc L|M|Q|H] [--module-mm 1] [--line-mm 0.1] [--power 20] [--feed 1000] [--passes 1] [--origin X,Y] [--bed X,Y] [--smax 1000] [--max-power 100] [--max-speed MM/MIN] [--print] [--config FILE] [--profile NAME]
 phoenix-laser info IMAGE
 phoenix-laser cut DRAWING OUT.nc [--config FILE] [--power P] [--speed MM/MIN] [--passes N] [--focus-step MM] [--kerf MM] [--kerf-side none|auto|inside|outside]
               [--tabs N] [--tab-width MM] [--smax N] [--overscan MM] [--origin X,Y] [--bed X,Y] [--max-power P] [--max-speed MM/MIN] [--profile NAME] [--material NAME --materials FILE] [--dpi N] [--tolerance MM] [--dry-run]
@@ -177,7 +180,7 @@ Para tirar uma captura da janela sem a abrir à mão, execute-o com `--shot FICH
 
 ## 🧪 Testes
 
-O conjunto tem 532 testes (`cargo test`, executados em Windows e Linux no CI). Verificam os casos normais, os casos-limite e as entradas danificadas: ficheiros vazios, lixo e ficheiros cortados nunca provocam pânico. O CI executa ainda `cargo fmt --check`, `cargo clippy` com avisos como erros e `python -I tools/ci_validate.py`.
+O conjunto tem 545 testes (`cargo test`, executados em Windows e Linux no CI). Verificam os casos normais, os casos-limite e as entradas danificadas: ficheiros vazios, lixo e ficheiros cortados nunca provocam pânico. O CI executa ainda `cargo fmt --check`, `cargo clippy` com avisos como erros e `python -I tools/ci_validate.py`.
 
 ## 🏗️ Compilação e publicação
 
@@ -209,6 +212,7 @@ EH3D-PHOENIX-LASER/
 │   ├── tone.rs                                  a curva de tons de uma imagem: níveis, contraste, brilho, gama e inversão antes dos pontos
 │   ├── trace.rs                                 os contornos de uma imagem: limiar, marching squares e anéis simplificados, com limites
 │   ├── text.rs                                  uma linha de texto queimada com uma fonte de traços própria, dentro de limites
+│   ├── qr.rs                                    um código QR próprio, versões 1 a 4 com correção de erros, queimado a preencher os módulos
 │   ├── gcode_out.rs                             a única forma de escrever um número de G-code e o cabeçalho padrão
 │   ├── raster.rs                                uma parte da lógica
 │   ├── safety.rs                                o limite de potência e as regras que mantêm o laser desligado ao mostrar o trabalho

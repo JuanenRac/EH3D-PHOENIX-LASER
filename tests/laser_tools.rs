@@ -1862,6 +1862,145 @@ fn text_is_burnt_with_the_font_of_strokes_inside_the_limits() {
 }
 
 #[test]
+fn a_qr_code_is_burnt_by_filling_its_modules_inside_the_limits() {
+    let out_file = tmp("qr.nc");
+    let args = [
+        "qr",
+        out_file.as_str(),
+        "--text",
+        "EH3D 42",
+        "--ecc",
+        "Q",
+        "--module-mm",
+        "0.5",
+        "--line-mm",
+        "0.1",
+        "--power",
+        "25",
+        "--feed",
+        "1500",
+        "--origin",
+        "5,5",
+        "--bed",
+        "100,100",
+    ];
+    let (ok, out, err) = run(&args);
+    assert!(ok, "{err}");
+    assert!(
+        out.contains("7 bytes, version 1 (21 x 21 modules, level Q)"),
+        "{out}"
+    );
+    let text = std::fs::read_to_string(&out_file).unwrap();
+    assert!(text.contains("QR code filled with lines"), "{text}");
+    assert!(text.contains("S250 F1500"), "{text}");
+    // the program passes the check, inside the bed, and the same data gives the same program
+    let (ok, out, err) = run(&["verify", &out_file, "--bed", "100,100"]);
+    assert!(ok, "{out} {err}");
+    let again = tmp("qr-again.nc");
+    let mut second = args.to_vec();
+    second[1] = again.as_str();
+    let (ok, _, err) = run(&second);
+    assert!(ok, "{err}");
+    assert_eq!(text, std::fs::read_to_string(&again).unwrap());
+    // --print shows the symbol: 21 rows of 42 characters that start with the finder pattern
+    let mut shown = args.to_vec();
+    shown.push("--print");
+    let (ok, out, err) = run(&shown);
+    assert!(ok, "{err}");
+    let rows: Vec<&str> = out.lines().filter(|l| l.contains("##")).collect();
+    assert_eq!(rows.len(), 21, "{out}");
+    assert!(rows[0].starts_with("##############  "), "{}", rows[0]);
+    // the data is never written into a comment of the program
+    let tricky = tmp("qr-tricky.nc");
+    let (ok, _, err) = run(&["qr", &tricky, "--text", "A) (M3"]);
+    assert!(ok, "{err}");
+    for line in std::fs::read_to_string(&tricky).unwrap().lines() {
+        if line.starts_with('(') {
+            assert!(line.starts_with("(qr code of ") && line.matches(')').count() == 1);
+        }
+        assert_ne!(line, "M3");
+    }
+    // what is not allowed is refused and nothing is written
+    let refused = tmp("qr-refused.nc");
+    let _ = std::fs::remove_file(&refused);
+    let long = "a".repeat(63);
+    let long40 = "a".repeat(41);
+    for (args, word) in [
+        (
+            vec!["--text", long.as_str(), "--ecc", "M", "--max-power", "100"],
+            "max_bytes",
+        ),
+        (vec!["--text", long40.as_str()], "max_bytes"),
+        (vec!["--text", "A", "--ecc", "X"], "--ecc"),
+        (
+            vec!["--text", "A", "--max-power", "10"],
+            "the power of the QR code",
+        ),
+        (
+            vec!["--text", "A", "--max-speed", "500"],
+            "the speed of the QR code",
+        ),
+        (vec!["--text", "A", "--module-mm", "10"], "max_size_mm"),
+        (vec!["--text", "A", "--module-mm", "11"], "module_mm"),
+        (vec!["--text", "A", "--line-mm", "2"], "line_mm"),
+        (vec!["--text", "A", "--passes", "0"], "passes"),
+        (vec!["--text", "A", "--bed", "10,10"], "outside of the bed"),
+        (vec!["--text", "A", "--origin", "1"], "--origin needs X,Y"),
+        (vec![], "--text"),
+    ] {
+        let mut a = vec!["qr", refused.as_str()];
+        a.extend(args.iter().copied());
+        let (ok, _, err) = run(&a);
+        assert!(!ok, "{args:?}");
+        assert!(err.contains(word), "{args:?}: {err}");
+        assert!(!err.contains("panicked"), "{err}");
+    }
+    assert!(!std::path::Path::new(&refused).exists());
+    // data that needs a bigger version than the settings allow is refused and says which one
+    let cfg = tmp("qr.cfg");
+    std::fs::write(
+        &cfg,
+        "[qr]\nmax_version = 1\nmax_bytes = 20\npower_percent = 15\nspeed_mm_min = 800\necc = L\n",
+    )
+    .unwrap();
+    let (ok, out, err) = run(&[
+        "qr",
+        &out_file,
+        "--text",
+        "ABCDEFGHIJKLMNOPQ",
+        "--config",
+        &cfg,
+    ]);
+    assert!(ok, "{err}");
+    assert!(
+        out.contains("level L") && out.contains("at 15 % and 800 mm/min"),
+        "{out}"
+    );
+    let (ok, _, err) = run(&[
+        "qr",
+        &out_file,
+        "--text",
+        "ABCDEFGHIJKLMNOPQR",
+        "--config",
+        &cfg,
+    ]);
+    assert!(!ok);
+    assert!(
+        err.contains("max_version") && err.contains("version 2"),
+        "{err}"
+    );
+    let (ok, out, err) = run(&[
+        "qr", &out_file, "--text", "AB", "--config", &cfg, "--power", "30",
+    ]);
+    assert!(ok, "{err}");
+    assert!(out.contains("at 30 %"), "{out}");
+    // the settings are never written over
+    let (ok, _, err) = run(&["qr", &cfg, "--text", "A", "--config", &cfg]);
+    assert!(!ok);
+    assert!(err.contains("written over"), "{err}");
+}
+
+#[test]
 fn the_cross_option_fills_an_engraved_layer_a_second_time() {
     let engraved = |out: &str| -> f64 {
         let end = out.find(" mm engraved").unwrap_or_else(|| panic!("{out}"));
