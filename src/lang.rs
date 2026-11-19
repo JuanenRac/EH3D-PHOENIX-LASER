@@ -272,10 +272,16 @@ pub enum Msg {
     PreviewEnergyNone,
     FocusPowers,
     FocusGridMade,
+    ModeMarks,
+    MarksMade,
+    MarksWidth,
+    MarksHeight,
+    MarksArm,
+    MarksCross,
 }
 
 impl Msg {
-    pub const ALL: [Msg; 184] = [
+    pub const ALL: [Msg; 190] = [
         Msg::Language,
         Msg::Fit,
         Msg::Cancel,
@@ -460,6 +466,12 @@ impl Msg {
         Msg::PreviewEnergyNone,
         Msg::FocusPowers,
         Msg::FocusGridMade,
+        Msg::ModeMarks,
+        Msg::MarksMade,
+        Msg::MarksWidth,
+        Msg::MarksHeight,
+        Msg::MarksArm,
+        Msg::MarksCross,
     ];
 
     /// The words in the order English, Spanish, German, French, Italian, Japanese, Chinese, Portuguese.
@@ -2304,6 +2316,66 @@ impl Msg {
                 "焦点グリッド：{0} 行、{1} 種類の出力、長さ {2} mm の線",
                 "对焦网格：{0} 行，{1} 种功率，线长 {2} mm",
                 "Grelha de focagem: {0} filas, {1} potências, linhas de {2} mm",
+            ],
+            Msg::ModeMarks => [
+                "Positioning marks",
+                "Marcas de posicionamiento",
+                "Positionsmarken",
+                "Repères de positionnement",
+                "Segni di posizionamento",
+                "位置決めマーク",
+                "定位标记",
+                "Marcas de posicionamento",
+            ],
+            Msg::MarksMade => [
+                "Positioning marks: {0} x {1} mm, arms of {2} mm, {3} strokes",
+                "Marcas de posicionamiento: {0} x {1} mm, brazos de {2} mm, {3} trazos",
+                "Positionsmarken: {0} x {1} mm, Schenkel von {2} mm, {3} Striche",
+                "Repères de positionnement : {0} x {1} mm, branches de {2} mm, {3} traits",
+                "Segni di posizionamento: {0} x {1} mm, bracci di {2} mm, {3} tratti",
+                "位置決めマーク：{0} x {1} mm、腕の長さ {2} mm、{3} 本のストローク",
+                "定位标记：{0} x {1} mm，臂长 {2} mm，{3} 条笔画",
+                "Marcas de posicionamento: {0} x {1} mm, braços de {2} mm, {3} traços",
+            ],
+            Msg::MarksWidth => [
+                "Width of the rectangle (mm)",
+                "Ancho del rectángulo (mm)",
+                "Breite des Rechtecks (mm)",
+                "Largeur du rectangle (mm)",
+                "Larghezza del rettangolo (mm)",
+                "長方形の幅（mm）",
+                "矩形宽度（mm）",
+                "Largura do retângulo (mm)",
+            ],
+            Msg::MarksHeight => [
+                "Height of the rectangle (mm)",
+                "Alto del rectángulo (mm)",
+                "Höhe des Rechtecks (mm)",
+                "Hauteur du rectangle (mm)",
+                "Altezza del rettangolo (mm)",
+                "長方形の高さ（mm）",
+                "矩形高度（mm）",
+                "Altura do retângulo (mm)",
+            ],
+            Msg::MarksArm => [
+                "Arm of each L (mm)",
+                "Brazo de cada L (mm)",
+                "Schenkel jedes L (mm)",
+                "Branche de chaque L (mm)",
+                "Braccio di ogni L (mm)",
+                "各 L の腕の長さ（mm）",
+                "每个 L 的臂长（mm）",
+                "Braço de cada L (mm)",
+            ],
+            Msg::MarksCross => [
+                "Cross in the middle",
+                "Cruz en el centro",
+                "Kreuz in der Mitte",
+                "Croix au milieu",
+                "Croce al centro",
+                "中央に十字",
+                "中心十字",
+                "Cruz ao centro",
             ],
         }
     }

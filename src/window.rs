@@ -20,8 +20,8 @@ use crate::text;
 use crate::tone::Tone;
 use crate::trace;
 use crate::vconfig::{
-    self, CalibrateSettings, FocusSettings, FrameSettings, KerfSide, LayerMode, LayerParams, QrEcc,
-    QrSettings, Settings, TextAlign, TextSettings, TraceSettings,
+    self, CalibrateSettings, FocusSettings, FrameSettings, KerfSide, LayerMode, LayerParams,
+    MarksSettings, QrEcc, QrSettings, Settings, TextAlign, TextSettings, TraceSettings,
 };
 use crate::vector::{Drawing, ReadOptions};
 use crate::verify;
@@ -93,6 +93,8 @@ pub enum Mode {
     Text,
     /// Some data burnt as a QR code, filling its dark modules.
     Qr,
+    /// The positioning marks: an L at each corner of a rectangle of a size that is typed, burnt at a low power.
+    Marks,
 }
 
 /// How a grey picture becomes dots.
@@ -198,6 +200,13 @@ pub enum Key {
     QrBorder,
     LaserWatts,
     FocusPowers,
+    MarksWidth,
+    MarksHeight,
+    MarksArm,
+    MarksMargin,
+    MarksPower,
+    MarksSpeed,
+    MarksPasses,
 }
 
 /// The group of the side panel a setting belongs to.
@@ -213,6 +222,7 @@ pub enum Section {
     Verify,
     Text,
     Qr,
+    Marks,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -232,6 +242,7 @@ fn default_fields() -> Vec<Field> {
     };
     let d = TextSettings::default();
     let qd = QrSettings::default();
+    let kd = MarksSettings::default();
     let t = |v: f64| format!("{v}");
     vec![
         f(Key::WidthMm, Msg::WidthMm, Section::Image, "50"),
@@ -272,6 +283,33 @@ fn default_fields() -> Vec<Field> {
         f(Key::FocusFeed, Msg::Feed, Section::Focus, "1000"),
         f(Key::FocusPower, Msg::Power, Section::Focus, "30"),
         f(Key::FocusPowers, Msg::FocusPowers, Section::Focus, ""),
+        f(Key::MarksWidth, Msg::MarksWidth, Section::Marks, "50"),
+        f(Key::MarksHeight, Msg::MarksHeight, Section::Marks, "50"),
+        f(Key::MarksArm, Msg::MarksArm, Section::Marks, &t(kd.arm_mm)),
+        f(
+            Key::MarksMargin,
+            Msg::Margin,
+            Section::Marks,
+            &t(kd.margin_mm),
+        ),
+        f(
+            Key::MarksPower,
+            Msg::Power,
+            Section::Marks,
+            &t(kd.power_percent),
+        ),
+        f(
+            Key::MarksSpeed,
+            Msg::Feed,
+            Section::Marks,
+            &t(kd.speed_mm_min),
+        ),
+        f(
+            Key::MarksPasses,
+            Msg::Passes,
+            Section::Marks,
+            &kd.passes.to_string(),
+        ),
         f(Key::FrameMargin, Msg::Margin, Section::Frame, "0"),
         f(Key::FramePilot, Msg::PilotPower, Section::Frame, "0"),
         f(Key::FrameLaps, Msg::Laps, Section::Frame, "1"),
@@ -754,6 +792,13 @@ pub enum Summary {
         height_mm: f64,
         strokes: usize,
     },
+    /// The positioning marks of a rectangle.
+    MarksMade {
+        width_mm: f64,
+        height_mm: f64,
+        arm_mm: f64,
+        strokes: usize,
+    },
     /// A QR code burnt by filling its modules.
     QrMade {
         bytes: usize,
@@ -920,6 +965,20 @@ impl Status {
                     &strokes.to_string(),
                 ],
             ),
+            Status::Done(Summary::MarksMade {
+                width_mm,
+                height_mm,
+                arm_mm,
+                strokes,
+            }) => fill(
+                Msg::MarksMade.tr(lang),
+                &[
+                    &format!("{width_mm:.1}"),
+                    &format!("{height_mm:.1}"),
+                    &format!("{arm_mm}"),
+                    &strokes.to_string(),
+                ],
+            ),
             Status::Done(Summary::QrMade {
                 bytes,
                 version,
@@ -1072,6 +1131,8 @@ pub struct Window {
     pub text_mirror: bool,
     /// Where the rows of the text start.
     pub text_align: TextAlign,
+    /// The positioning marks have a cross in the middle too.
+    pub marks_cross: bool,
 }
 
 impl Window {
@@ -1116,6 +1177,7 @@ impl Window {
             qr_mirror: false,
             text_mirror: false,
             text_align: TextAlign::Left,
+            marks_cross: MarksSettings::default().centre_cross,
         }
     }
 
@@ -1134,7 +1196,7 @@ impl Window {
     /// Whether the G-code can be worked out now.
     pub fn can_compute(&self) -> bool {
         match self.mode {
-            Mode::Calibrate | Mode::Focus | Mode::Text | Mode::Qr => true,
+            Mode::Calibrate | Mode::Focus | Mode::Text | Mode::Qr | Mode::Marks => true,
             Mode::Frame => self.framed_mode().is_some(),
             Mode::Preview => self.program.is_some(),
             Mode::Engrave => self.picture.is_some(),
@@ -1197,6 +1259,13 @@ impl Window {
     pub fn set_qr_mirror(&mut self, on: bool) {
         if self.qr_mirror != on {
             self.qr_mirror = on;
+            self.mark_stale();
+        }
+    }
+
+    pub fn set_marks_cross(&mut self, on: bool) {
+        if self.marks_cross != on {
+            self.marks_cross = on;
             self.mark_stale();
         }
     }
@@ -1433,6 +1502,7 @@ impl Window {
             (_, Mode::Focus) => Some(PathBuf::from("focus.nc")),
             (_, Mode::Text) => Some(PathBuf::from("text.nc")),
             (_, Mode::Qr) => Some(PathBuf::from("qr.nc")),
+            (_, Mode::Marks) => Some(PathBuf::from("marks.nc")),
             (_, Mode::Frame) => Some(PathBuf::from("frame.nc")),
             _ => Some(PathBuf::from("calibration.nc")),
         }
@@ -1712,6 +1782,12 @@ impl Window {
                 self.put(Key::QrOverscan, t(s.qr.overscan_mm));
                 self.put(Key::QrMaxMinutes, t(s.qr.max_minutes));
                 self.put(Key::QrBorder, s.qr.border_modules.to_string());
+                self.put(Key::MarksArm, t(s.marks.arm_mm));
+                self.put(Key::MarksMargin, t(s.marks.margin_mm));
+                self.put(Key::MarksPower, t(s.marks.power_percent));
+                self.put(Key::MarksSpeed, t(s.marks.speed_mm_min));
+                self.put(Key::MarksPasses, s.marks.passes.to_string());
+                self.marks_cross = s.marks.centre_cross;
                 self.qr_ecc = s.qr.ecc;
                 self.qr_invert = s.qr.invert;
                 self.qr_mirror = s.qr.mirror;
@@ -1926,6 +2002,7 @@ impl Window {
             Mode::Trace => self.trace_job(),
             Mode::Text => self.text_job(),
             Mode::Qr => self.qr_job(),
+            Mode::Marks => self.marks_job(),
         };
         match made {
             Ok(done) => {
@@ -1952,6 +2029,7 @@ impl Window {
                             | Mode::Trace
                             | Mode::Text
                             | Mode::Qr
+                            | Mode::Marks
                     ),
                 );
                 self.segs = segs;
@@ -2415,6 +2493,51 @@ impl Window {
     /// Whether the box of the powers of the focus grid holds anything: then the grid is burnt and the box of the single power is not used.
     pub fn focus_powers_given(&self) -> bool {
         !self.field(Key::FocusPowers).text.trim().is_empty()
+    }
+
+    /// The positioning marks of the window burnt like `phoenix-laser marks`: the boxes of its group are the settings of `[marks]` and the size of the rectangle, whose lower left corner is the
+    /// origin of the machine, and the limits of power, speed and bed hold over them. An arm that is longer than half a side, a power or a speed over the limit or marks outside of the bed are refused
+    /// and nothing is made.
+    fn marks_job(&self) -> Result<Done, Status> {
+        let k = MarksSettings {
+            arm_mm: self.number(Key::MarksArm)?,
+            margin_mm: self.number(Key::MarksMargin)?,
+            power_percent: self.number(Key::MarksPower)?,
+            speed_mm_min: self.number(Key::MarksSpeed)?,
+            passes: self.whole(Key::MarksPasses, 1.0, 20.0)?,
+            centre_cross: self.marks_cross,
+        };
+        let size = (
+            self.number(Key::MarksWidth)?,
+            self.number(Key::MarksHeight)?,
+        );
+        let s_max = self.whole(Key::SMax, 1.0, 100_000.0)?;
+        let (max_power, max_speed) = self.limits()?;
+        let m = qr::Machine {
+            s_max,
+            max_power_percent: max_power,
+            max_speed_mm_min: max_speed,
+            bed_mm: self.settings.machine.bed_mm,
+        };
+        let origin = (self.number(Key::OriginX)?, self.number(Key::OriginY)?);
+        let gcode = frame::marks_program(size, origin, &k, &m).map_err(Status::Failed)?;
+        let strokes = frame::marks_strokes(size, origin, &k)
+            .map_err(Status::Failed)?
+            .len();
+        Ok(Done {
+            gcode,
+            source: None,
+            tools: format!("laser, S 0-{s_max}, positioning marks"),
+            s_max,
+            line_mm: 0.1,
+            summary: Summary::MarksMade {
+                width_mm: size.0,
+                height_mm: size.1,
+                arm_mm: k.arm_mm,
+                strokes,
+            },
+            notes: Vec::new(),
+        })
     }
 
     /// The focus test of the boxes of its group, worked out like `phoenix-laser focus`: its power and its speed obey the limits, and the step of the height has no default. With powers in
@@ -4573,6 +4696,210 @@ hatch_cross = on
         for l in Lang::ALL {
             assert!(!Msg::FocusPowers.tr(l).is_empty());
             assert!(!Msg::FocusGridMade.tr(l).is_empty());
+        }
+    }
+
+    /// The box of the passes that burn (the head also travels from the origin of the machine to the first mark).
+    fn burn_box(w: &Window) -> Option<((f64, f64), (f64, f64))> {
+        let mut lo = (f64::INFINITY, f64::INFINITY);
+        let mut hi = (f64::NEG_INFINITY, f64::NEG_INFINITY);
+        for s in w.segs.iter().filter(|s| s.burn) {
+            for (x, y) in [(s.x0, s.y0), (s.x1, s.y1)] {
+                lo = (lo.0.min(x), lo.1.min(y));
+                hi = (hi.0.max(x), hi.1.max(y));
+            }
+        }
+        (lo.0 <= hi.0).then_some((lo, hi))
+    }
+
+    #[test]
+    fn the_marks_mode_burns_the_marks_like_the_command_and_says_what_it_made() {
+        let mut w = Window::new(Lang::En);
+        w.set_mode(Mode::Marks);
+        assert!(w.can_compute());
+        // the boxes start from the settings of [marks]
+        let d = MarksSettings::default();
+        assert_eq!(text_of(&w, Key::MarksArm), d.arm_mm.to_string());
+        assert_eq!(text_of(&w, Key::MarksPower), d.power_percent.to_string());
+        assert_eq!(text_of(&w, Key::MarksPasses), d.passes.to_string());
+        assert_eq!(w.marks_cross, d.centre_cross);
+        set(&mut w, Key::MarksWidth, "40");
+        set(&mut w, Key::MarksHeight, "20");
+        set(&mut w, Key::OriginX, "10");
+        set(&mut w, Key::OriginY, "5");
+        assert!(w.compute());
+        let m = qr::Machine {
+            s_max: 1000,
+            max_power_percent: 100.0,
+            max_speed_mm_min: 30_000.0,
+            bed_mm: None,
+        };
+        let direct = frame::marks_program((40.0, 20.0), (10.0, 5.0), &d, &m).unwrap();
+        let done = w.done.as_ref().unwrap();
+        assert_eq!(done.gcode, direct);
+        assert_eq!(
+            done.summary,
+            Summary::MarksMade {
+                width_mm: 40.0,
+                height_mm: 20.0,
+                arm_mm: 5.0,
+                strokes: 4
+            }
+        );
+        assert_eq!(
+            w.status.text(Lang::En),
+            "Positioning marks: 40.0 x 20.0 mm, arms of 5 mm, 4 strokes"
+        );
+        assert!(w
+            .status
+            .text(Lang::Pt)
+            .starts_with("Marcas de posicionamento: 40.0 x 20.0 mm"));
+        // an L at each corner: two arms each, burning only there
+        assert_eq!(w.segs.iter().filter(|s| s.burn).count(), 8);
+        assert_eq!(burn_box(&w), Some(((10.0, 5.0), (50.0, 25.0))));
+        // the cross in the middle adds two strokes, and changing the switch makes the work stale
+        w.set_marks_cross(true);
+        assert!(w.stale);
+        assert!(w.compute());
+        assert_eq!(w.segs.iter().filter(|s| s.burn).count(), 10);
+        let with_cross = MarksSettings {
+            centre_cross: true,
+            ..d
+        };
+        assert_eq!(
+            w.done.as_ref().unwrap().gcode,
+            frame::marks_program((40.0, 20.0), (10.0, 5.0), &with_cross, &m).unwrap()
+        );
+        assert!(matches!(
+            w.done.as_ref().unwrap().summary,
+            Summary::MarksMade { strokes: 6, .. }
+        ));
+        // the margin moves the marks outside of the rectangle
+        set(&mut w, Key::MarksMargin, "2");
+        assert!(w.compute());
+        assert_eq!(burn_box(&w), Some(((8.0, 3.0), (52.0, 27.0))));
+        // the program is written with the header of the command line, under the name offered
+        assert_eq!(
+            w.suggested_output_for(Job::ExportGcode),
+            Some(PathBuf::from("marks.nc"))
+        );
+        let s = Scratch::new("marks-export");
+        let out = s.0.join("marks.nc");
+        assert!(w.export(&out));
+        let text = fs::read_to_string(&out).unwrap();
+        assert!(text.contains("; tools: laser, S 0-1000, positioning marks"));
+        assert!(text.ends_with("M2\n"));
+    }
+
+    #[test]
+    fn the_marks_mode_refuses_what_the_command_refuses_and_names_the_box() {
+        let mut w = Window::new(Lang::En);
+        w.set_mode(Mode::Marks);
+        assert!(w.compute());
+        // an arm longer than half a side
+        set(&mut w, Key::MarksArm, "30");
+        assert!(!w.compute());
+        assert!(matches!(&w.status, Status::Failed(e) if e.contains("arm_mm in [marks]")));
+        set(&mut w, Key::MarksArm, "5");
+        // a rectangle that is too small or too large
+        for text in ["0.5", "1001"] {
+            set(&mut w, Key::MarksWidth, text);
+            assert!(!w.compute(), "{text}");
+            assert!(
+                matches!(&w.status, Status::Failed(e) if e.contains("each side must be from 1 to 1000"))
+            );
+        }
+        set(&mut w, Key::MarksWidth, "50");
+        // the limits of the machine hold over the power and the speed
+        set(&mut w, Key::MaxPower, "5");
+        assert!(!w.compute());
+        assert!(matches!(&w.status, Status::Failed(e) if e.contains("the power of the marks")));
+        set(&mut w, Key::MaxPower, "100");
+        set(&mut w, Key::MaxSpeed, "500");
+        assert!(!w.compute());
+        assert!(matches!(&w.status, Status::Failed(e) if e.contains("the speed of the marks")));
+        set(&mut w, Key::MaxSpeed, "30000");
+        // marks outside of the bed
+        w.settings.machine.bed_mm = Some((30.0, 30.0));
+        assert!(!w.compute());
+        assert!(matches!(&w.status, Status::Failed(e) if e.contains("outside of the bed")));
+        w.settings.machine.bed_mm = None;
+        assert!(w.compute());
+        // a box that is not a number, or not a whole number, says which one
+        for (key, text, label) in [
+            (Key::MarksWidth, "", Msg::MarksWidth),
+            (Key::MarksHeight, "x", Msg::MarksHeight),
+            (Key::MarksArm, "1,5", Msg::MarksArm),
+            (Key::MarksPower, "", Msg::Power),
+            (Key::MarksSpeed, "fast", Msg::Feed),
+            (Key::MarksPasses, "2.5", Msg::Passes),
+            (Key::MarksPasses, "21", Msg::Passes),
+            (Key::MarksPasses, "0", Msg::Passes),
+        ] {
+            let before = text_of(&w, key);
+            set(&mut w, key, text);
+            assert!(!w.compute(), "{key:?} {text}");
+            assert_eq!(w.status, Status::BadValue(label), "{key:?} {text}");
+            set(&mut w, key, &before);
+        }
+        // a power of 0 or over 100, and a margin out of its range, are refused by the same checks as the file
+        for (key, text, reason) in [
+            (Key::MarksPower, "0", "marks power_percent"),
+            (Key::MarksPower, "101", "the power of the marks"),
+            (Key::MarksMargin, "51", "marks margin_mm"),
+            (Key::MarksMargin, "-1", "marks margin_mm"),
+            (Key::MarksSpeed, "0", "marks speed_mm_min"),
+        ] {
+            let before = text_of(&w, key);
+            set(&mut w, key, text);
+            assert!(!w.compute(), "{key:?} {text}");
+            assert!(
+                matches!(&w.status, Status::Failed(e) if e.contains(reason)),
+                "{key:?} {text}: {:?}",
+                w.status
+            );
+            set(&mut w, key, &before);
+        }
+    }
+
+    #[test]
+    fn a_file_of_settings_fills_the_boxes_of_the_marks_and_the_words_speak_every_language() {
+        let s = Scratch::new("marks-config");
+        let cfg = s.write(
+            "k.cfg",
+            "[marks]\narm_mm = 8\nmargin_mm = 2.5\npower_percent = 12\nspeed_mm_min = 1500\npasses = 2\ncentre_cross = on\n",
+        );
+        let mut w = Window::new(Lang::En);
+        assert!(w.load_config(&cfg));
+        for (key, text) in [
+            (Key::MarksArm, "8"),
+            (Key::MarksMargin, "2.5"),
+            (Key::MarksPower, "12"),
+            (Key::MarksSpeed, "1500"),
+            (Key::MarksPasses, "2"),
+        ] {
+            assert_eq!(text_of(&w, key), text, "{key:?}");
+        }
+        assert!(w.marks_cross);
+        w.set_mode(Mode::Marks);
+        assert!(w.compute());
+        let g = &w.done.as_ref().unwrap().gcode;
+        assert!(g.contains("S120 F1500"), "{g}");
+        assert!(
+            g.contains("(positioning marks, 6 strokes, 2 passes)"),
+            "{g}"
+        );
+        for l in Lang::ALL {
+            for m in [
+                Msg::ModeMarks,
+                Msg::MarksWidth,
+                Msg::MarksHeight,
+                Msg::MarksArm,
+                Msg::MarksCross,
+            ] {
+                assert!(!m.tr(l).is_empty());
+            }
+            assert!(w.status.text(l).contains("50.0"), "{}", w.status.text(l));
         }
     }
 

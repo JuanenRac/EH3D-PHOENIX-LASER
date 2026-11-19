@@ -190,6 +190,7 @@ impl App {
                         }
                         Mode::Text => self.text_group(ui),
                         Mode::Qr => self.qr_group(ui),
+                        Mode::Marks => self.marks_group(ui),
                         Mode::Trace => {
                             self.trace_group(ui);
                             self.laser_group(ui);
@@ -299,6 +300,7 @@ impl App {
                     Mode::Trace => Msg::ModeTrace,
                     Mode::Text => Msg::ModeText,
                     Mode::Qr => Msg::ModeQr,
+                    Mode::Marks => Msg::ModeMarks,
                 };
                 egui::ComboBox::from_id_salt("mode")
                     .selected_text(shown.tr(lang))
@@ -316,6 +318,7 @@ impl App {
                         ui.selectable_value(&mut mode, Mode::Trace, Msg::ModeTrace.tr(lang));
                         ui.selectable_value(&mut mode, Mode::Text, Msg::ModeText.tr(lang));
                         ui.selectable_value(&mut mode, Mode::Qr, Msg::ModeQr.tr(lang));
+                        ui.selectable_value(&mut mode, Mode::Marks, Msg::ModeMarks.tr(lang));
                     });
                 if mode != self.win.mode {
                     self.win.set_mode(mode);
@@ -718,6 +721,30 @@ impl App {
                     self.win.set_qr_invert(invert);
                 }
                 self.fields_of(ui, Section::Qr);
+                for key in [
+                    Key::SMax,
+                    Key::OriginX,
+                    Key::OriginY,
+                    Key::MaxPower,
+                    Key::MaxSpeed,
+                    Key::LaserWatts,
+                ] {
+                    self.field_for(ui, key);
+                }
+            });
+    }
+
+    /// The marks mode: the size of the rectangle, the cross in the middle and the keys of `[marks]` (the arm of an L, the margin, the power, the speed and the passes).
+    fn marks_group(&mut self, ui: &mut egui::Ui) {
+        let lang = self.win.lang;
+        egui::CollapsingHeader::new(self.heading(Msg::ModeMarks))
+            .default_open(true)
+            .show(ui, |ui| {
+                self.fields_of(ui, Section::Marks);
+                let mut cross = self.win.marks_cross;
+                if ui.checkbox(&mut cross, Msg::MarksCross.tr(lang)).changed() {
+                    self.win.set_marks_cross(cross);
+                }
                 for key in [
                     Key::SMax,
                     Key::OriginX,

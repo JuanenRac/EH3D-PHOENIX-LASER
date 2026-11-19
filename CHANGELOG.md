@@ -4,6 +4,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+- **Positioning marks in the window:** a new mode has boxes for the size of the rectangle, the arm of each L, the margin, the power, the speed and the passes, and a switch for the cross in the middle, a settings file fills the boxes of `[marks]`, and the marks are worked out with the same function as `phoenix-laser marks` from the origin of the machine, so an arm longer than half a side, a power or a speed over the limit or marks outside of the bed are refused with the box or the reason named in the status line; the program is written as `marks.nc` with the usual header.
+
 - **Focus grid of powers in the window:** the focus mode has a box for the powers of the grid (up to 10 percentages, separated by commas): with powers in it the window burns the lines of the focus test once for each power, a column for each, with the same function as `phoenix-laser focus --powers`, the box of the single power is left out while it is used, and a power that is not more than 0 up to 100, one over the limit of power, too many powers or a missing step of the height is refused with the box named.
 
 - **The power of the laser in the window:** a box for the optical power of the laser (0 means it is not known; the settings file and a machine profile fill it from `laser_watts`) makes the preview of what the window works out or opens tell the energy that the program burns and its mean power, with the same arithmetic as `phoenix-laser preview --laser-watts`, and a value that is not a number from 0 to 1000 is refused with the box named.
