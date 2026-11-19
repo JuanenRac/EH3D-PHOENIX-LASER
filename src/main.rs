@@ -61,7 +61,7 @@ const HELP: &str = "phoenix-laser: laser engraving from an image
                 [--max-power P] [--max-speed MM/MIN] [--config FILE] [--profile NAME]
   phoenix-laser frame OUT.nc --size W,H | --gcode PROGRAM.nc [--origin X,Y] [--margin MM] [--feed 3000] [--laps 1] [--bed X,Y] [--smax N]
                 [--pilot P --confirm-laser-on] [--max-power P] [--max-speed MM/MIN] [--config FILE] [--profile NAME]
-  phoenix-laser preview PROGRAM.nc [OUT.svg] [--accel 1000] [--rapid 6000] [--smax N] [--bed X,Y] [--width-px 900] [--config FILE] [--profile NAME]
+  phoenix-laser preview PROGRAM.nc [OUT.svg] [--accel 1000] [--rapid 6000] [--smax N] [--laser-watts W] [--bed X,Y] [--width-px 900] [--config FILE] [--profile NAME]
   phoenix-laser verify PROGRAM.nc [--config FILE] [--profile NAME] [--smax N] [--max-power P] [--max-speed MM/MIN] [--bed X,Y] [--overscan-mm MM] [--accel 1000] [--expect-sha256 HASH] [--json]
   phoenix-laser [gui] [FILE]                     the window (a build with --features gui): with no arguments, with a file or with gui it opens; the commands above never open it
   phoenix-laser gui [FILE] --shot OUT.png [--size WxH] [--theme forge|dark|light] [--wait N] [--lang CODE] [--replace]   a picture of the window (a build with --features gui)
@@ -80,7 +80,7 @@ qr burns DATA as a QR code of its own (versions 1 to 4, byte mode, with the leve
 barcode burns DATA as a Code 128 barcode of its own (the characters from space to ~ in set B, and a text of an even number of figures in set C, which is half as wide), filling each bar with lines along its height --line-mm apart: --module-mm is the width of the narrowest bar, --height-mm the height of the bars, --mirror burns its mirror image (for the back of glass or acrylic) and --origin X,Y is the lower left corner; leave a light margin of ten modules at each side on the material. A byte that is not a printable character, more than max_chars characters, a barcode wider than max_width_mm, a fill of more than max_lines moves, a burning that would take more than --max-minutes (240 unless the file says another), a power or a speed over the limit, or work that would go outside of the bed (--bed X,Y or the machine of --config) is refused, never cut down; the [barcode] section of --config holds the usual values.
 marks burns positioning marks round the rectangle --size W,H whose lower left corner is --origin X,Y: an L at each corner, on the edges of the rectangle or --margin-mm outside of them, with arms --arm-mm long, and a cross in the middle with --centre-cross, so that the material can be put back in the same place. Unlike frame, which keeps the laser off, the marks are burnt, at a low power (--power, 10 % unless the file says another): a power or a speed over the limit, an arm longer than half a side of the rectangle the marks go round, or marks that would go outside of the bed (--bed X,Y or the machine of --config) are refused, never cut down; the [marks] section of --config holds the usual values.
 frame writes a program that traces the rectangle of the work with the laser OFF, to see where it will land: --size W,H from the corner --origin, or the box of what burns in --gcode PROGRAM.nc (its real place). --margin widens it. A --pilot power (a percent, at most max_pilot_percent of [frame], 5 unless the file says another, and at most the limit of power) turns the laser on weakly and only with --confirm-laser-on; the [frame] section of --config holds the usual values.
-preview reads a G-code program (this program's or another's) and says what it would do: moves, burnt and travelled length, the box, the powers, a time that counts the corners (--accel in mm/s2) and what looks dangerous (the laser on during a rapid move, a burning move with no feed, S above --smax, work outside --bed, no end); with OUT.svg it also draws the path. It only reads text.
+preview reads a G-code program (this program's or another's) and says what it would do: moves, burnt and travelled length, the box, the powers, a time that counts the corners (--accel in mm/s2), with --laser-watts the energy that the program burns (the power of each move as a part of the full power --smax, over the time it burns) and its mean power, and what looks dangerous (the laser on during a rapid move, a burning move with no feed, S above --smax, work outside --bed, no end); with OUT.svg it also draws the path. It only reads text.
 verify reads a G-code program as text (it never runs it) and says its SHA-256, what it does and whether it passes: under the limit of power and of speed, inside the bed (--overscan-mm lets the head go that far past the bed with the laser off, as the overscan of another program does; burning outside the bed always fails, and [verify] overscan_mm of --config sets the same), with the laser off during every rapid move and a feed on every burning move; --expect-sha256 HASH ties the check to a program that was authorised: when the SHA-256 of the file is not that one (64 hex digits) the program fails, so a program that was changed after it was looked at is not run by mistake; --json gives the report for another program to keep, and the exit code is 1 when it fails.
 calibrate with --material takes the powers and the feeds from the library: a ladder of --steps values (5) from --spread percent (40) below to the same above the power and the speed of the material, held between the limits and given once each, unless --powers or --feeds give a list; the power of each column is burnt below it and the feed of each row on its left, at the power and the speed of the material, so the squares can be read on the material: with --material they come by default and --no-labels takes them away, and --labels asks for them with lists too (--label-mm is the height of the figures; [calibrate] of --config holds the usual values, and also the lowest power and feed of the ladder, min_power_percent and min_feed_mm_min).
 --max-power is the limit of power, a percent of full power (100 when nothing says another): a program whose power is more than the limit is refused, never lowered. engrave and calibrate also read the limit and --smax from the [machine] section of the file of --config, and engrave the tone curve from its [tone] section (a material and the tone options win over it). --max-speed is the limit of speed (mm/min, 30000 when nothing says another) and works the same way: a feed over it is refused, never lowered.
@@ -1514,6 +1514,13 @@ fn run(mut args: Vec<String>) -> Result<(), String> {
             if let Some(v) = flag(&mut args, "--smax")? {
                 o.s_max = Some(whole(&v, "--smax")?);
             }
+            if let Some(v) = flag(&mut args, "--laser-watts")? {
+                o.laser_watts = Some(num(&v, "--laser-watts")?);
+                // the energy needs the full power of the controller: the usual one when neither the settings nor --smax say it
+                if o.s_max.is_none() {
+                    o.s_max = Some(Settings::default().machine.s_max);
+                }
+            }
             if let Some(v) = flag(&mut args, "--bed")? {
                 let b = list(&v, "--bed")?;
                 if b.len() != 2 {
@@ -1581,6 +1588,15 @@ fn run(mut args: Vec<String>) -> Result<(), String> {
                 boxed(r.bounds),
                 preview::clock(r.seconds)
             );
+            if let (Some(e), Some(w)) = (r.energy_j, o.laser_watts) {
+                match r.mean_power_w {
+                    Some(mean) => println!(
+                        "energy {e:.1} J from a laser of {w} W: {mean:.2} W on average over {} of burning",
+                        preview::clock(r.burn_seconds)
+                    ),
+                    None => println!("energy 0.0 J from a laser of {w} W: nothing burns"),
+                }
+            }
             Ok(())
         }
         "verify" => {

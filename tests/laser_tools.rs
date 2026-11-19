@@ -2366,6 +2366,38 @@ fn an_inverted_qr_code_can_have_a_burnt_border_that_counts_for_the_size_and_the_
 }
 
 #[test]
+fn the_preview_tells_the_energy_when_it_is_given_the_power_of_the_laser() {
+    let program = tmp("energy.nc");
+    // 60 mm at 600 mm/min and half power: 6 s
+    std::fs::write(
+        &program,
+        "G21\nG90\nM4 S500\nF600\nG0 X0 Y0\nG1 X60 Y0\nS0\nM5\nM2\n",
+    )
+    .unwrap();
+    let (ok, said, err) = run(&["preview", &program, "--laser-watts", "10"]);
+    assert!(ok, "{err}");
+    assert!(
+        said.contains("energy 30.0 J from a laser of 10 W: 5.00 W on average over 6 s of burning"),
+        "{said}"
+    );
+    // the full power of the controller counts
+    let (ok, said, _) = run(&["preview", &program, "--laser-watts", "10", "--smax", "500"]);
+    assert!(ok && said.contains("energy 60.0 J"), "{said}");
+    // without the option nothing is said, and a wrong power is an error
+    let (ok, said, _) = run(&["preview", &program]);
+    assert!(ok && !said.contains("energy"), "{said}");
+    for bad in ["0", "-3", "x", "20000"] {
+        let (ok, _, err) = run(&["preview", &program, "--laser-watts", bad]);
+        assert!(!ok && !err.contains("panicked"), "{bad}: {err}");
+    }
+    // a program that burns nothing has no mean power
+    let cold = tmp("cold.nc");
+    std::fs::write(&cold, "G21\nF600\nG1 X60\nM5\nM2\n").unwrap();
+    let (ok, said, _) = run(&["preview", &cold, "--laser-watts", "10"]);
+    assert!(ok && said.contains("nothing burns"), "{said}");
+}
+
+#[test]
 fn the_marks_command_burns_the_corners_of_the_rectangle_and_refuses_what_does_not_fit() {
     let out = tmp("marks.nc");
     let _ = std::fs::remove_file(&out);

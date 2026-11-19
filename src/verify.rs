@@ -112,6 +112,7 @@ pub fn verify(bytes: &[u8], l: &Limits) -> Result<Verdict, String> {
             s_max: Some(l.s_max),
             // the bed is judged here, where the allowance for the overscan of another program can be given
             bed_mm: None,
+            laser_watts: None,
         },
     )?;
     let mut problems: Vec<String> = Vec::new();

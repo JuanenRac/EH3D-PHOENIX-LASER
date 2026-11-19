@@ -240,6 +240,8 @@ pub struct Options {
     pub s_max: Option<u32>,
     /// The size of the bed, when it is known.
     pub bed_mm: Option<Pt>,
+    /// The optical power of the laser at full power (W): with it the report tells the energy that the program burns. It needs `s_max`.
+    pub laser_watts: Option<f64>,
 }
 
 impl Default for Options {
@@ -249,6 +251,7 @@ impl Default for Options {
             rapid_mm_min: 6000.0,
             s_max: None,
             bed_mm: None,
+            laser_watts: None,
         }
     }
 }
@@ -271,6 +274,15 @@ impl Options {
         if self.s_max == Some(0) {
             return Err("s_max is 0: it must be from 1 to 100000".to_string());
         }
+        if let Some(w) = self.laser_watts {
+            range("laser watts", w, 0.01, 10_000.0)?;
+            if self.s_max.is_none() {
+                return Err(
+                    "the energy needs the full power of the controller: give s_max (--smax) with the power of the laser"
+                        .to_string(),
+                );
+            }
+        }
         Ok(())
     }
 }
@@ -288,6 +300,13 @@ pub struct Report {
     pub max_power: f64,
     /// Length at the feed of each move, plus the time to brake and speed up at every corner.
     pub seconds: f64,
+    /// The time of the moves that burn, at their feeds (the corners are not counted: the head is not at speed there).
+    pub burn_seconds: f64,
+    /// The energy that the moves that burn put in the material (J): the power of each move, as a part of the power of the laser, over the time it burns. Known only when the power of the
+    /// laser was given.
+    pub energy_j: Option<f64>,
+    /// The energy over the time of the moves that burn (W), when the energy is known and something burns.
+    pub mean_power_w: Option<f64>,
     pub notes: Vec<String>,
 }
 
@@ -307,6 +326,7 @@ pub fn analyse(p: &Program, o: &Options) -> Result<Report, String> {
     o.validate()?;
     let mut notes = p.notes.clone();
     let (mut burn, mut travel, mut seconds) = (0.0f64, 0.0f64, 0.0f64);
+    let (mut burn_seconds, mut power_seconds) = (0.0f64, 0.0f64);
     let (mut min_power, mut max_power) = (f64::INFINITY, 0.0f64);
     let mut no_feed = false;
     for (i, m) in p.moves.iter().enumerate() {
@@ -326,7 +346,12 @@ pub fn analyse(p: &Program, o: &Options) -> Result<Report, String> {
         } else {
             m.feed
         };
-        seconds += len / (speed / 60.0);
+        let moving = len / (speed / 60.0);
+        seconds += moving;
+        if m.power > 0.0 {
+            burn_seconds += moving;
+            power_seconds += m.power * moving;
+        }
         if let Some(prev) = i.checked_sub(1).map(|k| &p.moves[k]) {
             if prev.to == m.from && turn_degrees(prev, m) > CORNER_DEGREES {
                 let slow = speed.min(if prev.rapid || prev.feed <= 0.0 {
@@ -372,6 +397,14 @@ pub fn analyse(p: &Program, o: &Options) -> Result<Report, String> {
         notes.push("the program does not end with M2, M30 or M5".to_string());
     }
     notes.truncate(MAX_NOTES + 4);
+    // the energy: S over the full S is the part of the power of the laser that burns
+    let energy_j = match (o.laser_watts, o.s_max) {
+        (Some(w), Some(full)) => Some(w * power_seconds / f64::from(full)),
+        _ => None,
+    };
+    let mean_power_w = energy_j
+        .filter(|_| burn_seconds > 0.0)
+        .map(|e| e / burn_seconds);
     Ok(Report {
         moves: p.moves.len(),
         burn_mm: burn,
@@ -385,6 +418,9 @@ pub fn analyse(p: &Program, o: &Options) -> Result<Report, String> {
         },
         max_power,
         seconds,
+        burn_seconds,
+        energy_j,
+        mean_power_w,
         notes,
     })
 }
@@ -646,6 +682,82 @@ mod tests {
         .unwrap()
         .seconds;
         assert!(slow > fast);
+    }
+
+    #[test]
+    fn the_energy_is_the_power_of_the_laser_over_the_time_each_move_burns() {
+        // 60 mm at 600 mm/min is 6 s, at half of the full power of a 10 W laser: 5 W, 30 J
+        let p = read_ok("M4 S500\nF600\nG1 X60\nS0\nM5\nM2\n");
+        let o = Options {
+            s_max: Some(1000),
+            laser_watts: Some(10.0),
+            ..Options::default()
+        };
+        let r = analyse(&p, &o).unwrap();
+        assert!((r.burn_seconds - 6.0).abs() < 1e-9, "{}", r.burn_seconds);
+        assert!(
+            (r.energy_j.unwrap() - 30.0).abs() < 1e-9,
+            "{:?}",
+            r.energy_j
+        );
+        assert!((r.mean_power_w.unwrap() - 5.0).abs() < 1e-9);
+        // without the power of the laser nothing is said about the energy, though the time of the burning still is
+        let plain = analyse(&p, &Options::default()).unwrap();
+        assert_eq!((plain.energy_j, plain.mean_power_w), (None, None));
+        assert!((plain.burn_seconds - 6.0).abs() < 1e-9);
+        // two powers and two feeds add up: 20 mm at S1000 and 300 mm/min (4 s) and 30 mm at S250 and 900 mm/min (2 s)
+        let p = read_ok("M4 S1000\nF300\nG1 X20\nS250\nF900\nG1 X50\nS0\nM5\nM2\n");
+        let r = analyse(&p, &o).unwrap();
+        assert!((r.burn_seconds - 6.0).abs() < 1e-9, "{}", r.burn_seconds);
+        assert!(
+            (r.energy_j.unwrap() - (10.0 * 4.0 + 2.5 * 2.0)).abs() < 1e-9,
+            "{:?}",
+            r.energy_j
+        );
+        // the moves with the laser off add nothing, and a program that burns nothing has no mean power
+        let off = read_ok("F600\nG1 X60\nM5\nM2\n");
+        let r = analyse(&off, &o).unwrap();
+        assert_eq!((r.energy_j, r.mean_power_w), (Some(0.0), None));
+        assert_eq!(r.burn_seconds, 0.0);
+        // a corner costs time but not energy
+        let corner = read_ok("M4 S1000\nF6000\nG1 X10\nG1 X10 Y10\nS0\nM5\nM2\n");
+        let slow = Options {
+            accel_mm_s2: 10.0,
+            ..o
+        };
+        let (a, b) = (
+            analyse(&corner, &o).unwrap(),
+            analyse(&corner, &slow).unwrap(),
+        );
+        assert!(b.seconds > a.seconds);
+        assert_eq!(a.energy_j, b.energy_j);
+        assert!((a.energy_j.unwrap() - 10.0 * 0.2).abs() < 1e-9);
+    }
+
+    #[test]
+    fn the_power_of_the_laser_needs_the_full_power_of_the_controller_and_has_a_range() {
+        let p = read_ok("M4 S500\nF600\nG1 X60\nM5\nM2\n");
+        let no_smax = Options {
+            laser_watts: Some(10.0),
+            ..Options::default()
+        };
+        assert!(analyse(&p, &no_smax).unwrap_err().contains("s_max"));
+        for watts in [0.0, -1.0, 0.001, 10_001.0, f64::NAN, f64::INFINITY] {
+            let o = Options {
+                s_max: Some(1000),
+                laser_watts: Some(watts),
+                ..Options::default()
+            };
+            assert!(analyse(&p, &o).is_err(), "{watts}");
+        }
+        for watts in [0.01, 10_000.0] {
+            let o = Options {
+                s_max: Some(1000),
+                laser_watts: Some(watts),
+                ..Options::default()
+            };
+            assert!(analyse(&p, &o).is_ok(), "{watts}");
+        }
     }
 
     #[test]
