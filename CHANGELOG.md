@@ -4,6 +4,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+- **Screenshots in the README:** a Screenshots section in the eight languages shows two pictures of the window taken by the program itself with `--shot` (a drawing being cut, with its table of layers, and a picture being engraved, coloured by power), kept in `images/screens/` under 400 KiB each, and the tree of files and the Repository Structure picture list the folder.
+
 ## [0.1.0] - Text and QR codes, material grids in the window, cross hatch and a verify that checks the program hash
 
 - **QR code in the window:** a new mode has a box for the data, a choice of the level of error correction and one box for each key of `[qr]` (the side of a module, the distance between the lines, the power, the speed, the passes, the most bytes, the largest version and side, and the most burning moves), a file of settings fills them, and the symbol is worked out with the same function as `phoenix-laser qr` from the origin of the machine, so data that does not fit, a symbol over a limit, a power or a speed over the limit of the machine or work outside of the bed is refused with the box or the reason named in the status line; it is written as `qr.nc` with the usual header.

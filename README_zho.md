@@ -102,6 +102,18 @@ EH3D-PHOENIX-LASER 是 EH3D Fabrication Suite 的一个程序。它以库和命�
 
 本仓库各部分如何配合：谁使用它、它包含什么、它依赖什么。图由 `docs/architecture.json` 绘制并与代码核对。
 
+## 🖼️ 屏幕截图
+
+这些图片由程序自身通过 `--shot` 截取（见快速开始）。
+
+<p align="center">
+  <img src="images/screens/window-vector.png" alt="切割图纸：激光在示例板上的路径，下方是图层表" width="100%">
+</p>
+
+<p align="center">
+  <img src="images/screens/window-engrave.png" alt="雕刻图片：示例渐变的点按功率着色" width="100%">
+</p>
+
 ## ✨ 功能
 
 * **库加命令行：** `phoenix-laser` 的每个命令都是库中的函数，套件中的其他程序无需启动进程即可调用。
@@ -255,7 +267,7 @@ EH3D-PHOENIX-LASER/
 │   ├── vector-settings.md                       矢量作业设置文件，逐项说明
 │   └── materials.md                             材料库，逐项说明
 ├── tools/                                       CI 和 README 检查及绘图工具
-├── images/                                      横幅图以及架构和仓库结构图片
+├── images/                                      横幅图、README 图片及窗口截图
 ├── .github/                                     CI 与发布工作流、Issue 和 PR 模板
 ├── eh3d.project.json                            清单：版本、角色、成熟度和构建命令
 ├── Cargo.toml Cargo.lock                        工作区及其锁定的依赖

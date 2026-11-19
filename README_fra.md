@@ -102,6 +102,18 @@ EH3D-PHOENIX-LASER est un programme de l'EH3D Fabrication Suite. Il fonctionne c
 
 Comment les parties de ce dépôt s'articulent : qui l'utilise, ce qu'il contient et de quoi il dépend. L'image est dessinée depuis `docs/architecture.json` et vérifiée avec le code.
 
+## 🖼️ Captures d'écran
+
+Ces images sont prises par le programme lui-même avec `--shot` (voir Démarrage rapide).
+
+<p align="center">
+  <img src="images/screens/window-vector.png" alt="Découpe d'un dessin : le trajet du laser sur la plaque des exemples, avec le tableau des calques dessous" width="100%">
+</p>
+
+<p align="center">
+  <img src="images/screens/window-engrave.png" alt="Gravure d'une image : les points du dégradé des exemples colorés selon leur puissance" width="100%">
+</p>
+
 ## ✨ Fonctionnalités
 
 * **Une bibliothèque et une ligne de commande :** chaque commande de `phoenix-laser` est une fonction de la bibliothèque ; un autre programme de la suite peut l'appeler sans lancer de processus.
@@ -255,7 +267,7 @@ EH3D-PHOENIX-LASER/
 │   ├── vector-settings.md                       le fichier de réglages du travail vectoriel, clé par clé
 │   └── materials.md                             la bibliothèque de matériaux, clé par clé
 ├── tools/                                       contrôle de la CI et du README et outils d'images
-├── images/                                      bannière et images d'Architecture et de Structure du dépôt
+├── images/                                      bannière, images du README et captures de la fenêtre
 ├── .github/                                     workflows de CI et de publication, modèles d'issues et de pull requests
 ├── eh3d.project.json                            manifeste : version, rôle, maturité et commande de compilation
 ├── Cargo.toml Cargo.lock                        le workspace et ses dépendances verrouillées

@@ -102,6 +102,18 @@ EH3D-PHOENIX-LASER は EH3D Fabrication Suite のプログラムの一つです�
 
 このリポジトリの各部分の関係：誰が使い、何を持ち、何に依存するか。図は `docs/architecture.json` から描かれ、コードと照合されます。
 
+## 🖼️ スクリーンショット
+
+これらの画像はプログラム自身が `--shot` で撮影したものです（クイックスタートを参照）。
+
+<p align="center">
+  <img src="images/screens/window-vector.png" alt="図面の切断：サンプルのプレート上のレーザーの経路と、その下のレイヤー表" width="100%">
+</p>
+
+<p align="center">
+  <img src="images/screens/window-engrave.png" alt="画像の彫刻：サンプルのグラデーションの点を出力で色分けしたもの" width="100%">
+</p>
+
 ## ✨ 機能
 
 * **ライブラリとコマンドライン：** `phoenix-laser` の各コマンドはライブラリの関数なので、スイートの他のプログラムがプロセスを起動せずに呼び出せます。
@@ -255,7 +267,7 @@ EH3D-PHOENIX-LASER/
 │   ├── vector-settings.md                       ベクター作業の設定ファイルをキーごとに説明
 │   └── materials.md                             素材ライブラリをキーごとに説明
 ├── tools/                                       CI と README のチェック、図のツール
-├── images/                                      バナーとアーキテクチャ・リポジトリ構成の図
+├── images/                                      バナー、README の図、ウィンドウのスクリーンショット
 ├── .github/                                     CI とリリースのワークフロー、Issue と PR のテンプレート
 ├── eh3d.project.json                            マニフェスト：バージョン、役割、成熟度、ビルドコマンド
 ├── Cargo.toml Cargo.lock                        ワークスペースと固定された依存関係
