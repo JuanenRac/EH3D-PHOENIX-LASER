@@ -4,6 +4,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.1.1] - Inverted and mirrored QR codes, text alignment, time limit and pictures of the window
+
 - **A burnt border around an inverted QR code:** `phoenix-laser qr --invert --border-modules N` (or `border_modules` in `[qr]`, from 0 to 8 and 0 by default) also burns a border N modules wide around the inverted symbol, so the symbol is left bare in a burnt plate with no margin of its own. The square with its border counts as the symbol for `--origin`, the bed, `max_size_mm`, the most burning moves and the time of the burning, a border without `invert` is refused instead of being ignored, and the comment of the program and the size that the command and the window report include it. The window has a box for it that a settings file fills.
 
 - **A limit on how long a text or a QR code may burn:** the new `max_minutes` key of `[text]` and `[qr]` (and `--max-minutes` on `text` and `qr`; 240 by default, from 1 to 1440) holds the time of the burning itself, worked out as the length of every burnt line over the speed with all the passes together. A text or a symbol that would take longer (a very low speed, many passes or a very dense fill) is refused with the time it would take and the limit, and nothing is written; it is never shortened. The window has a box for it in each mode, in the eight languages, that a settings file fills.
