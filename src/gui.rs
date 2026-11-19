@@ -219,6 +219,8 @@ impl App {
             }
             match self.win.fields[i].key {
                 Key::Overscan if self.win.overscan_auto => continue,
+                // the single power is not used while the grid of powers is
+                Key::FocusPower if self.win.focus_powers_given() => continue,
                 Key::Accel if !self.win.overscan_auto => continue,
                 Key::Threshold if self.win.kind != Kind::Threshold => continue,
                 // the grid is made from the two lists, or from a material and its ladder

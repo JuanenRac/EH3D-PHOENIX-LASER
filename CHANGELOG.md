@@ -4,6 +4,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+- **Focus grid of powers in the window:** the focus mode has a box for the powers of the grid (up to 10 percentages, separated by commas): with powers in it the window burns the lines of the focus test once for each power, a column for each, with the same function as `phoenix-laser focus --powers`, the box of the single power is left out while it is used, and a power that is not more than 0 up to 100, one over the limit of power, too many powers or a missing step of the height is refused with the box named.
+
 - **The power of the laser in the window:** a box for the optical power of the laser (0 means it is not known; the settings file and a machine profile fill it from `laser_watts`) makes the preview of what the window works out or opens tell the energy that the program burns and its mean power, with the same arithmetic as `phoenix-laser preview --laser-watts`, and a value that is not a number from 0 to 1000 is refused with the box named.
 
 ## [0.1.2] - Code 128 barcodes, positioning marks, energy in the preview and focus grids by power

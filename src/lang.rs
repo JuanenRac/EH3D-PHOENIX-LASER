@@ -270,10 +270,12 @@ pub enum Msg {
     LaserWatts,
     PreviewEnergy,
     PreviewEnergyNone,
+    FocusPowers,
+    FocusGridMade,
 }
 
 impl Msg {
-    pub const ALL: [Msg; 182] = [
+    pub const ALL: [Msg; 184] = [
         Msg::Language,
         Msg::Fit,
         Msg::Cancel,
@@ -456,6 +458,8 @@ impl Msg {
         Msg::LaserWatts,
         Msg::PreviewEnergy,
         Msg::PreviewEnergyNone,
+        Msg::FocusPowers,
+        Msg::FocusGridMade,
     ];
 
     /// The words in the order English, Spanish, German, French, Italian, Japanese, Chinese, Portuguese.
@@ -2280,6 +2284,26 @@ impl Msg {
                 "エネルギー 0.0 J（{0} W のレーザー）：何も焼き付けません",
                 "能量 0.0 J（{0} W 激光）：没有烧刻",
                 "Energia 0.0 J de um laser de {0} W: nada é queimado",
+            ],
+            Msg::FocusPowers => [
+                "Powers of the grid (%, separated by commas; empty = the single power)",
+                "Potencias de la rejilla (%, separadas por comas; vacío = la potencia única)",
+                "Leistungen des Rasters (%, durch Kommas getrennt; leer = die einzelne Leistung)",
+                "Puissances de la grille (%, séparées par des virgules ; vide = la puissance unique)",
+                "Potenze della griglia (%, separate da virgole; vuoto = la potenza singola)",
+                "格子の出力（%、カンマ区切り、空欄 = 単一の出力）",
+                "网格功率（%，逗号分隔；留空 = 单一功率）",
+                "Potências da grelha (%, separadas por vírgulas; vazio = a potência única)",
+            ],
+            Msg::FocusGridMade => [
+                "Focus grid: {0} rows, {1} powers, lines of {2} mm",
+                "Rejilla de enfoque: {0} filas, {1} potencias, líneas de {2} mm",
+                "Fokusraster: {0} Reihen, {1} Leistungen, Linien von {2} mm",
+                "Grille de mise au point : {0} rangées, {1} puissances, lignes de {2} mm",
+                "Griglia di messa a fuoco: {0} righe, {1} potenze, linee di {2} mm",
+                "焦点グリッド：{0} 行、{1} 種類の出力、長さ {2} mm の線",
+                "对焦网格：{0} 行，{1} 种功率，线长 {2} mm",
+                "Grelha de focagem: {0} filas, {1} potências, linhas de {2} mm",
             ],
         }
     }

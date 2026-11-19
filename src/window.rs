@@ -2,7 +2,7 @@
 //! file to write and the status line. The window (`gui`) only draws this and passes on what the person does, so everything that can be decided is decided here, in code that is tested.
 //! The engraving is made with the same functions as the command line (`dither`, `engrave`, `grid`) and written with the same header.
 
-use crate::calibrate::{self, focus_test, grid, labelled_grid, ladder, Grid, Labels};
+use crate::calibrate::{self, focus_grid, focus_test, grid, labelled_grid, ladder, Grid, Labels};
 use crate::cut::{layers as layer_list, plan as plan_cut};
 use crate::dither::{dither, Method};
 use crate::dxf::read_dxf;
@@ -197,6 +197,7 @@ pub enum Key {
     QrMaxMinutes,
     QrBorder,
     LaserWatts,
+    FocusPowers,
 }
 
 /// The group of the side panel a setting belongs to.
@@ -270,6 +271,7 @@ fn default_fields() -> Vec<Field> {
         f(Key::FocusSpacing, Msg::FocusSpacing, Section::Focus, "2"),
         f(Key::FocusFeed, Msg::Feed, Section::Focus, "1000"),
         f(Key::FocusPower, Msg::Power, Section::Focus, "30"),
+        f(Key::FocusPowers, Msg::FocusPowers, Section::Focus, ""),
         f(Key::FrameMargin, Msg::Margin, Section::Frame, "0"),
         f(Key::FramePilot, Msg::PilotPower, Section::Frame, "0"),
         f(Key::FrameLaps, Msg::Laps, Section::Frame, "1"),
@@ -709,6 +711,12 @@ pub enum Summary {
         lines: u32,
         length_mm: f64,
     },
+    /// The focus grid: the lines of the focus test once for each power.
+    FocusGrid {
+        rows: u32,
+        powers: usize,
+        length_mm: f64,
+    },
     /// A program that was opened to be seen.
     Previewed {
         moves: usize,
@@ -929,6 +937,18 @@ impl Status {
             Status::Done(Summary::Focused { lines, length_mm }) => fill(
                 Msg::FocusMade.tr(lang),
                 &[&lines.to_string(), &format!("{length_mm}")],
+            ),
+            Status::Done(Summary::FocusGrid {
+                rows,
+                powers,
+                length_mm,
+            }) => fill(
+                Msg::FocusGridMade.tr(lang),
+                &[
+                    &rows.to_string(),
+                    &powers.to_string(),
+                    &format!("{length_mm}"),
+                ],
             ),
             Status::Done(Summary::Framed {
                 width_mm,
@@ -2392,8 +2412,19 @@ impl Window {
         })
     }
 
-    /// The focus test of the boxes of its group, worked out like `phoenix-laser focus`: its power and its speed obey the limits, and the step of the height has no default.
+    /// Whether the box of the powers of the focus grid holds anything: then the grid is burnt and the box of the single power is not used.
+    pub fn focus_powers_given(&self) -> bool {
+        !self.field(Key::FocusPowers).text.trim().is_empty()
+    }
+
+    /// The focus test of the boxes of its group, worked out like `phoenix-laser focus`: its power and its speed obey the limits, and the step of the height has no default. With powers in
+    /// the box of the grid it is worked out like `focus --powers`: the lines once for each power, a column for each, and the single power of the test is not used.
     fn focus_job(&self) -> Result<Done, Status> {
+        let powers = if self.focus_powers_given() {
+            Some(self.list(Key::FocusPowers)?)
+        } else {
+            None
+        };
         let f = FocusSettings {
             z_start_mm: self.number(Key::ZStart)?,
             z_step_mm: self.number(Key::ZStep)?,
@@ -2401,22 +2432,38 @@ impl Window {
             length_mm: self.number(Key::FocusLength)?,
             spacing_mm: self.number(Key::FocusSpacing)?,
             feed_mm_min: self.number(Key::FocusFeed)?,
-            power_percent: self.number(Key::FocusPower)?,
+            // the grid has the powers of its box, as the command takes the power of the settings when `--powers` is given
+            power_percent: if powers.is_some() {
+                self.settings.focus.power_percent
+            } else {
+                self.number(Key::FocusPower)?
+            },
         };
         let s_max = self.whole(Key::SMax, 1.0, 100_000.0)?;
         let (max_power, max_speed) = self.limits()?;
         safety::check_speed("the speed of the focus test", f.feed_mm_min, max_speed)
             .map_err(Status::Failed)?;
-        let gcode = focus_test(&f, s_max, max_power).map_err(Status::Failed)?;
+        let gcode = match &powers {
+            Some(p) => focus_grid(&f, p, s_max, max_power),
+            None => focus_test(&f, s_max, max_power),
+        }
+        .map_err(Status::Failed)?;
         Ok(Done {
             gcode,
             source: None,
             tools: format!("laser, S 0-{s_max}, focus test (the head moves in Z)"),
             s_max,
             line_mm: 0.1,
-            summary: Summary::Focused {
-                lines: f.steps,
-                length_mm: f.length_mm,
+            summary: match &powers {
+                Some(p) => Summary::FocusGrid {
+                    rows: f.steps,
+                    powers: p.len(),
+                    length_mm: f.length_mm,
+                },
+                None => Summary::Focused {
+                    lines: f.steps,
+                    length_mm: f.length_mm,
+                },
             },
             notes: vec![Msg::FocusWarning.tr(self.lang).to_string()],
         })
@@ -4411,6 +4458,121 @@ hatch_cross = on
             for m in [Msg::LaserWatts, Msg::PreviewEnergy, Msg::PreviewEnergyNone] {
                 assert!(!m.tr(l).is_empty());
             }
+        }
+    }
+
+    #[test]
+    fn the_focus_mode_burns_a_grid_of_powers_like_the_command_when_the_box_has_powers() {
+        let mut w = Window::new(Lang::En);
+        w.set_mode(Mode::Focus);
+        set(&mut w, Key::ZStep, "0.5");
+        set(&mut w, Key::FocusLines, "4");
+        assert!(!w.focus_powers_given());
+        // no powers: the single test as before
+        assert!(w.compute());
+        let f = FocusSettings {
+            z_start_mm: 0.0,
+            z_step_mm: 0.5,
+            steps: 4,
+            length_mm: 10.0,
+            spacing_mm: 2.0,
+            feed_mm_min: 1000.0,
+            power_percent: 30.0,
+        };
+        assert_eq!(
+            w.done.as_ref().unwrap().gcode,
+            focus_test(&f, 1000, 100.0).unwrap()
+        );
+        assert!(matches!(
+            w.done.as_ref().unwrap().summary,
+            Summary::Focused { lines: 4, .. }
+        ));
+        // powers: one column for each, the lines of the test once for each power
+        set(&mut w, Key::FocusPowers, "10, 20,30");
+        assert!(w.focus_powers_given());
+        assert!(w.compute());
+        let grid = focus_grid(&f, &[10.0, 20.0, 30.0], 1000, 100.0).unwrap();
+        assert_eq!(w.done.as_ref().unwrap().gcode, grid);
+        assert_eq!(
+            w.done.as_ref().unwrap().summary,
+            Summary::FocusGrid {
+                rows: 4,
+                powers: 3,
+                length_mm: 10.0
+            }
+        );
+        assert_eq!(
+            w.status.text(Lang::En),
+            "Focus grid: 4 rows, 3 powers, lines of 10 mm"
+        );
+        assert!(w
+            .status
+            .text(Lang::Pt)
+            .starts_with("Grelha de focagem: 4 filas, 3 potências"));
+        // 3 columns of 4 rows are 12 burning lines, and the head goes to a height once for the row
+        assert_eq!(w.segs.iter().filter(|s| s.burn).count(), 12);
+        assert_eq!(grid.matches("\nG0 Z").count(), 4 + 1);
+        // the same header as the command, and the warning about Z stays
+        assert!(!w.done.as_ref().unwrap().notes.is_empty());
+        // the single power is not used while the grid is: a bad box there does not stop it
+        set(&mut w, Key::FocusPower, "x");
+        assert!(w.compute());
+        set(&mut w, Key::FocusPowers, "");
+        assert!(!w.compute());
+        assert_eq!(w.status, Status::BadValue(Msg::Power));
+    }
+
+    #[test]
+    fn the_focus_grid_refuses_what_the_command_refuses_and_names_the_box() {
+        let mut w = Window::new(Lang::En);
+        w.set_mode(Mode::Focus);
+        set(&mut w, Key::ZStep, "0.5");
+        set(&mut w, Key::FocusPowers, "10,20");
+        assert!(w.compute());
+        // a list with a hole or a word in it
+        for text in ["10,,20", "10,x", "10,"] {
+            set(&mut w, Key::FocusPowers, text);
+            assert!(!w.compute(), "{text}");
+            assert_eq!(w.status, Status::BadValue(Msg::FocusPowers), "{text}");
+        }
+        // a power that is not more than 0 up to 100, over the limit of power, and too many powers
+        for (text, reason) in [
+            ("0", "more than 0"),
+            ("101", "more than 0"),
+            ("-5", "more than 0"),
+        ] {
+            set(&mut w, Key::FocusPowers, text);
+            assert!(!w.compute(), "{text}");
+            assert!(
+                matches!(&w.status, Status::Failed(e) if e.contains(reason)),
+                "{text}: {:?}",
+                w.status
+            );
+        }
+        set(&mut w, Key::FocusPowers, "10,20,30");
+        set(&mut w, Key::MaxPower, "25");
+        assert!(!w.compute());
+        assert!(
+            matches!(&w.status, Status::Failed(e) if e.contains("a power of the focus grid")),
+            "{:?}",
+            w.status
+        );
+        set(&mut w, Key::MaxPower, "100");
+        set(&mut w, Key::FocusPowers, "1,2,3,4,5,6,7,8,9,10,11");
+        assert!(!w.compute());
+        assert!(matches!(&w.status, Status::Failed(e) if e.contains("from 1 to 10")));
+        set(&mut w, Key::FocusPowers, "1,2,3,4,5,6,7,8,9,10");
+        assert!(w.compute());
+        // the speed obeys the limit and the step of the height is still needed
+        set(&mut w, Key::MaxSpeed, "500");
+        assert!(!w.compute());
+        set(&mut w, Key::MaxSpeed, "30000");
+        set(&mut w, Key::ZStep, "0");
+        assert!(!w.compute());
+        assert!(matches!(&w.status, Status::Failed(e) if e.contains("focus step is needed")));
+        for l in Lang::ALL {
+            assert!(!Msg::FocusPowers.tr(l).is_empty());
+            assert!(!Msg::FocusGridMade.tr(l).is_empty());
         }
     }
 
