@@ -677,6 +677,10 @@ impl App {
                 if ecc != self.win.qr_ecc {
                     self.win.set_qr_ecc(ecc);
                 }
+                let mut invert = self.win.qr_invert;
+                if ui.checkbox(&mut invert, Msg::QrInvert.tr(lang)).changed() {
+                    self.win.set_qr_invert(invert);
+                }
                 self.fields_of(ui, Section::Qr);
                 for key in [
                     Key::SMax,

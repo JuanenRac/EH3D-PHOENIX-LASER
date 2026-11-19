@@ -2001,6 +2001,80 @@ fn a_qr_code_is_burnt_by_filling_its_modules_inside_the_limits() {
 }
 
 #[test]
+fn a_qr_code_can_burn_its_light_modules_from_an_option_or_from_the_settings() {
+    let plain = tmp("qr-plain.nc");
+    let flipped = tmp("qr-flipped.nc");
+    let (ok, _, err) = run(&["qr", &plain, "--text", "EH3D 42", "--line-mm", "0.5"]);
+    assert!(ok, "{err}");
+    let (ok, _, err) = run(&[
+        "qr",
+        &flipped,
+        "--text",
+        "EH3D 42",
+        "--line-mm",
+        "0.5",
+        "--invert",
+    ]);
+    assert!(ok, "{err}");
+    let (a, b) = (
+        std::fs::read_to_string(&plain).unwrap(),
+        std::fs::read_to_string(&flipped).unwrap(),
+    );
+    assert!(!a.contains("inverted") && b.contains(", inverted)"), "{b}");
+    assert_ne!(a, b);
+    // both pass the check, and between them they burn the whole square (441 modules of 1 mm, one line each 0.5 mm)
+    let burnt = |file: &str| -> f64 {
+        let (ok, out, err) = run(&["verify", file, "--bed", "100,100", "--json"]);
+        assert!(ok, "{out} {err}");
+        let at = out.find("\"burn_mm\":").expect(&out) + 10;
+        let rest = out[at..].trim_start();
+        let end = rest
+            .find(|c: char| c != '.' && !c.is_ascii_digit())
+            .unwrap();
+        rest[..end].parse().unwrap()
+    };
+    let total = burnt(&plain) + burnt(&flipped);
+    assert!((total - 441.0 * 2.0).abs() < 0.5, "{total}");
+    // the settings can turn it on and the option can turn it off again
+    let cfg = tmp("qr-invert.cfg");
+    std::fs::write(&cfg, "[qr]\ninvert = on\n").unwrap();
+    let from_file = tmp("qr-from-file.nc");
+    let (ok, _, err) = run(&[
+        "qr",
+        &from_file,
+        "--text",
+        "EH3D 42",
+        "--line-mm",
+        "0.5",
+        "--config",
+        &cfg,
+    ]);
+    assert!(ok, "{err}");
+    assert_eq!(b, std::fs::read_to_string(&from_file).unwrap());
+    let (ok, _, err) = run(&[
+        "qr",
+        &from_file,
+        "--text",
+        "EH3D 42",
+        "--line-mm",
+        "0.5",
+        "--config",
+        &cfg,
+        "--no-invert",
+    ]);
+    assert!(ok, "{err}");
+    assert_eq!(a, std::fs::read_to_string(&from_file).unwrap());
+    // the two together are an error, and a bad value in the file names the key
+    let (ok, _, err) = run(&["qr", &from_file, "--text", "A", "--invert", "--no-invert"]);
+    assert!(!ok);
+    assert!(err.contains("cannot be given together"), "{err}");
+    std::fs::write(&cfg, "[qr]\ninvert = maybe\n").unwrap();
+    let (ok, _, err) = run(&["qr", &from_file, "--text", "A", "--config", &cfg]);
+    assert!(!ok);
+    assert!(err.contains("on or off"), "{err}");
+}
+
+#[test]
 fn the_cross_option_fills_an_engraved_layer_a_second_time() {
     let engraved = |out: &str| -> f64 {
         let end = out.find(" mm engraved").unwrap_or_else(|| panic!("{out}"));

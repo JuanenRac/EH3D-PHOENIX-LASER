@@ -457,7 +457,7 @@ pub struct Machine {
     pub bed_mm: Option<(f64, f64)>,
 }
 
-/// The G-code of a symbol whose lower left corner is at `origin`: each dark module is filled with lines `line_mm` apart, burnt at the power and the speed of the settings as many times as
+/// The G-code of a symbol whose lower left corner is at `origin`: each dark module (each light one when `invert` is on) is filled with lines `line_mm` apart, burnt at the power and the speed of the settings as many times as
 /// `passes` says, with the laser off between the runs. Data over `max_bytes`, a symbol that needs a version over `max_version` or is larger than `max_size_mm`, a fill of more than
 /// `max_lines` moves, a power or a speed over the limit, or a symbol outside of the bed is refused and nothing is written. The data is never written into a comment of the program.
 pub fn program(
@@ -513,16 +513,18 @@ pub fn program(
         }
     }
     let lines = (q.module_mm / q.line_mm - 1e-9).ceil().max(1.0) as usize;
-    // the runs of dark modules of each row, from the bottom
+    // a module is burnt when it is dark, or when it is light and the symbol is inverted
+    let burns = |x: usize, y: usize| sym.dark(x, y) != q.invert;
+    // the runs of burnt modules of each row, from the bottom
     let mut rows: Vec<Vec<(usize, usize)>> = Vec::new();
     for rb in 0..sym.size {
         let y = sym.size - 1 - rb;
         let mut runs = Vec::new();
         let mut x = 0;
         while x < sym.size {
-            if sym.dark(x, y) {
+            if burns(x, y) {
                 let start = x;
-                while x + 1 < sym.size && sym.dark(x + 1, y) {
+                while x + 1 < sym.size && burns(x + 1, y) {
                     x += 1;
                 }
                 runs.push((start, x));
@@ -542,8 +544,12 @@ pub fn program(
     let feed = n(q.speed_mm_min)?;
     let mut out = String::from("G21\nG90\nM4 S0\n");
     out.push_str(&format!(
-        "(qr code of version {}, {} x {} modules, {} passes)\n",
-        sym.version, sym.size, sym.size, q.passes
+        "(qr code of version {}, {} x {} modules, {} passes{})\n",
+        sym.version,
+        sym.size,
+        sym.size,
+        q.passes,
+        if q.invert { ", inverted" } else { "" }
     ));
     let mut lit = false;
     for _ in 0..q.passes {
@@ -1000,6 +1006,63 @@ mod tests {
         // a setting out of its range
         let bad = QrSettings { line_mm: 2.0, ..q };
         assert!(program("A", (0.0, 0.0), &bad, &machine()).is_err());
+    }
+
+    #[test]
+    fn an_inverted_symbol_burns_the_light_modules_and_the_two_make_the_whole_square() {
+        let q = QrSettings {
+            line_mm: 0.25,
+            ..settings()
+        };
+        let inv = QrSettings { invert: true, ..q };
+        let (plain, sym) = program("EH3D 42", (0.0, 0.0), &q, &machine()).unwrap();
+        let (flipped, _) = program("EH3D 42", (0.0, 0.0), &inv, &machine()).unwrap();
+        assert!(!plain.contains("inverted"));
+        assert!(flipped.contains("(qr code of version 1, 21 x 21 modules, 1 passes, inverted)"));
+        let lim = Limits {
+            bed_mm: Some((100.0, 50.0)),
+            ..Limits::default()
+        };
+        let a = verify(plain.as_bytes(), &lim).unwrap();
+        let b = verify(flipped.as_bytes(), &lim).unwrap();
+        assert!(
+            a.passes() && b.passes(),
+            "{:?} {:?}",
+            a.problems,
+            b.problems
+        );
+        // dark plus light is every module of the square, each filled with module / line lines
+        let all = (sym.size * sym.size) as f64 * 1.0 / 0.25;
+        assert!(
+            (a.burn_mm + b.burn_mm - all).abs() < 1e-6,
+            "{} {} {all}",
+            a.burn_mm,
+            b.burn_mm
+        );
+        let dark = (0..sym.size)
+            .flat_map(|y| (0..sym.size).map(move |x| (x, y)))
+            .filter(|&(x, y)| sym.dark(x, y))
+            .count() as f64;
+        assert!((b.burn_mm - (all - dark / 0.25)).abs() < 1e-6);
+        // the limit of moves holds over the light modules too, and a rapid move never comes with the power set
+        let dense = QrSettings {
+            max_lines: 10,
+            invert: true,
+            ..q
+        };
+        assert!(program("A", (0.0, 0.0), &dense, &machine())
+            .unwrap_err()
+            .contains("max_lines"));
+        let mut lit = false;
+        for line in flipped.lines() {
+            if line.starts_with("G1") && line.contains(" S") {
+                lit = true;
+            } else if line.starts_with("S0") {
+                lit = false;
+            } else if line.starts_with("G0") {
+                assert!(!lit, "{line}");
+            }
+        }
     }
 
     #[test]

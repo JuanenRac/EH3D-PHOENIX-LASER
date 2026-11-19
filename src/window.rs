@@ -1015,6 +1015,8 @@ pub struct Window {
     /// The data that the QR mode burns, and the level of error correction.
     pub qr_data: String,
     pub qr_ecc: QrEcc,
+    /// The QR code burns its light modules instead of the dark ones.
+    pub qr_invert: bool,
 }
 
 impl Window {
@@ -1055,6 +1057,7 @@ impl Window {
             words: String::new(),
             qr_data: String::new(),
             qr_ecc: QrSettings::default().ecc,
+            qr_invert: false,
         }
     }
 
@@ -1129,6 +1132,13 @@ impl Window {
     pub fn set_qr_ecc(&mut self, ecc: QrEcc) {
         if self.qr_ecc != ecc {
             self.qr_ecc = ecc;
+            self.mark_stale();
+        }
+    }
+
+    pub fn set_qr_invert(&mut self, on: bool) {
+        if self.qr_invert != on {
+            self.qr_invert = on;
             self.mark_stale();
         }
     }
@@ -1619,6 +1629,7 @@ impl Window {
                 self.put(Key::QrMaxSize, t(s.qr.max_size_mm));
                 self.put(Key::QrMaxLines, s.qr.max_lines.to_string());
                 self.qr_ecc = s.qr.ecc;
+                self.qr_invert = s.qr.invert;
                 self.settings = s;
                 self.config_path = Some(path.to_path_buf());
                 self.rebuild_rows();
@@ -2242,6 +2253,7 @@ impl Window {
             ecc: self.qr_ecc,
             max_size_mm: self.number(Key::QrMaxSize)?,
             max_lines: self.whole(Key::QrMaxLines, 1.0, 1_000_000.0)?,
+            invert: self.qr_invert,
         };
         let s_max = self.whole(Key::SMax, 1.0, 100_000.0)?;
         let (max_power, max_speed) = self.limits()?;
@@ -3816,6 +3828,49 @@ hatch_cross = on
         assert!(!w.stale);
         w.set_qr_data("EH3D 43".to_string());
         assert!(w.stale);
+    }
+
+    #[test]
+    fn the_qr_mode_can_burn_the_light_modules_and_a_file_of_settings_turns_it_on() {
+        let mut w = Window::new(Lang::En);
+        w.set_mode(Mode::Qr);
+        w.set_qr_data("EH3D 42".to_string());
+        assert!(!w.qr_invert);
+        assert!(w.compute());
+        let plain = w.done.as_ref().unwrap().gcode.clone();
+        w.set_qr_invert(true);
+        assert!(w.stale);
+        assert!(w.compute());
+        let m = qr::Machine {
+            s_max: 1000,
+            max_power_percent: 100.0,
+            max_speed_mm_min: 30_000.0,
+            bed_mm: None,
+        };
+        let d = QrSettings {
+            invert: true,
+            ..QrSettings::default()
+        };
+        let flipped = w.done.as_ref().unwrap().gcode.clone();
+        assert_eq!(
+            flipped,
+            qr::program("EH3D 42", (0.0, 0.0), &d, &m).unwrap().0
+        );
+        assert_ne!(flipped, plain);
+        // setting the same value again changes nothing
+        w.set_qr_invert(true);
+        assert!(!w.stale);
+        let s = Scratch::new("qr-invert");
+        let cfg = s.write("i.cfg", "[qr]\ninvert = on\n");
+        let mut v = Window::new(Lang::En);
+        assert!(v.load_config(&cfg));
+        assert!(v.qr_invert);
+        let off = s.write("o.cfg", "[qr]\ninvert = off\n");
+        assert!(v.load_config(&off));
+        assert!(!v.qr_invert);
+        for l in Lang::ALL {
+            assert!(!Msg::QrInvert.tr(l).is_empty());
+        }
     }
 
     #[test]

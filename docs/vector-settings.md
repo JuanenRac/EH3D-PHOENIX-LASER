@@ -278,10 +278,11 @@ Data that does not fit is refused, never cut down: more than `max_bytes` bytes, 
 | `ecc` | M | the level of error correction: `L`, `M`, `Q` or `H` |
 | `max_size_mm` | 100 | the largest side of the symbol, from 1 to 1000 mm |
 | `max_lines` | 100000 | the most burning moves of the program, all the passes together, from 1 to 1000000 |
+| `invert` | off | `on` burns the light modules instead of the dark ones, so the symbol is left bare in a burnt plate (`--invert`, and `--no-invert` to undo it); the limits hold over the light modules too |
 
-The keys of `[qr]` are `module_mm`, `line_mm`, `power_percent`, `speed_mm_min`, `passes`, `max_bytes`, `max_version`, `ecc`, `max_size_mm` and `max_lines`.
+The keys of `[qr]` are `module_mm`, `line_mm`, `power_percent`, `speed_mm_min`, `passes`, `max_bytes`, `max_version`, `ecc`, `max_size_mm`, `max_lines` and `invert`.
 
-In the window, the QR mode has a box for the data, a choice of `ecc` and one box for each of the other keys (a file of settings fills them); the symbol is worked out with the same function as the command, from the origin of the machine, and is refused for the same reasons, with the status line naming the box that is wrong. The bed is the one of the machine of the file.
+In the window, the QR mode has a box for the data, a choice of `ecc`, a switch for `invert` and one box for each of the other numbers (a file of settings fills them); the symbol is worked out with the same function as the command, from the origin of the machine, and is refused for the same reasons, with the status line naming the box that is wrong. The bed is the one of the machine of the file.
 
 ### `[defaults]` and `[layer NAME]`
 

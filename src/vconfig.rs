@@ -527,6 +527,8 @@ pub struct QrSettings {
     pub max_size_mm: f64,
     /// The most burning moves of the program, all passes together.
     pub max_lines: u32,
+    /// Burn the light modules instead of the dark ones, so that the symbol is left bare in a burnt plate (off by default).
+    pub invert: bool,
 }
 
 impl Default for QrSettings {
@@ -542,6 +544,7 @@ impl Default for QrSettings {
             ecc: QrEcc::M,
             max_size_mm: 100.0,
             max_lines: 100_000,
+            invert: false,
         }
     }
 }
@@ -1118,6 +1121,7 @@ fn set_global(s: &mut Settings, section: &str, key: &str, value: &str) -> Result
             s.qr.max_lines =
                 u32::try_from(whole(value)?).map_err(|_| "max_lines is too large".to_string())?
         }
+        ("qr", "invert") => s.qr.invert = switch(value)?,
         ("trace", "threshold") => {
             s.trace.threshold = u8::try_from(whole(value)?)
                 .map_err(|_| "trace threshold must be from 0 to 255".to_string())?
@@ -1830,8 +1834,12 @@ mod tests {
                 ecc: QrEcc::Q,
                 max_size_mm: 40.0,
                 max_lines: 5000,
+                invert: false,
             }
         );
+        assert!(parse("[qr]\ninvert = on\n").unwrap().qr.invert);
+        assert!(!parse("[qr]\ninvert = off\n").unwrap().qr.invert);
+        assert!(parse("[qr]\ninvert = maybe\n").is_err());
         for text in [
             "[qr]\nmodule_mm = 0.1\n",
             "[qr]\nmodule_mm = 11\n",

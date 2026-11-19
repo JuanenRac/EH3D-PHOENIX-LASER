@@ -246,6 +246,7 @@ pub enum Msg {
     QrMaxSize,
     QrMaxLines,
     QrEccLabel,
+    QrInvert,
     SectionMachine,
     NoProfile,
     ProfileApplied,
@@ -262,7 +263,7 @@ pub enum Msg {
 }
 
 impl Msg {
-    pub const ALL: [Msg; 171] = [
+    pub const ALL: [Msg; 172] = [
         Msg::Language,
         Msg::Fit,
         Msg::Cancel,
@@ -421,6 +422,7 @@ impl Msg {
         Msg::QrMaxSize,
         Msg::QrMaxLines,
         Msg::QrEccLabel,
+        Msg::QrInvert,
         Msg::SectionMachine,
         Msg::NoProfile,
         Msg::ProfileApplied,
@@ -1958,6 +1960,16 @@ impl Msg {
                 "誤り訂正",
                 "纠错级别",
                 "Correção de erros",
+            ],
+            Msg::QrInvert => [
+                "Burn the light modules (inverted)",
+                "Grabar los módulos claros (invertido)",
+                "Helle Module brennen (invertiert)",
+                "Graver les modules clairs (inversé)",
+                "Incidere i moduli chiari (invertito)",
+                "明るいモジュールを焼く（反転）",
+                "烧刻浅色模块（反相）",
+                "Gravar os módulos claros (invertido)",
             ],
             Msg::SectionTrace => [
                 "Outline of the picture",
