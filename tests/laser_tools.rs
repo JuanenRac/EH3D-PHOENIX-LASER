@@ -2305,6 +2305,67 @@ fn a_text_or_a_qr_code_that_would_burn_for_too_long_is_refused_and_nothing_is_wr
 }
 
 #[test]
+fn an_inverted_qr_code_can_have_a_burnt_border_that_counts_for_the_size_and_the_bed() {
+    let out = tmp("qr-border.nc");
+    let base = ["qr", out.as_str(), "--text", "EH3D 42", "--origin", "5,5"];
+    let mut a = base.to_vec();
+    a.extend(["--invert", "--border-modules", "2", "--bed", "100,100"]);
+    let (ok, stdout, err) = run(&a);
+    assert!(ok, "{err}");
+    // 21 modules and two on each side of them, of 1 mm
+    assert!(stdout.contains("25.0 x 25.0 mm"), "{stdout}");
+    let text = std::fs::read_to_string(&out).unwrap();
+    assert!(text.contains(", inverted, border of 2 modules)"), "{text}");
+    let (ok, o, err) = run(&["verify", &out, "--bed", "100,100"]);
+    assert!(ok, "{o} {err}");
+    // the square with its border has to fit in the bed
+    let refused = tmp("qr-border-refused.nc");
+    let _ = std::fs::remove_file(&refused);
+    let mut b = vec![
+        "qr",
+        refused.as_str(),
+        "--text",
+        "EH3D 42",
+        "--origin",
+        "5,5",
+    ];
+    b.extend(["--invert", "--border-modules", "2", "--bed", "29,29"]);
+    let (ok, _, err) = run(&b);
+    assert!(!ok);
+    assert!(err.contains("outside of the bed"), "{err}");
+    // a border needs the inversion, and its width has a range
+    let mut c = vec!["qr", refused.as_str(), "--text", "A"];
+    c.extend(["--border-modules", "2"]);
+    let (ok, _, err) = run(&c);
+    assert!(!ok);
+    assert!(
+        err.contains("border_modules") && err.contains("invert"),
+        "{err}"
+    );
+    for bad in ["9", "-1", "1.5", "x"] {
+        let (ok, _, err) = run(&[
+            "qr",
+            &refused,
+            "--text",
+            "A",
+            "--invert",
+            "--border-modules",
+            bad,
+        ]);
+        assert!(!ok, "{bad}");
+        assert!(!err.contains("panicked"), "{err}");
+    }
+    assert!(!std::path::Path::new(&refused).exists());
+    // the settings file can ask for both
+    let cfg = tmp("qr-border.cfg");
+    std::fs::write(&cfg, "[qr]\ninvert = on\nborder_modules = 1\n").unwrap();
+    let from_file = tmp("qr-border-file.nc");
+    let (ok, stdout, err) = run(&["qr", &from_file, "--text", "EH3D 42", "--config", &cfg]);
+    assert!(ok, "{err}");
+    assert!(stdout.contains("23.0 x 23.0 mm"), "{stdout}");
+}
+
+#[test]
 fn the_cross_option_fills_an_engraved_layer_a_second_time() {
     let engraved = |out: &str| -> f64 {
         let end = out.find(" mm engraved").unwrap_or_else(|| panic!("{out}"));

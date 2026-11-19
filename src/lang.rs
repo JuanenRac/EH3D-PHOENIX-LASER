@@ -253,6 +253,7 @@ pub enum Msg {
     AlignCentre,
     AlignRight,
     MaxMinutes,
+    QrBorder,
     SectionMachine,
     NoProfile,
     ProfileApplied,
@@ -269,7 +270,7 @@ pub enum Msg {
 }
 
 impl Msg {
-    pub const ALL: [Msg; 178] = [
+    pub const ALL: [Msg; 179] = [
         Msg::Language,
         Msg::Fit,
         Msg::Cancel,
@@ -435,6 +436,7 @@ impl Msg {
         Msg::AlignCentre,
         Msg::AlignRight,
         Msg::MaxMinutes,
+        Msg::QrBorder,
         Msg::SectionMachine,
         Msg::NoProfile,
         Msg::ProfileApplied,
@@ -2042,6 +2044,16 @@ impl Msg {
                 "最長の焼き付け時間（分）",
                 "最长烧刻时间（分钟）",
                 "Duração máxima da gravação (minutos)",
+            ],
+            Msg::QrBorder => [
+                "Burnt border (modules)",
+                "Borde grabado (módulos)",
+                "Gebrannter Rand (Module)",
+                "Bordure gravée (modules)",
+                "Bordo inciso (moduli)",
+                "焼き付ける縁（モジュール）",
+                "烧刻边框（模块）",
+                "Margem gravada (módulos)",
             ],
             Msg::SectionTrace => [
                 "Outline of the picture",

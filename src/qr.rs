@@ -446,6 +446,11 @@ pub fn encode(data: &[u8], ecc: QrEcc, max_version: u32) -> Result<Symbol, Strin
     })
 }
 
+/// The side of the square that is burnt, in modules: the symbol and the border around it.
+pub fn side_modules(sym: &Symbol, q: &QrSettings) -> usize {
+    sym.size + 2 * q.border_modules as usize
+}
+
 /// What a program of a QR symbol needs from the machine.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Machine {
@@ -493,7 +498,15 @@ pub fn program(
         ));
     }
     let sym = encode(bytes, q.ecc, q.max_version)?;
-    let width = sym.size as f64 * q.module_mm;
+    if q.border_modules > 0 && !q.invert {
+        return Err(format!(
+            "border_modules is {}: a border is burnt only around an inverted symbol (invert in [qr])",
+            q.border_modules
+        ));
+    }
+    // the square that is burnt: the symbol and, when it is inverted, the border around it
+    let total = side_modules(&sym, q);
+    let width = total as f64 * q.module_mm;
     if width > q.max_size_mm + 1e-9 {
         return Err(format!(
             "the symbol is {width:.1} x {width:.1} mm ({} modules of {} mm): it can be at most {} mm (max_size_mm in [qr])",
@@ -513,22 +526,27 @@ pub fn program(
         }
     }
     let lines = (q.module_mm / q.line_mm - 1e-9).ceil().max(1.0) as usize;
-    // a module is burnt when it is dark, or when it is light and the symbol is inverted
+    // a module is burnt when it is dark, or when it is light and the symbol is inverted; the border is all burnt
     // (a mirror image has the first column where the last one was)
+    let edge = q.border_modules as usize;
     let burns = |x: usize, y: usize| {
+        if x < edge || y < edge || x >= edge + sym.size || y >= edge + sym.size {
+            return true;
+        }
+        let (x, y) = (x - edge, y - edge);
         let x = if q.mirror { sym.size - 1 - x } else { x };
         sym.dark(x, y) != q.invert
     };
     // the runs of burnt modules of each row, from the bottom
     let mut rows: Vec<Vec<(usize, usize)>> = Vec::new();
-    for rb in 0..sym.size {
-        let y = sym.size - 1 - rb;
+    for rb in 0..total {
+        let y = total - 1 - rb;
         let mut runs = Vec::new();
         let mut x = 0;
-        while x < sym.size {
+        while x < total {
             if burns(x, y) {
                 let start = x;
-                while x + 1 < sym.size && burns(x + 1, y) {
+                while x + 1 < total && burns(x + 1, y) {
                     x += 1;
                 }
                 runs.push((start, x));
@@ -577,18 +595,19 @@ pub fn program(
     let s = (f64::from(m.s_max) * q.power_percent / 100.0).round() as u32;
     let feed = n(q.speed_mm_min)?;
     let mut out = String::from("G21\nG90\nM4 S0\n");
+    let mut notes = String::new();
+    if q.invert {
+        notes.push_str(", inverted");
+    }
+    if q.mirror {
+        notes.push_str(", mirrored");
+    }
+    if edge > 0 {
+        notes.push_str(&format!(", border of {edge} modules"));
+    }
     out.push_str(&format!(
-        "(qr code of version {}, {} x {} modules, {} passes{})\n",
-        sym.version,
-        sym.size,
-        sym.size,
-        q.passes,
-        match (q.invert, q.mirror) {
-            (false, false) => "",
-            (true, false) => ", inverted",
-            (false, true) => ", mirrored",
-            (true, true) => ", inverted, mirrored",
-        }
+        "(qr code of version {}, {} x {} modules, {} passes{notes})\n",
+        sym.version, sym.size, sym.size, q.passes
     ));
     let mut lit = false;
     for _ in 0..q.passes {
@@ -1338,6 +1357,81 @@ mod tests {
             };
             assert!(program("A", (0.0, 0.0), &b, &machine()).is_err(), "{bad}");
         }
+    }
+
+    #[test]
+    fn a_border_is_burnt_around_an_inverted_symbol_and_counts_for_the_size_and_the_bed() {
+        let q = QrSettings {
+            line_mm: 0.25,
+            invert: true,
+            border_modules: 2,
+            ..settings()
+        };
+        let (g, sym) = program("EH3D 42", (5.0, 5.0), &q, &machine()).unwrap();
+        assert_eq!(side_modules(&sym, &q), sym.size + 4);
+        assert!(g.contains(", inverted, border of 2 modules)"), "{g}");
+        // the burnt area is the whole square but the dark modules of the symbol
+        let dark = (0..sym.size)
+            .flat_map(|y| (0..sym.size).map(move |x| (x, y)))
+            .filter(|&(x, y)| sym.dark(x, y))
+            .count();
+        let side = sym.size + 4;
+        let lim = Limits {
+            bed_mm: Some((100.0, 50.0)),
+            ..Limits::default()
+        };
+        let v = verify(g.as_bytes(), &lim).unwrap();
+        assert!(v.passes(), "{:?}", v.problems);
+        assert!(
+            (v.burn_mm - ((side * side - dark) as f64) * 4.0).abs() < 1e-6,
+            "{} {side} {dark}",
+            v.burn_mm
+        );
+        // the first lines burn the whole bottom row of the border in one run
+        let first = g.lines().find(|l| l.starts_with("G1")).unwrap();
+        assert!(first.starts_with(&format!("G1 X{} ", 5 + side)), "{first}");
+        // without the border the same inverted symbol burns less, and a border is refused when it is not inverted
+        let none = QrSettings {
+            border_modules: 0,
+            ..q
+        };
+        let (h, _) = program("EH3D 42", (5.0, 5.0), &none, &machine()).unwrap();
+        assert!(verify(h.as_bytes(), &lim).unwrap().burn_mm < v.burn_mm);
+        let plain = QrSettings { invert: false, ..q };
+        let e = program("EH3D 42", (5.0, 5.0), &plain, &machine()).unwrap_err();
+        assert!(e.contains("border_modules") && e.contains("invert"), "{e}");
+        // the border counts for the largest side and for the bed, and its width has a limit
+        let wide = (side as f64) * 1.0;
+        let small = QrSettings {
+            max_size_mm: wide - 0.5,
+            ..q
+        };
+        assert!(program("EH3D 42", (5.0, 5.0), &small, &machine())
+            .unwrap_err()
+            .contains("max_size_mm"));
+        let bed = |x: f64| Machine {
+            bed_mm: Some((x, 50.0)),
+            ..machine()
+        };
+        assert!(program("EH3D 42", (5.0, 5.0), &q, &bed(5.0 + wide)).is_ok());
+        assert!(program("EH3D 42", (5.0, 5.0), &q, &bed(4.0 + wide))
+            .unwrap_err()
+            .contains("outside of the bed"));
+        let over = QrSettings {
+            border_modules: 9,
+            ..q
+        };
+        assert!(program("EH3D 42", (5.0, 5.0), &over, &machine()).is_err());
+        let most = QrSettings {
+            border_modules: 8,
+            ..q
+        };
+        assert!(program("EH3D 42", (20.0, 5.0), &most, &machine()).is_ok());
+        // the moves of the border count for the limit of moves
+        let dense = QrSettings { max_lines: 50, ..q };
+        assert!(program("EH3D 42", (5.0, 5.0), &dense, &machine())
+            .unwrap_err()
+            .contains("max_lines"));
     }
 
     #[test]

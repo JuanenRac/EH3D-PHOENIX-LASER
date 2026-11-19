@@ -195,6 +195,7 @@ pub enum Key {
     QrMaxLines,
     QrOverscan,
     QrMaxMinutes,
+    QrBorder,
 }
 
 /// The group of the side panel a setting belongs to.
@@ -394,6 +395,12 @@ fn default_fields() -> Vec<Field> {
             Msg::MaxMinutes,
             Section::Qr,
             &t(qd.max_minutes),
+        ),
+        f(
+            Key::QrBorder,
+            Msg::QrBorder,
+            Section::Qr,
+            &qd.border_modules.to_string(),
         ),
     ]
 }
@@ -1681,6 +1688,7 @@ impl Window {
                 self.put(Key::QrMaxLines, s.qr.max_lines.to_string());
                 self.put(Key::QrOverscan, t(s.qr.overscan_mm));
                 self.put(Key::QrMaxMinutes, t(s.qr.max_minutes));
+                self.put(Key::QrBorder, s.qr.border_modules.to_string());
                 self.qr_ecc = s.qr.ecc;
                 self.qr_invert = s.qr.invert;
                 self.qr_mirror = s.qr.mirror;
@@ -2316,6 +2324,7 @@ impl Window {
             overscan_mm: self.number(Key::QrOverscan)?,
             mirror: self.qr_mirror,
             max_minutes: self.number(Key::QrMaxMinutes)?,
+            border_modules: self.whole(Key::QrBorder, 0.0, 8.0)?,
         };
         let s_max = self.whole(Key::SMax, 1.0, 100_000.0)?;
         let (max_power, max_speed) = self.limits()?;
@@ -2337,7 +2346,7 @@ impl Window {
                 bytes: self.qr_data.len(),
                 version: sym.version,
                 modules: sym.size,
-                side_mm: sym.size as f64 * q.module_mm,
+                side_mm: qr::side_modules(&sym, &q) as f64 * q.module_mm,
             },
             notes: Vec::new(),
         })
@@ -4091,6 +4100,59 @@ hatch_cross = on
     }
 
     #[test]
+    fn the_border_around_an_inverted_qr_code_is_a_box_that_the_size_the_bed_and_the_switch_hold() {
+        let mut w = Window::new(Lang::En);
+        w.set_mode(Mode::Qr);
+        w.set_qr_data("EH3D 42".to_string());
+        assert_eq!(text_of(&w, Key::QrBorder), "0");
+        // a border needs the symbol to be inverted
+        set(&mut w, Key::QrBorder, "2");
+        assert!(!w.compute());
+        assert!(
+            matches!(&w.status, Status::Failed(e) if e.contains("border_modules")),
+            "{:?}",
+            w.status
+        );
+        w.set_qr_invert(true);
+        assert!(w.compute());
+        // the status line gives the side of the burnt square, border included (21 + 4 modules of 1 mm)
+        assert_eq!(
+            w.status.text(Lang::En),
+            "QR code: 7 bytes, version 1, 21 modules a side, 25.0 mm a side"
+        );
+        let m = qr::Machine {
+            s_max: 1000,
+            max_power_percent: 100.0,
+            max_speed_mm_min: 30_000.0,
+            bed_mm: None,
+        };
+        let q = QrSettings {
+            invert: true,
+            border_modules: 2,
+            ..QrSettings::default()
+        };
+        assert_eq!(
+            w.done.as_ref().unwrap().gcode,
+            qr::program("EH3D 42", (0.0, 0.0), &q, &m).unwrap().0
+        );
+        // the bed holds the square with its border
+        w.settings.machine.bed_mm = Some((24.0, 50.0));
+        assert!(!w.compute());
+        assert!(matches!(&w.status, Status::Failed(e) if e.contains("outside of the bed")));
+        w.settings.machine.bed_mm = None;
+        // a file of settings fills the box
+        let s = Scratch::new("border-config");
+        let cfg = s.write("b.cfg", "[qr]\ninvert = on\nborder_modules = 3\n");
+        assert!(w.load_config(&cfg));
+        assert_eq!(text_of(&w, Key::QrBorder), "3");
+        assert!(w.qr_invert);
+        assert!(w.compute());
+        for l in Lang::ALL {
+            assert!(!Msg::QrBorder.tr(l).is_empty());
+        }
+    }
+
+    #[test]
     fn the_qr_mode_refuses_what_does_not_fit_or_is_over_a_limit_and_names_the_box() {
         let mut w = Window::new(Lang::En);
         w.set_mode(Mode::Qr);
@@ -4156,6 +4218,8 @@ hatch_cross = on
             (Key::QrMaxLines, "0", Msg::QrMaxLines),
             (Key::QrOverscan, "x", Msg::Overscan),
             (Key::QrMaxMinutes, "x", Msg::MaxMinutes),
+            (Key::QrBorder, "9", Msg::QrBorder),
+            (Key::QrBorder, "1.5", Msg::QrBorder),
         ] {
             let before = text_of(&w, key);
             set(&mut w, key, text);

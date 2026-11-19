@@ -535,6 +535,8 @@ pub struct QrSettings {
     pub mirror: bool,
     /// The longest time that the burning itself may take (minutes): a symbol that would take longer is refused, never cut down.
     pub max_minutes: f64,
+    /// The width of a burnt border around an inverted symbol, in modules (0 is none, the default; at most 8): the symbol is left bare in a burnt plate. It needs `invert`.
+    pub border_modules: u32,
 }
 
 impl Default for QrSettings {
@@ -554,6 +556,7 @@ impl Default for QrSettings {
             overscan_mm: 0.0,
             mirror: false,
             max_minutes: 240.0,
+            border_modules: 0,
         }
     }
 }
@@ -582,6 +585,12 @@ impl QrSettings {
         range("max_size_mm", self.max_size_mm, 1.0, 1000.0)?;
         range("overscan_mm", self.overscan_mm, 0.0, 20.0)?;
         range("max_minutes", self.max_minutes, 1.0, 1440.0)?;
+        if self.border_modules > 8 {
+            return Err(format!(
+                "qr border_modules is {}: it must be from 0 to 8",
+                self.border_modules
+            ));
+        }
         for (name, v, hi) in [
             ("passes", self.passes, 20),
             ("max_bytes", self.max_bytes, 78),
@@ -1177,6 +1186,10 @@ fn set_global(s: &mut Settings, section: &str, key: &str, value: &str) -> Result
         ("qr", "overscan_mm") => s.qr.overscan_mm = number(value)?,
         ("qr", "mirror") => s.qr.mirror = switch(value)?,
         ("qr", "max_minutes") => s.qr.max_minutes = number(value)?,
+        ("qr", "border_modules") => {
+            s.qr.border_modules = u32::try_from(whole(value)?)
+                .map_err(|_| "border_modules is too large".to_string())?
+        }
         ("text", "max_minutes") => s.text.max_minutes = number(value)?,
         ("text", "mirror") => s.text.mirror = switch(value)?,
         ("text", "align") => {
@@ -1899,8 +1912,22 @@ mod tests {
                 overscan_mm: 0.0,
                 mirror: false,
                 max_minutes: 240.0,
+                border_modules: 0,
             }
         );
+        assert_eq!(
+            parse("[qr]\nborder_modules = 8\n")
+                .unwrap()
+                .qr
+                .border_modules,
+            8
+        );
+        for bad in ["9", "-1", "1.5", "x"] {
+            assert!(
+                parse(&format!("[qr]\nborder_modules = {bad}\n")).is_err(),
+                "{bad}"
+            );
+        }
         assert_eq!(
             parse("[qr]\nmax_minutes = 30\n").unwrap().qr.max_minutes,
             30.0
