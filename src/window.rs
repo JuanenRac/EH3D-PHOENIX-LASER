@@ -183,6 +183,7 @@ pub enum Key {
     TextSpeed,
     TextPasses,
     TextMaxChars,
+    TextMaxMinutes,
     QrModule,
     QrLine,
     QrPower,
@@ -193,6 +194,7 @@ pub enum Key {
     QrMaxSize,
     QrMaxLines,
     QrOverscan,
+    QrMaxMinutes,
 }
 
 /// The group of the side panel a setting belongs to.
@@ -337,6 +339,12 @@ fn default_fields() -> Vec<Field> {
             &d.max_chars.to_string(),
         ),
         f(
+            Key::TextMaxMinutes,
+            Msg::MaxMinutes,
+            Section::Text,
+            &t(d.max_minutes),
+        ),
+        f(
             Key::QrModule,
             Msg::QrModuleMm,
             Section::Qr,
@@ -380,6 +388,12 @@ fn default_fields() -> Vec<Field> {
             Msg::Overscan,
             Section::Qr,
             &t(qd.overscan_mm),
+        ),
+        f(
+            Key::QrMaxMinutes,
+            Msg::MaxMinutes,
+            Section::Qr,
+            &t(qd.max_minutes),
         ),
     ]
 }
@@ -1655,6 +1669,7 @@ impl Window {
                 self.put(Key::TextSpeed, t(s.text.speed_mm_min));
                 self.put(Key::TextPasses, s.text.passes.to_string());
                 self.put(Key::TextMaxChars, s.text.max_chars.to_string());
+                self.put(Key::TextMaxMinutes, t(s.text.max_minutes));
                 self.put(Key::QrModule, t(s.qr.module_mm));
                 self.put(Key::QrLine, t(s.qr.line_mm));
                 self.put(Key::QrPower, t(s.qr.power_percent));
@@ -1665,6 +1680,7 @@ impl Window {
                 self.put(Key::QrMaxSize, t(s.qr.max_size_mm));
                 self.put(Key::QrMaxLines, s.qr.max_lines.to_string());
                 self.put(Key::QrOverscan, t(s.qr.overscan_mm));
+                self.put(Key::QrMaxMinutes, t(s.qr.max_minutes));
                 self.qr_ecc = s.qr.ecc;
                 self.qr_invert = s.qr.invert;
                 self.qr_mirror = s.qr.mirror;
@@ -2254,6 +2270,7 @@ impl Window {
             max_chars: self.whole(Key::TextMaxChars, 1.0, 5000.0)?,
             mirror: self.text_mirror,
             align: self.text_align,
+            max_minutes: self.number(Key::TextMaxMinutes)?,
         };
         let s_max = self.whole(Key::SMax, 1.0, 100_000.0)?;
         let (max_power, max_speed) = self.limits()?;
@@ -2298,6 +2315,7 @@ impl Window {
             invert: self.qr_invert,
             overscan_mm: self.number(Key::QrOverscan)?,
             mirror: self.qr_mirror,
+            max_minutes: self.number(Key::QrMaxMinutes)?,
         };
         let s_max = self.whole(Key::SMax, 1.0, 100_000.0)?;
         let (max_power, max_speed) = self.limits()?;
@@ -3739,6 +3757,7 @@ hatch_cross = on
             (Key::TextPasses, "0", Msg::Passes),
             (Key::TextPasses, "21", Msg::Passes),
             (Key::TextMaxChars, "0", Msg::TextMaxChars),
+            (Key::TextMaxMinutes, "x", Msg::MaxMinutes),
         ] {
             let before = text_of(&w, key);
             set(&mut w, key, text);
@@ -4016,6 +4035,62 @@ hatch_cross = on
     }
 
     #[test]
+    fn a_burning_that_would_take_too_long_is_refused_and_the_time_is_a_box_a_file_fills() {
+        let mut w = Window::new(Lang::En);
+        w.set_mode(Mode::Text);
+        w.set_words("EH3D 42".to_string());
+        assert_eq!(text_of(&w, Key::TextMaxMinutes), "240");
+        assert!(w.compute());
+        set(&mut w, Key::TextSpeed, "1");
+        set(&mut w, Key::TextPasses, "20");
+        assert!(!w.compute());
+        assert!(
+            matches!(&w.status, Status::Failed(e) if e.contains("max_minutes")),
+            "{:?}",
+            w.status
+        );
+        set(&mut w, Key::TextSpeed, "1000");
+        set(&mut w, Key::TextPasses, "1");
+        assert!(w.compute());
+        w.set_mode(Mode::Qr);
+        w.set_qr_data("EH3D 42".to_string());
+        assert_eq!(text_of(&w, Key::QrMaxMinutes), "240");
+        assert!(w.compute());
+        set(&mut w, Key::QrSpeed, "1");
+        assert!(!w.compute());
+        assert!(
+            matches!(&w.status, Status::Failed(e) if e.contains("max_minutes")),
+            "{:?}",
+            w.status
+        );
+        set(&mut w, Key::QrMaxMinutes, "1440");
+        set(&mut w, Key::QrSpeed, "1");
+        let longest = w.compute();
+        // at 1 mm/min a symbol takes days: even the highest limit refuses it
+        assert!(!longest);
+        set(&mut w, Key::QrSpeed, "1000");
+        set(&mut w, Key::QrMaxMinutes, "0");
+        assert!(!w.compute());
+        assert!(
+            matches!(&w.status, Status::Failed(e) if e.contains("max_minutes")),
+            "{:?}",
+            w.status
+        );
+        // a file of settings fills both boxes
+        let s = Scratch::new("minutes-config");
+        let cfg = s.write(
+            "m.cfg",
+            "[text]\nmax_minutes = 12\n[qr]\nmax_minutes = 34\n",
+        );
+        assert!(w.load_config(&cfg));
+        assert_eq!(text_of(&w, Key::TextMaxMinutes), "12");
+        assert_eq!(text_of(&w, Key::QrMaxMinutes), "34");
+        for l in Lang::ALL {
+            assert!(!Msg::MaxMinutes.tr(l).is_empty());
+        }
+    }
+
+    #[test]
     fn the_qr_mode_refuses_what_does_not_fit_or_is_over_a_limit_and_names_the_box() {
         let mut w = Window::new(Lang::En);
         w.set_mode(Mode::Qr);
@@ -4080,6 +4155,7 @@ hatch_cross = on
             (Key::QrMaxVersion, "5", Msg::QrMaxVersion),
             (Key::QrMaxLines, "0", Msg::QrMaxLines),
             (Key::QrOverscan, "x", Msg::Overscan),
+            (Key::QrMaxMinutes, "x", Msg::MaxMinutes),
         ] {
             let before = text_of(&w, key);
             set(&mut w, key, text);

@@ -544,6 +544,21 @@ pub fn program(
             q.max_lines
         ));
     }
+    // the time of the burning itself: the length of every burnt line, in every pass, at the speed of the settings
+    let burn_mm = rows
+        .iter()
+        .flatten()
+        .map(|r| (r.1 - r.0 + 1) as f64 * q.module_mm)
+        .sum::<f64>()
+        * lines as f64
+        * f64::from(q.passes);
+    let minutes = burn_mm / q.speed_mm_min;
+    if minutes > q.max_minutes + 1e-9 {
+        return Err(format!(
+            "burning the symbol would take about {minutes:.1} minutes ({burn_mm:.0} mm at {} mm/min): it can take at most {} (max_minutes in [qr])",
+            q.speed_mm_min, q.max_minutes
+        ));
+    }
     // the run-up goes past each end of a burnt line with the laser off: it must stay inside the bed too
     let over = q.overscan_mm;
     if let (Some((bx, _)), true) = (m.bed_mm, over > 0.0) {
@@ -1280,6 +1295,49 @@ mod tests {
         let (c, _) = program("EH3D 42", (3.0, 4.0), &both, &machine()).unwrap();
         assert!(c.contains(", inverted, mirrored)"));
         assert!(verify(c.as_bytes(), &lim).unwrap().passes());
+    }
+
+    #[test]
+    fn a_burning_that_would_take_longer_than_the_limit_is_refused_never_shortened() {
+        let q = settings();
+        let (g, _) = program("EH3D 42", (0.0, 0.0), &q, &machine()).unwrap();
+        let lim = Limits::default();
+        let v = verify(g.as_bytes(), &lim).unwrap();
+        // the time of the burning is its length over the speed
+        let minutes = v.burn_mm / q.speed_mm_min;
+        let just = QrSettings {
+            max_minutes: 1.0f64.max(minutes + 0.5),
+            ..q
+        };
+        assert!(program("EH3D 42", (0.0, 0.0), &just, &machine()).is_ok());
+        // at a speed so low that it takes hours, or with passes that add up, it is refused and says how long
+        let slow = QrSettings {
+            speed_mm_min: 2.0,
+            ..q
+        };
+        let e = program("EH3D 42", (0.0, 0.0), &slow, &machine()).unwrap_err();
+        assert!(e.contains("max_minutes") && e.contains("minutes"), "{e}");
+        let short = QrSettings {
+            max_minutes: 1.0,
+            passes: 20,
+            ..q
+        };
+        assert!(program("EH3D 42", (0.0, 0.0), &short, &machine())
+            .unwrap_err()
+            .contains("max_minutes"));
+        // a higher limit lets the slow one through, and a limit out of range is an error of the settings
+        let patient = QrSettings {
+            max_minutes: 1440.0,
+            ..slow
+        };
+        assert!(program("EH3D 42", (0.0, 0.0), &patient, &machine()).is_ok());
+        for bad in [0.0, 0.9, 1441.0, f64::NAN] {
+            let b = QrSettings {
+                max_minutes: bad,
+                ..q
+            };
+            assert!(program("A", (0.0, 0.0), &b, &machine()).is_err(), "{bad}");
+        }
     }
 
     #[test]

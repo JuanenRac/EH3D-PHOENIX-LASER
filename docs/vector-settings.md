@@ -255,10 +255,11 @@ A line of text burnt with the font of strokes of the program (`phoenix-laser tex
 | `speed_mm_min` | 1000 | from 1 to 30000 |
 | `passes` | 1 | how many times the whole text is burnt, from 1 to 20 |
 | `max_chars` | 200 | the most characters a text may have, from 1 to 5000 |
+| `max_minutes` | 240 | the longest time that the burning itself may take (the length of every stroke over the speed, all the passes together), from 1 to 1440 minutes: a text that would take longer is refused, never cut down (`--max-minutes`) |
 | `align` | left | where the rows of a text of several lines start: `left`, `center` (or `centre`) or `right` (`--align`); the box of the text is the same |
 | `mirror` | off | `on` burns the text as its mirror image, for the back of glass or acrylic read from the front (`--mirror`, and `--no-mirror` to undo it) |
 
-The keys of `[text]` are `height_mm`, `max_height_mm`, `spacing_percent`, `line_spacing_percent`, `power_percent`, `speed_mm_min`, `passes`, `max_chars`, `align` and `mirror`.
+The keys of `[text]` are `height_mm`, `max_height_mm`, `spacing_percent`, `line_spacing_percent`, `power_percent`, `speed_mm_min`, `passes`, `max_chars`, `max_minutes`, `align` and `mirror`.
 
 In the window, the text mode has a box for the words and one box for each of these keys (a file of settings fills them); the text is worked out with the same function as the command, from the origin of the machine, and is refused for the same reasons, with the status line naming the box that is wrong. The bed is the one of the machine of the file.
 
@@ -280,11 +281,12 @@ Data that does not fit is refused, never cut down: more than `max_bytes` bytes, 
 | `ecc` | M | the level of error correction: `L`, `M`, `Q` or `H` |
 | `max_size_mm` | 100 | the largest side of the symbol, from 1 to 1000 mm |
 | `max_lines` | 100000 | the most burning moves of the program, all the passes together, from 1 to 1000000 |
+| `max_minutes` | 240 | the longest time that the burning itself may take (the length of every burnt line over the speed, all the passes together), from 1 to 1440 minutes: a symbol that would take longer is refused, never cut down (`--max-minutes`) |
 | `mirror` | off | `on` burns the symbol as its mirror image, for the back of glass or acrylic read from the front (`--mirror`, and `--no-mirror` to undo it) |
 | `overscan_mm` | 0 | the run-up at each end of a burnt line, from 0 to 20 mm: the head runs up to the line and out past its end with the laser off, so it is at speed all along the burnt part (`--overscan-mm`); a run-up that would leave the bed is refused |
 | `invert` | off | `on` burns the light modules instead of the dark ones, so the symbol is left bare in a burnt plate (`--invert`, and `--no-invert` to undo it); the limits hold over the light modules too |
 
-The keys of `[qr]` are `module_mm`, `line_mm`, `power_percent`, `speed_mm_min`, `passes`, `max_bytes`, `max_version`, `ecc`, `max_size_mm`, `max_lines`, `overscan_mm`, `mirror` and `invert`.
+The keys of `[qr]` are `module_mm`, `line_mm`, `power_percent`, `speed_mm_min`, `passes`, `max_bytes`, `max_version`, `ecc`, `max_size_mm`, `max_lines`, `max_minutes`, `overscan_mm`, `mirror` and `invert`.
 
 In the window, the QR mode has a box for the data, a choice of `ecc`, a switch for `invert` and one box for each of the other numbers (a file of settings fills them); the symbol is worked out with the same function as the command, from the origin of the machine, and is refused for the same reasons, with the status line naming the box that is wrong. The bed is the one of the machine of the file.
 

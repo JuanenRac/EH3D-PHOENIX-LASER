@@ -533,6 +533,8 @@ pub struct QrSettings {
     pub overscan_mm: f64,
     /// The symbol is turned into its mirror image, to be burnt on the back of glass or acrylic and read from the front (off by default).
     pub mirror: bool,
+    /// The longest time that the burning itself may take (minutes): a symbol that would take longer is refused, never cut down.
+    pub max_minutes: f64,
 }
 
 impl Default for QrSettings {
@@ -551,6 +553,7 @@ impl Default for QrSettings {
             invert: false,
             overscan_mm: 0.0,
             mirror: false,
+            max_minutes: 240.0,
         }
     }
 }
@@ -578,6 +581,7 @@ impl QrSettings {
         range("speed_mm_min", self.speed_mm_min, 1.0, 30_000.0)?;
         range("max_size_mm", self.max_size_mm, 1.0, 1000.0)?;
         range("overscan_mm", self.overscan_mm, 0.0, 20.0)?;
+        range("max_minutes", self.max_minutes, 1.0, 1440.0)?;
         for (name, v, hi) in [
             ("passes", self.passes, 20),
             ("max_bytes", self.max_bytes, 78),
@@ -645,6 +649,8 @@ pub struct TextSettings {
     pub mirror: bool,
     /// Where the rows of a text of several lines start: at the left (the default), centred or at the right.
     pub align: TextAlign,
+    /// The longest time that the burning itself may take (minutes): a text that would take longer is refused, never cut down.
+    pub max_minutes: f64,
 }
 
 impl Default for TextSettings {
@@ -660,6 +666,7 @@ impl Default for TextSettings {
             max_chars: 200,
             mirror: false,
             align: TextAlign::Left,
+            max_minutes: 240.0,
         }
     }
 }
@@ -675,6 +682,7 @@ impl TextSettings {
         };
         range("max_height_mm", self.max_height_mm, 1.0, 1000.0)?;
         range("height_mm", self.height_mm, 1.0, self.max_height_mm)?;
+        range("max_minutes", self.max_minutes, 1.0, 1440.0)?;
         range("spacing_percent", self.spacing_percent, 0.0, 200.0)?;
         range(
             "line_spacing_percent",
@@ -1168,6 +1176,8 @@ fn set_global(s: &mut Settings, section: &str, key: &str, value: &str) -> Result
         ("qr", "invert") => s.qr.invert = switch(value)?,
         ("qr", "overscan_mm") => s.qr.overscan_mm = number(value)?,
         ("qr", "mirror") => s.qr.mirror = switch(value)?,
+        ("qr", "max_minutes") => s.qr.max_minutes = number(value)?,
+        ("text", "max_minutes") => s.text.max_minutes = number(value)?,
         ("text", "mirror") => s.text.mirror = switch(value)?,
         ("text", "align") => {
             s.text.align = TextAlign::from_word(value)
@@ -1888,8 +1898,19 @@ mod tests {
                 invert: false,
                 overscan_mm: 0.0,
                 mirror: false,
+                max_minutes: 240.0,
             }
         );
+        assert_eq!(
+            parse("[qr]\nmax_minutes = 30\n").unwrap().qr.max_minutes,
+            30.0
+        );
+        for bad in ["0.5", "1441", "x", "-3"] {
+            assert!(
+                parse(&format!("[qr]\nmax_minutes = {bad}\n")).is_err(),
+                "{bad}"
+            );
+        }
         assert!(parse("[qr]\nmirror = on\n").unwrap().qr.mirror);
         assert!(!parse("[qr]\nmirror = off\n").unwrap().qr.mirror);
         assert!(parse("[qr]\nmirror = sideways\n").is_err());
@@ -1966,8 +1987,22 @@ mod tests {
                 max_chars: 50,
                 mirror: false,
                 align: TextAlign::Left,
+                max_minutes: 240.0,
             }
         );
+        assert_eq!(
+            parse("[text]\nmax_minutes = 1440\n")
+                .unwrap()
+                .text
+                .max_minutes,
+            1440.0
+        );
+        for bad in ["0.5", "1441", "x", "-3"] {
+            assert!(
+                parse(&format!("[text]\nmax_minutes = {bad}\n")).is_err(),
+                "{bad}"
+            );
+        }
         for (word, align) in [
             ("left", TextAlign::Left),
             (" Center ", TextAlign::Centre),

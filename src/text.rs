@@ -434,6 +434,24 @@ pub fn program(
             ));
         }
     }
+    // the time of the burning itself: the length of every stroke, in every pass, at the speed of the settings
+    let burn_mm: f64 = l
+        .strokes
+        .iter()
+        .map(|s| {
+            s.windows(2)
+                .map(|w| (w[1].0 - w[0].0).hypot(w[1].1 - w[0].1))
+                .sum::<f64>()
+        })
+        .sum::<f64>()
+        * f64::from(t.passes);
+    let minutes = burn_mm / t.speed_mm_min;
+    if minutes > t.max_minutes + 1e-9 {
+        return Err(format!(
+            "burning the text would take about {minutes:.1} minutes ({burn_mm:.0} mm at {} mm/min): it can take at most {} (max_minutes in [text])",
+            t.speed_mm_min, t.max_minutes
+        ));
+    }
     let s = (f64::from(m.s_max) * t.power_percent / 100.0).round() as u32;
     let feed = n(t.speed_mm_min)?;
     let mut out = String::from("G21\nG90\nM4 S0\n");
@@ -608,6 +626,44 @@ mod tests {
         };
         let (g, _) = program(text, (2.0, 2.0), &both, &machine()).unwrap();
         assert!(verify(g.as_bytes(), &Limits::default()).unwrap().passes());
+    }
+
+    #[test]
+    fn a_burning_that_would_take_longer_than_the_limit_is_refused_never_shortened() {
+        let t = settings();
+        let (g, _) = program("EH3D 42", (0.0, 0.0), &t, &machine()).unwrap();
+        let v = verify(g.as_bytes(), &Limits::default()).unwrap();
+        let minutes = v.burn_mm / t.speed_mm_min;
+        // a limit just over the time is fine, and one under it is refused with the time it would take
+        let over = TextSettings {
+            max_minutes: 1.0f64.max(minutes + 0.5),
+            ..t
+        };
+        assert!(program("EH3D 42", (0.0, 0.0), &over, &machine()).is_ok());
+        let slow = TextSettings {
+            speed_mm_min: 1.0,
+            passes: 20,
+            ..t
+        };
+        let e = program("EH3D 42", (0.0, 0.0), &slow, &machine()).unwrap_err();
+        assert!(e.contains("max_minutes") && e.contains("[text]"), "{e}");
+        let many = TextSettings {
+            passes: 20,
+            speed_mm_min: 100.0,
+            max_minutes: 5.0,
+            ..t
+        };
+        assert!(program("EH3D 42", (0.0, 0.0), &many, &machine()).is_err());
+        // the passes add up: 20 passes of a text that takes less than a minute fit in the default limit
+        let passes = TextSettings { passes: 20, ..t };
+        assert!(program("A", (0.0, 0.0), &passes, &machine()).is_ok());
+        for bad in [0.0, 0.5, 1441.0, f64::INFINITY] {
+            let b = TextSettings {
+                max_minutes: bad,
+                ..t
+            };
+            assert!(program("A", (0.0, 0.0), &b, &machine()).is_err(), "{bad}");
+        }
     }
 
     #[test]

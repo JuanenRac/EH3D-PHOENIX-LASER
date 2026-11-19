@@ -2259,6 +2259,52 @@ fn the_rows_of_a_text_can_start_at_the_left_in_the_middle_or_end_at_the_right() 
 }
 
 #[test]
+fn a_text_or_a_qr_code_that_would_burn_for_too_long_is_refused_and_nothing_is_written() {
+    // (a text of one pass takes minutes: five passes at 2 mm/min take hours, as a QR code does at 5 mm/min)
+    for (command, slow) in [
+        ("text", ["--feed", "2", "--passes", "5"]),
+        ("qr", ["--feed", "5", "--passes", "1"]),
+    ] {
+        let out = tmp(&format!("{command}-long.nc"));
+        let _ = std::fs::remove_file(&out);
+        // at 5 mm/min the burning takes hours
+        let mut args = vec![command, out.as_str(), "--text", "EH3D 42"];
+        args.extend(slow);
+        let (ok, _, err) = run(&args);
+        assert!(!ok, "{command}");
+        assert!(
+            err.contains("max_minutes") && err.contains("minutes"),
+            "{command}: {err}"
+        );
+        assert!(!std::path::Path::new(&out).exists());
+        // a higher limit lets it through, and the settings can raise it too
+        let mut args = vec![command, out.as_str(), "--text", "EH3D 42"];
+        args.extend(slow);
+        args.extend(["--max-minutes", "1440"]);
+        let (ok, _, err) = run(&args);
+        assert!(ok, "{command}: {err}");
+        let cfg = tmp(&format!("{command}-long.cfg"));
+        std::fs::write(&cfg, format!("[{command}]\nmax_minutes = 1440\n")).unwrap();
+        let mut args = vec![command, out.as_str(), "--text", "EH3D 42"];
+        args.extend(slow);
+        args.extend(["--config", cfg.as_str()]);
+        let (ok, _, err) = run(&args);
+        assert!(ok, "{command}: {err}");
+        // the option wins over the file, and a limit out of range is an error
+        let mut args = vec![command, out.as_str(), "--text", "EH3D 42"];
+        args.extend(slow);
+        args.extend(["--config", cfg.as_str(), "--max-minutes", "10"]);
+        let (ok, _, err) = run(&args);
+        assert!(!ok && err.contains("max_minutes"), "{command}: {err}");
+        for bad in ["0", "1441", "x"] {
+            let (ok, _, err) = run(&[command, &out, "--text", "A", "--max-minutes", bad]);
+            assert!(!ok, "{command} {bad}");
+            assert!(!err.contains("panicked"), "{err}");
+        }
+    }
+}
+
+#[test]
 fn the_cross_option_fills_an_engraved_layer_a_second_time() {
     let engraved = |out: &str| -> f64 {
         let end = out.find(" mm engraved").unwrap_or_else(|| panic!("{out}"));
