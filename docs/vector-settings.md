@@ -291,6 +291,28 @@ The keys of `[qr]` are `module_mm`, `line_mm`, `power_percent`, `speed_mm_min`, 
 
 In the window, the QR mode has a box for the data, a choice of `ecc`, a switch for `invert` and one box for each of the other numbers (a file of settings fills them); the symbol is worked out with the same function as the command, from the origin of the machine, and is refused for the same reasons, with the status line naming the box that is wrong. The bed is the one of the machine of the file.
 
+### `[barcode]`
+
+A Code 128 barcode burnt by filling its bars with lines along their height (`phoenix-laser barcode OUT.nc --text DATA`): the characters from space to `~` are written in set B, and a text of an even number of figures only is written in set C (two figures to a symbol), which is half as wide. A symbol is 11 modules wide and the stop is 13, and a module is `module_mm` wide, so the barcode is dark where the laser burns; leave a light margin of ten modules at each side on the material. The lower left corner is at `--origin X,Y` (the machine origin otherwise). The options `--module-mm`, `--height-mm`, `--line-mm`, `--power`, `--feed` and `--passes` take the place of the keys with the same meaning.
+
+Data that cannot be written is refused, never cut down: a byte that is not a printable character, more than `max_chars` characters, a barcode wider than `max_width_mm`, a fill of more than `max_lines` burning moves, a burning that would take more than `max_minutes`, a power or a speed over the limits of the machine (`--max-power`, `--max-speed`) or a barcode that would go outside of the bed (`--bed X,Y` or the machine of the file). The data is never written into a comment of the program.
+
+| Key | Default | Meaning |
+|---|---|---|
+| `module_mm` | 0.4 | the width of the narrowest bar, from 0.1 to 5 mm |
+| `height_mm` | 10 | the height of the bars, from 1 to 100 mm |
+| `line_mm` | 0.1 | the distance between the lines that fill a bar, from 0.02 mm up to `module_mm` |
+| `power_percent` | 20 | more than 0 up to 100, a percent of `s_max` |
+| `speed_mm_min` | 1000 | from 1 to 30000 |
+| `passes` | 1 | how many times the whole barcode is burnt, from 1 to 20 |
+| `max_chars` | 20 | the most characters of data, from 1 to 80 |
+| `max_width_mm` | 150 | the widest barcode, from 1 to 1000 mm |
+| `max_lines` | 100000 | the most burning moves of the program, all the passes together, from 1 to 1000000 |
+| `max_minutes` | 240 | the longest time that the burning itself may take (the length of every line over the speed, all the passes together), from 1 to 1440 minutes (`--max-minutes`) |
+| `mirror` | off | `on` burns the barcode as its mirror image, for the back of glass or acrylic read from the front (`--mirror`, and `--no-mirror` to undo it) |
+
+The keys of `[barcode]` are `module_mm`, `height_mm`, `line_mm`, `power_percent`, `speed_mm_min`, `passes`, `max_chars`, `max_width_mm`, `max_lines`, `max_minutes` and `mirror`.
+
 ### `[defaults]` and `[layer NAME]`
 
 | Key | Default | Range | Meaning |

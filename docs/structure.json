@@ -171,6 +171,19 @@
           }
         },
         {
+          "name": "barcode.rs",
+          "desc": {
+            "en": "a Code 128 barcode of its own, burnt by filling its bars with lines",
+            "es": "un código de barras Code 128 propio, grabado rellenando sus barras con líneas",
+            "de": "ein eigener Code-128-Strichcode, durch Füllen der Balken mit Linien gebrannt",
+            "fr": "un code-barres Code 128 propre, gravé en remplissant ses barres de lignes",
+            "it": "un codice a barre Code 128 proprio, inciso riempiendo le barre di linee",
+            "ja": "独自の Code 128 バーコードを、バーを線で塗りつぶして焼き付ける",
+            "zh": "自带的 Code 128 条形码，通过用线条填充条来烧刻",
+            "pt": "um código de barras Code 128 próprio, queimado a preencher as barras com linhas"
+          }
+        },
+        {
           "name": "gcode_out.rs",
           "desc": {
             "en": "the one way a G-code number is written and the standard header",

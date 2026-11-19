@@ -17,7 +17,7 @@
 
 ---
 
-**诚实检查 - 当前真正能运行的内容：** 一个 Rust 库和一个命令行程序（`phoenix-laser`），有 568 个在计算机上运行的测试：用抖动把图像变成点，并写出逐行烧蚀、带动态功率和超程的激光 G 代码；读取 SVG 和 DXF 图纸，写出切割其轮廓的 G 代码（先内后外，考虑光束宽度、连接桥和多遍），并用线条雕刻其图形，各图层的设置放在一个文件里；还有功率对进给的测试网格。它有一个窗口（用 `--features gui` 构建），可打开图像或图纸、显示激光路径、修改设置并导出 G 代码，但窗口尚未在屏幕上查看过；也没有在机器上试过，没有用一批真实文件检查过。
+**诚实检查 - 当前真正能运行的内容：** 一个 Rust 库和一个命令行程序（`phoenix-laser`），有 582 个在计算机上运行的测试：用抖动把图像变成点，并写出逐行烧蚀、带动态功率和超程的激光 G 代码；读取 SVG 和 DXF 图纸，写出切割其轮廓的 G 代码（先内后外，考虑光束宽度、连接桥和多遍），并用线条雕刻其图形，各图层的设置放在一个文件里；还有功率对进给的测试网格。它有一个窗口（用 `--features gui` 构建），可打开图像或图纸、显示激光路径、修改设置并导出 G 代码，但窗口尚未在屏幕上查看过；也没有在机器上试过，没有用一批真实文件检查过。
 
 ---
 
@@ -30,7 +30,7 @@
 |---|---|
 | 版本 | `0.1.1` |
 | 成熟度 | 可用 |
-| 测试 | 568 |
+| 测试 | 582 |
 | 技术栈 | Rust |
 | 真实硬件 | 未试过：这里的任何内容都没有在机器上运行过 |
 
@@ -46,7 +46,7 @@
 |---|---|---|
 | 核心 | 🟡 | 用抖动把图像变成点，并写出逐行烧蚀、带动态功率和超程的激光 G 代码；读取 SVG 和 DXF 图纸并按图层切割或雕刻（轮廓排序、光束宽度、连接桥、遍数、填充）；还有功率对进给的测试网格；已在计算机上用正常和损坏的输入测试，没有用一批真实文件检查。 |
 | 命令行 | 🟡 | `phoenix-laser`（`engrave`、`calibrate`、`info`、`cut`、`vector`、`layers`）运行与库相同的函数并打印结果；每个错误都以消息和非零退出码返回。 |
-| 测试 | 🟡 | 568 个测试通过（`cargo test`），包含正常情况、边界情况和损坏的输入。 |
+| 测试 | 🟡 | 582 个测试通过（`cargo test`），包含正常情况、边界情况和损坏的输入。 |
 | 安全 | 🟡 | 纯安全 Rust（`forbid(unsafe_code)`）：处理收到的文件时不会 panic，错误的值会返回带原因的错误；没有独立审查。 |
 | 窗口 | 🟠 | 已编写（egui，`--features gui`）：打开或拖入图像或 SVG、DXF 图纸，查看激光路径（切割为单一颜色，空移变淡），编辑图层表，校准网格，缩放与平移，估算时间，导出；其逻辑已测试，但尚未构建，也没有在屏幕上查看过。 |
 | 真实硬件 | 🔴 | 未试过：这里的任何内容都没有在机器上运行过。 |
@@ -66,6 +66,7 @@
 * **材料测试网格**（`src/calibrate.rs`，设置文件中的 `[calibrate]`）：`phoenix-laser calibrate --material 名称 --materials 文件` 围绕库中材料给出的值分配网格的功率和速度，保持在限制之内且不重复；`--labels` 用笔画字体在方块旁烧出每列的功率和每行的速度，之后可以直接在材料上读取网格；超过限制的材料会被拒绝，绝不会被降低。 使用材料时默认会烧出数字（`--no-labels` 可去掉），梯度的最小功率和最小速度是键 `min_power_percent` 和 `min_feed_mm_min`。
 * **文字**（`src/text.rs`，设置文件中的 `[text]`）：`phoenix-laser text OUT.nc --text 文字` 用程序自带的笔画字体（大写字母、数字、空格和 `. , - + / : ! ? ( ) = _ '`；小写按大写烧刻，换行开始新的一行）烧刻名称、序列号或标记，无需字体文件。大写字母的高度、字母与行的间距、功率、速度和遍数都是设置；字体中没有的字符、超过 `max_chars` 个字符的文字、超过 `max_height_mm` 的高度、超出上限的功率或速度，或会超出台面的作业都会被拒绝而不会被裁剪，文字也绝不会写入程序的注释中。多行文字的各行可以左对齐、居中或右对齐（`--align`），文字可以按镜像烧刻，用于玻璃或亚克力的背面（`--mirror`），烧刻时间超过 `max_minutes` 的任务会被拒绝。
 * **二维码**（`src/qr.rs`，设置文件中的 `[qr]`）：`phoenix-laser qr OUT.nc --text 数据` 把数据烧刻成程序自带的二维码（1 至 4 版，每边 21 至 33 个模块，字节模式，带四个级别的 Reed-Solomon 纠错和罚分最低的掩码），方法是用线条填充每个深色模块；该符号在所有版本和级别上都用独立的解码器读回验证过，测试也用自己的读取器读回。模块边长、线距、级别、功率、速度、道次和限制都是设置；超过 `max_bytes` 的数据、超过 `max_version` 的版本、大于 `max_size_mm` 的符号、超过 `max_lines` 次移动的填充、超出限制的功率或速度，或超出工作台的作业都会被拒绝，绝不裁剪或缩小，数据也绝不会写进程序的注释里。`--print` 以文本显示该符号。以下均默认关闭：`--invert` 改为烧刻浅色模块（用 `--border-modules` 可在周围加烧刻边框），`--mirror` 烧刻镜像，用于玻璃或亚克力背面，`--overscan-mm` 在关闭激光的情况下让机头在每条线前后助跑（若会超出台面则被拒绝），烧刻时间超过 `max_minutes` 的任务会被拒绝。
+* **条形码**（`src/barcode.rs`，设置文件中的 `[barcode]`）：`phoenix-laser barcode OUT.nc --text 数据` 把数据烧刻成程序自带的 Code 128 条形码（空格到 `~` 的字符用 B 集，只含偶数个数字的文本用宽度减半的 C 集，并带校验符），方法是沿高度方向用线条填充每个条；测试用自己的读取器读回，但尚未用扫描器读取过。最窄条的宽度、高度、线距、功率、速度、道次和限制都是设置；不可打印字符的字节、超过 `max_chars` 的字符数、宽于 `max_width_mm` 的条形码、超过 `max_lines` 次移动的填充、耗时超过 `max_minutes` 的烧刻、超出限制的功率或速度，或超出工作台的作业都会被拒绝，绝不裁剪或缩小，数据也绝不会写进程序的注释里。`--mirror` 烧刻镜像，用于玻璃或亚克力的背面。
 * **交叉填充**（`src/cut.rs`，图层中的 `hatch_cross`）：设为 `hatch_cross = on`（或在 `vector` 与 `trace` 中使用 `--cross`）的 `engrave` 图层，会在每一遍中用与第一组线成直角、间距相同的线再填充一次，线数上限对每一组都适用；图层列表给出的每平方毫米能量会翻倍，预览和程序检查把它当作任何其他程序来处理。
 * **作业边框**（`src/frame.rs`，设置文件中的 `[frame]`）：`phoenix-laser frame` 根据尺寸或 G-code 程序烧蚀范围的外框，写出在激光关闭状态下描出作业矩形的程序，让人看到作业会落在哪里；微弱的指示功率每次都需要 `--confirm-laser-on`，上限 5 %（可由 `[frame]` 的 `max_pilot_percent` 修改），并服从功率上限，超出工作台的边框会被拒绝。
 * **预览**（`src/preview.rs`）：`phoenix-laser preview` 读取 G-code 程序（自己生成的或其他程序的），输出移动、烧蚀和空移的长度、范围、功率，以及计入拐角减速的时间；对看起来危险的情况发出警告（快速移动时激光开启、没有进给、功率超过满功率、工作超出工作台、没有结束），并把路径画成 SVG；测试会读回雕刻写出的程序并核对同样的长度。
@@ -155,6 +156,7 @@ phoenix-laser calibrate OUT.nc --powers 20,40,60,80 --feeds 1000,2000,3000 [--sm
 phoenix-laser calibrate OUT.nc --material NAME --materials FILE [--steps 5] [--spread 40] [--labels|--no-labels] [--label-mm 3] [--smax 1000] [--max-power 100] [--max-speed MM/MIN] [--config FILE] [--profile NAME]
 phoenix-laser text OUT.nc --text TEXT [--height-mm 10] [--spacing 25] [--line-spacing 50] [--power 20] [--feed 1000] [--passes 1] [--max-minutes 240] [--align left|center|right] [--mirror] [--origin X,Y] [--bed X,Y] [--smax 1000] [--max-power 100] [--max-speed MM/MIN] [--config FILE] [--profile NAME]
 phoenix-laser qr OUT.nc --text DATA [--ecc L|M|Q|H] [--module-mm 1] [--line-mm 0.1] [--power 20] [--feed 1000] [--passes 1] [--max-minutes 240] [--invert] [--border-modules 0] [--overscan-mm 0] [--mirror] [--origin X,Y] [--bed X,Y] [--smax 1000] [--max-power 100] [--max-speed MM/MIN] [--print] [--config FILE] [--profile NAME]
+phoenix-laser barcode OUT.nc --text DATA [--module-mm 0.4] [--height-mm 10] [--line-mm 0.1] [--power 20] [--feed 1000] [--passes 1] [--max-minutes 240] [--mirror] [--origin X,Y] [--bed X,Y] [--smax 1000] [--max-power 100] [--max-speed MM/MIN] [--config FILE] [--profile NAME]
 phoenix-laser info IMAGE
 phoenix-laser cut DRAWING OUT.nc [--config FILE] [--power P] [--speed MM/MIN] [--passes N] [--focus-step MM] [--kerf MM] [--kerf-side none|auto|inside|outside]
               [--tabs N] [--tab-width MM] [--smax N] [--overscan MM] [--origin X,Y] [--bed X,Y] [--max-power P] [--max-speed MM/MIN] [--profile NAME] [--material NAME --materials FILE] [--dpi N] [--tolerance MM] [--dry-run]
@@ -193,7 +195,7 @@ cargo run --release --features gui -- --shot screen.png examples/plate.svg   # a
 
 ## 🧪 测试
 
-测试套件有 568 个测试（`cargo test`，CI 在 Windows 和 Linux 上运行）。它们检查正常情况、边界情况和损坏的输入：空文件、乱码和被截断的文件绝不会 panic。CI 还运行 `cargo fmt --check`、把警告当作错误的 `cargo clippy` 以及 `python -I tools/ci_validate.py`。
+测试套件有 582 个测试（`cargo test`，CI 在 Windows 和 Linux 上运行）。它们检查正常情况、边界情况和损坏的输入：空文件、乱码和被截断的文件绝不会 panic。CI 还运行 `cargo fmt --check`、把警告当作错误的 `cargo clippy` 以及 `python -I tools/ci_validate.py`。
 
 ## 🏗️ 构建与发布
 
@@ -226,6 +228,7 @@ EH3D-PHOENIX-LASER/
 │   ├── trace.rs                                 图像的轮廓：阈值、marching squares 和简化的环，带有限制
 │   ├── text.rs                                  用自带笔画字体烧刻的文字，受限制约束
 │   ├── qr.rs                                    自带的二维码，1 至 4 版并带纠错，通过填充模块烧刻
+│   ├── barcode.rs                               自带的 Code 128 条形码，通过用线条填充条来烧刻
 │   ├── gcode_out.rs                             G 代码数字的唯一写法和标准文件头
 │   ├── raster.rs                                逻辑的一部分
 │   ├── safety.rs                                功率上限，以及展示工作范围时保持激光关闭的规则

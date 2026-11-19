@@ -5,6 +5,7 @@
 mod cli_args;
 
 use cli_args::{finish, flag, num, switch};
+use eh3d_phoenix_laser::barcode;
 use eh3d_phoenix_laser::calibrate::{focus_test, grid, labelled_grid, ladder, Grid, Labels};
 use eh3d_phoenix_laser::cut::{layers as layer_list, plan, Plan};
 use eh3d_phoenix_laser::dither::{dither, Method};
@@ -54,6 +55,8 @@ const HELP: &str = "phoenix-laser: laser engraving from an image
                 [--max-power P] [--max-speed MM/MIN] [--config FILE] [--profile NAME]
   phoenix-laser qr OUT.nc --text DATA [--ecc L|M|Q|H] [--module-mm 1] [--line-mm 0.1] [--power 20] [--feed 1000] [--passes 1] [--max-minutes 240] [--invert] [--border-modules 0] [--overscan-mm 0] [--mirror] [--origin X,Y] [--bed X,Y] [--smax N] [--print]
                 [--max-power P] [--max-speed MM/MIN] [--config FILE] [--profile NAME]
+  phoenix-laser barcode OUT.nc --text DATA [--module-mm 0.4] [--height-mm 10] [--line-mm 0.1] [--power 20] [--feed 1000] [--passes 1] [--max-minutes 240] [--mirror] [--origin X,Y] [--bed X,Y] [--smax N]
+                [--max-power P] [--max-speed MM/MIN] [--config FILE] [--profile NAME]
   phoenix-laser frame OUT.nc --size W,H | --gcode PROGRAM.nc [--origin X,Y] [--margin MM] [--feed 3000] [--laps 1] [--bed X,Y] [--smax N]
                 [--pilot P --confirm-laser-on] [--max-power P] [--max-speed MM/MIN] [--config FILE] [--profile NAME]
   phoenix-laser preview PROGRAM.nc [OUT.svg] [--accel 1000] [--rapid 6000] [--smax N] [--bed X,Y] [--width-px 900] [--config FILE] [--profile NAME]
@@ -72,6 +75,7 @@ materials FILE lists the materials of a library: a plain text file with a [mater
 focus writes a focus test: short lines side by side, each burnt with the head at another height (Z); the sharpest and thinnest line shows where the beam is in focus. --z-step has no default because which way is down depends on the machine: check it before running the program, which moves Z. The usual values live in the [focus] section of --config.
 text burns TEXT with a font of strokes of the program (capitals, figures, space and . , - + / : ! ? ( ) = _ '; lower case is burnt as capitals, a new line starts a row, and a character the font has not is refused): --height-mm is the height of a capital (at most max_height_mm, 100 unless the file says another), --spacing and --line-spacing are the gaps between letters and rows as a percent of the height, --align left, center or right sets where the rows of a text of several lines start, --passes burns the whole text that many times (a burning that would take more than --max-minutes, 240 unless the file says another, is refused), --mirror burns its mirror image (for the back of glass or acrylic), and --origin X,Y is the lower left corner. A text of more than max_chars characters, a power or a speed over the limit, or work that would go outside of the bed (--bed X,Y or the machine of --config) is refused, never cut down; the [text] section of --config holds the usual values.
 qr burns DATA as a QR code of its own (versions 1 to 4, byte mode, with the level of error correction --ecc L, M, Q or H and the mask of the lowest penalty), filling each dark module with lines --line-mm apart (--invert fills the light ones instead, so the symbol is left bare in a burnt plate; --no-invert undoes invert = on of the settings; --border-modules N, only with --invert, also burns a border N modules wide around it, and the square counts as the symbol for --origin, the bed and max_size_mm; --overscan-mm runs the head up that far before each line and out past it with the laser off, and is refused when it would leave the bed): --mirror turns the symbol into its mirror image, to be burnt on the back of glass or acrylic; --module-mm is the side of a module and --origin X,Y the lower left corner; leave a light margin of four modules around the symbol on the material. --print also shows the symbol as text. Data of more than max_bytes bytes, a symbol that needs a version over max_version or is larger than max_size_mm, a fill of more than max_lines moves, a burning that would take more than --max-minutes (240 unless the file says another), a power or a speed over the limit, or work that would go outside of the bed (--bed X,Y or the machine of --config) is refused, never cut down; the [qr] section of --config holds the usual values.
+barcode burns DATA as a Code 128 barcode of its own (the characters from space to ~ in set B, and a text of an even number of figures in set C, which is half as wide), filling each bar with lines along its height --line-mm apart: --module-mm is the width of the narrowest bar, --height-mm the height of the bars, --mirror burns its mirror image (for the back of glass or acrylic) and --origin X,Y is the lower left corner; leave a light margin of ten modules at each side on the material. A byte that is not a printable character, more than max_chars characters, a barcode wider than max_width_mm, a fill of more than max_lines moves, a burning that would take more than --max-minutes (240 unless the file says another), a power or a speed over the limit, or work that would go outside of the bed (--bed X,Y or the machine of --config) is refused, never cut down; the [barcode] section of --config holds the usual values.
 frame writes a program that traces the rectangle of the work with the laser OFF, to see where it will land: --size W,H from the corner --origin, or the box of what burns in --gcode PROGRAM.nc (its real place). --margin widens it. A --pilot power (a percent, at most max_pilot_percent of [frame], 5 unless the file says another, and at most the limit of power) turns the laser on weakly and only with --confirm-laser-on; the [frame] section of --config holds the usual values.
 preview reads a G-code program (this program's or another's) and says what it would do: moves, burnt and travelled length, the box, the powers, a time that counts the corners (--accel in mm/s2) and what looks dangerous (the laser on during a rapid move, a burning move with no feed, S above --smax, work outside --bed, no end); with OUT.svg it also draws the path. It only reads text.
 verify reads a G-code program as text (it never runs it) and says its SHA-256, what it does and whether it passes: under the limit of power and of speed, inside the bed (--overscan-mm lets the head go that far past the bed with the laser off, as the overscan of another program does; burning outside the bed always fails, and [verify] overscan_mm of --config sets the same), with the laser off during every rapid move and a feed on every burning move; --expect-sha256 HASH ties the check to a program that was authorised: when the SHA-256 of the file is not that one (64 hex digits) the program fails, so a program that was changed after it was looked at is not run by mistake; --json gives the report for another program to keep, and the exit code is 1 when it fails.
@@ -635,7 +639,7 @@ fn text_job(mut args: Vec<String>) -> Result<(), String> {
     Ok(())
 }
 
-/// `--mirror` and `--no-mirror` of `text` and `qr`: the option decides over the settings file, and the two together are an error.
+/// `--mirror` and `--no-mirror` of `text`, `qr` and `barcode`: the option decides over the settings file, and the two together are an error.
 fn mirror_flags(args: &mut Vec<String>, mirror: &mut bool) -> Result<(), String> {
     let (on, off) = (switch(args, "--mirror"), switch(args, "--no-mirror"));
     if on && off {
@@ -646,6 +650,101 @@ fn mirror_flags(args: &mut Vec<String>, mirror: &mut bool) -> Result<(), String>
     } else if off {
         *mirror = false;
     }
+    Ok(())
+}
+
+/// `barcode`: some data burnt as a Code 128 barcode, filling its bars with lines.
+fn barcode_job(mut args: Vec<String>) -> Result<(), String> {
+    let config = flag(&mut args, "--config")?;
+    let mut settings = match &config {
+        Some(path) => vconfig::load(Path::new(path))?,
+        None => Settings::default(),
+    };
+    take_profile(&mut args, &mut settings, config.is_some())?;
+    let mut machine = settings.machine;
+    let mut b = settings.barcode;
+    let data = flag(&mut args, "--text")?.ok_or("barcode needs --text DATA")?;
+    if let Some(v) = flag(&mut args, "--module-mm")? {
+        b.module_mm = num(&v, "--module-mm")?;
+    }
+    if let Some(v) = flag(&mut args, "--height-mm")? {
+        b.height_mm = num(&v, "--height-mm")?;
+    }
+    if let Some(v) = flag(&mut args, "--line-mm")? {
+        b.line_mm = num(&v, "--line-mm")?;
+    }
+    if let Some(v) = flag(&mut args, "--power")? {
+        b.power_percent = num(&v, "--power")?;
+    }
+    if let Some(v) = flag(&mut args, "--feed")? {
+        b.speed_mm_min = num(&v, "--feed")?;
+    }
+    if let Some(v) = flag(&mut args, "--passes")? {
+        b.passes = whole(&v, "--passes")?;
+    }
+    if let Some(v) = flag(&mut args, "--max-minutes")? {
+        b.max_minutes = num(&v, "--max-minutes")?;
+    }
+    if let Some(v) = flag(&mut args, "--smax")? {
+        machine.s_max = whole(&v, "--smax")?;
+    }
+    if let Some(v) = flag(&mut args, "--max-power")? {
+        machine.max_power_percent = num(&v, "--max-power")?;
+    }
+    if let Some(v) = flag(&mut args, "--max-speed")? {
+        machine.max_speed_mm_min = num(&v, "--max-speed")?;
+    }
+    if let Some(v) = flag(&mut args, "--origin")? {
+        let o = list(&v, "--origin")?;
+        if o.len() != 2 {
+            return Err("--origin needs X,Y".into());
+        }
+        machine.origin = (o[0], o[1]);
+    }
+    if let Some(v) = flag(&mut args, "--bed")? {
+        let bed = list(&v, "--bed")?;
+        if bed.len() != 2 {
+            return Err("--bed needs X,Y".into());
+        }
+        machine.bed_mm = Some((bed[0], bed[1]));
+    }
+    mirror_flags(&mut args, &mut b.mirror)?;
+    finish(&args, 1)?;
+    let out = args.first().ok_or("barcode needs an output file")?;
+    if config
+        .as_deref()
+        .is_some_and(|c| same_file(Path::new(c), Path::new(out)))
+    {
+        return Err(format!(
+            "{out}: the output would be written over the settings it is made from"
+        ));
+    }
+    let m = qr::Machine {
+        s_max: machine.s_max,
+        max_power_percent: machine.max_power_percent,
+        max_speed_mm_min: machine.max_speed_mm_min,
+        bed_mm: machine.bed_mm,
+    };
+    let (gcode, code) = barcode::program(&data, machine.origin, &b, &m)?;
+    let head = header(&Header {
+        generator: "phoenix-laser",
+        version: env!("CARGO_PKG_VERSION"),
+        source: None,
+        tools: &format!(
+            "laser, S 0-{}, Code 128 barcode filled with lines",
+            machine.s_max
+        ),
+    });
+    write_atomic(Path::new(out), &format!("{head}{gcode}"))?;
+    println!(
+        "{} characters, set {}, {:.1} x {:.1} mm, at {} % and {} mm/min, written to {out}",
+        data.len(),
+        code.set(),
+        barcode::width_modules(&code) as f64 * b.module_mm,
+        b.height_mm,
+        b.power_percent,
+        b.speed_mm_min
+    );
     Ok(())
 }
 
@@ -1057,6 +1156,7 @@ fn run(mut args: Vec<String>) -> Result<(), String> {
         "calibrate" => calibrate_job(args),
         "text" => text_job(args),
         "qr" => qr_job(args),
+        "barcode" => barcode_job(args),
         "cut" => drawing_job(args, LayerMode::Cut),
         "vector" => drawing_job(args, LayerMode::Engrave),
         "layers" => layers_job(args),

@@ -2366,6 +2366,105 @@ fn an_inverted_qr_code_can_have_a_burnt_border_that_counts_for_the_size_and_the_
 }
 
 #[test]
+fn the_barcode_command_burns_a_barcode_that_reads_back_and_refuses_what_does_not_fit() {
+    let out = tmp("barcode.nc");
+    let _ = std::fs::remove_file(&out);
+    let (ok, said, err) = run(&["barcode", &out, "--text", "EH3D-42"]);
+    assert!(ok, "{err}");
+    assert!(said.contains("7 characters, set B"), "{said}");
+    let program = std::fs::read_to_string(&out).unwrap();
+    assert!(program.contains("code 128 barcode in set B"), "{program}");
+    assert!(
+        !program.contains("EH3D-42"),
+        "the data is not written into the program"
+    );
+    let (pass, report, _) = run(&["verify", &out]);
+    assert!(pass, "{report}");
+    // figures only are written in set C, which is narrower
+    let narrow = tmp("barcode-c.nc");
+    let (ok, said, err) = run(&["barcode", &narrow, "--text", "20261119"]);
+    assert!(ok && said.contains("set C"), "{said} {err}");
+    let code = eh3d_phoenix_laser::barcode::encode(b"20261119").unwrap();
+    assert!(
+        said.contains(&format!("{:.1}", code.modules.len() as f64 * 0.4)),
+        "{said}"
+    );
+    // what cannot be written is refused and nothing is written
+    for (args, word) in [
+        (vec!["--text", "caf\u{e9}"], "from space to ~"),
+        (vec!["--text", "A234567890123456789012"], "max_chars"),
+        (
+            vec!["--text", "EH3D", "--module-mm", "5", "--height-mm", "5"],
+            "max_width_mm",
+        ),
+        (
+            vec!["--text", "EH3D", "--feed", "1", "--passes", "20"],
+            "max_minutes",
+        ),
+        (
+            vec!["--text", "EH3D", "--power", "60", "--max-power", "50"],
+            "max_power_percent",
+        ),
+        (
+            vec!["--text", "EH3D", "--feed", "5000", "--max-speed", "2000"],
+            "max_speed_mm_min",
+        ),
+        (
+            vec!["--text", "EH3D", "--bed", "20,20"],
+            "outside of the bed",
+        ),
+        (
+            vec!["--text", "EH3D", "--bed", "100,100", "--origin", "-1,0"],
+            "outside of the bed",
+        ),
+        (vec!["--text", "EH3D", "--line-mm", "5"], "line_mm"),
+        (vec!["--text", ""], "empty"),
+        (
+            vec!["--text", "EH3D", "--mirror", "--no-mirror"],
+            "cannot be given together",
+        ),
+        (vec![], "--text"),
+    ] {
+        let refused = tmp("barcode-refused.nc");
+        let _ = std::fs::remove_file(&refused);
+        let mut full = vec!["barcode", refused.as_str()];
+        full.extend(args.iter().copied());
+        let (ok, _, err) = run(&full);
+        assert!(!ok, "{args:?}");
+        assert!(err.contains(word), "{args:?}: {err}");
+        assert!(!err.contains("panicked"), "{err}");
+        assert!(!std::path::Path::new(&refused).exists(), "{args:?}");
+    }
+    // the settings say the usual values, the options win and the output is never the settings
+    let cfg = tmp("barcode.cfg");
+    std::fs::write(
+        &cfg,
+        "[barcode]\nmodule_mm = 0.5\nheight_mm = 8\nmirror = on\n",
+    )
+    .unwrap();
+    let (ok, said, err) = run(&["barcode", &out, "--text", "AB", "--config", &cfg]);
+    assert!(ok, "{err}");
+    assert!(said.contains("x 8.0 mm"), "{said}");
+    assert!(std::fs::read_to_string(&out).unwrap().contains("mirrored"));
+    let (ok, _, _) = run(&[
+        "barcode",
+        &out,
+        "--text",
+        "AB",
+        "--config",
+        &cfg,
+        "--no-mirror",
+    ]);
+    assert!(ok);
+    assert!(!std::fs::read_to_string(&out).unwrap().contains("mirrored"));
+    let (ok, _, err) = run(&["barcode", &cfg, "--text", "AB", "--config", &cfg]);
+    assert!(!ok && err.contains("written over the settings"), "{err}");
+    assert!(std::fs::read_to_string(&cfg)
+        .unwrap()
+        .contains("module_mm = 0.5"));
+}
+
+#[test]
 fn the_cross_option_fills_an_engraved_layer_a_second_time() {
     let engraved = |out: &str| -> f64 {
         let end = out.find(" mm engraved").unwrap_or_else(|| panic!("{out}"));
