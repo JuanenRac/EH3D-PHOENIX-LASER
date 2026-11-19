@@ -67,7 +67,7 @@ focus writes a focus test: short lines side by side, each burnt with the head at
 frame writes a program that traces the rectangle of the work with the laser OFF, to see where it will land: --size W,H from the corner --origin, or the box of what burns in --gcode PROGRAM.nc (its real place). --margin widens it. A --pilot power (a percent, at most max_pilot_percent of [frame], 5 unless the file says another, and at most the limit of power) turns the laser on weakly and only with --confirm-laser-on; the [frame] section of --config holds the usual values.
 preview reads a G-code program (this program's or another's) and says what it would do: moves, burnt and travelled length, the box, the powers, a time that counts the corners (--accel in mm/s2) and what looks dangerous (the laser on during a rapid move, a burning move with no feed, S above --smax, work outside --bed, no end); with OUT.svg it also draws the path. It only reads text.
 verify reads a G-code program as text (it never runs it) and says its SHA-256, what it does and whether it passes: under the limit of power and of speed, inside the bed (--overscan-mm lets the head go that far past the bed with the laser off, as the overscan of another program does; burning outside the bed always fails, and [verify] overscan_mm of --config sets the same), with the laser off during every rapid move and a feed on every burning move; --json gives the report for another program to keep, and the exit code is 1 when it fails.
-calibrate with --material takes the powers and the feeds from the library: a ladder of --steps values (5) from --spread percent (40) below to the same above the power and the speed of the material, held between the limits and given once each, unless --powers or --feeds give a list; --labels burns the power of each column below it and the feed of each row on its left, at the power and the speed of the material, so the squares can be read on the material (--label-mm is the height of the figures, [calibrate] of --config holds the usual values).
+calibrate with --material takes the powers and the feeds from the library: a ladder of --steps values (5) from --spread percent (40) below to the same above the power and the speed of the material, held between the limits and given once each, unless --powers or --feeds give a list; the power of each column is burnt below it and the feed of each row on its left, at the power and the speed of the material, so the squares can be read on the material: with --material they come by default and --no-labels takes them away, and --labels asks for them with lists too (--label-mm is the height of the figures; [calibrate] of --config holds the usual values, and also the lowest power and feed of the ladder, min_power_percent and min_feed_mm_min).
 --max-power is the limit of power, a percent of full power (100 when nothing says another): a program whose power is more than the limit is refused, never lowered. engrave and calibrate also read the limit and --smax from the [machine] section of the file of --config, and engrave the tone curve from its [tone] section (a material and the tone options win over it). --max-speed is the limit of speed (mm/min, 30000 when nothing says another) and works the same way: a feed over it is refused, never lowered.
 A [profile NAME] section of the file of --config describes a machine and laser (its travel, its limit of power and of speed, its S and its watts); --profile NAME (or profile = NAME in [machine]) makes it the machine, over [machine] and under the options of the command line.";
 
@@ -547,12 +547,8 @@ fn calibrate_job(mut args: Vec<String>) -> Result<(), String> {
     if let Some(v) = &label_mm_arg {
         c.label_mm = num(v, "--label-mm")?;
     }
-    if labels_on {
-        c.labels = true;
-    }
-    if labels_off {
-        c.labels = false;
-    }
+    // the figures come by default with a material, and with nothing else unless they are asked for
+    c.labels = labels_on || (c.labels && material.is_some() && !labels_off);
     c.validate()?;
     let mut g = Grid::default();
     if let Some(s_max) = limits.s_max {
@@ -578,7 +574,7 @@ fn calibrate_job(mut args: Vec<String>) -> Result<(), String> {
                 c.steps as usize,
                 c.spread_percent,
                 1,
-                1.0f64.min(max_power),
+                c.min_power_percent.min(max_power),
                 max_power,
             )?
         }
@@ -602,7 +598,7 @@ fn calibrate_job(mut args: Vec<String>) -> Result<(), String> {
                 c.steps as usize,
                 c.spread_percent,
                 0,
-                10.0f64.min(max_speed),
+                c.min_feed_mm_min.min(max_speed),
                 max_speed,
             )?
         }

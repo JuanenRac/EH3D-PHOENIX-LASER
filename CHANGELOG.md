@@ -4,6 +4,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+- **The figures come by default with a material, and the lowest power and feed of the ladder are settings:** `phoenix-laser calibrate --material` now burns the power of each column and the feed of each row next to the squares without being asked (`--no-labels` takes them away; a grid made from `--powers` and `--feeds` is the same as ever and has figures only with `--labels`). The two lowest values that the ladder is held at, 1 % of power and 10 mm/min, are now the keys `min_power_percent` and `min_feed_mm_min` of `[calibrate]` with those values by default (more than 0 up to 100, and more than 0 up to 30000), and the example file, the help and the docs say the same.
+
 ## [0.0.9] - Trace and machine profiles in the window, uses in SVG, an overscan limit in verify, a test grid from the materials and a fuller verify report
 
 - **The outline of a picture in the window:** a new mode follows the outline of the picture that is open with the same function as `phoenix-laser trace` and cuts it, or fills the shapes with lines, as a layer called `trace`. The boxes are the threshold, the simplification and the smallest piece (they start from `[trace]`), with a switch for a picture whose light part is the ink and another to fill instead of cut; the power and the speed are the ones of the laser boxes and obey the limits of power and of speed, and the limits of the picture (`max_pixels`, `max_contours`, `max_segments`) are the ones of the settings file, so a picture that is too detailed is an error and not a slow program. The frame of the window works from the outline too, and the words are in the eight languages.

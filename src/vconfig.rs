@@ -401,10 +401,14 @@ pub struct CalibrateSettings {
     pub steps: u32,
     /// How far the ladder goes below and above what the material says, as a percent of it.
     pub spread_percent: f64,
-    /// The power of each column and the feed of each row are burnt next to the squares.
+    /// The power of each column and the feed of each row are burnt next to the squares of a grid made from a material (`--no-labels` takes them away; `--labels` also asks for them without a material).
     pub labels: bool,
     /// The height of the figures (mm).
     pub label_mm: f64,
+    /// The lowest power of the ladder (a percent of full power): the ladder is held at it and never goes under.
+    pub min_power_percent: f64,
+    /// The lowest feed of the ladder (mm/min).
+    pub min_feed_mm_min: f64,
 }
 
 impl Default for CalibrateSettings {
@@ -412,8 +416,10 @@ impl Default for CalibrateSettings {
         CalibrateSettings {
             steps: 5,
             spread_percent: 40.0,
-            labels: false,
+            labels: true,
             label_mm: 3.0,
+            min_power_percent: 1.0,
+            min_feed_mm_min: 10.0,
         }
     }
 }
@@ -438,6 +444,24 @@ impl CalibrateSettings {
             return Err(format!(
                 "calibrate label_mm is {}: it must be from 1 to {top}",
                 self.label_mm
+            ));
+        }
+        if !(self.min_power_percent.is_finite()
+            && self.min_power_percent > 0.0
+            && self.min_power_percent <= 100.0)
+        {
+            return Err(format!(
+                "calibrate min_power_percent is {}: it must be more than 0 up to 100",
+                self.min_power_percent
+            ));
+        }
+        if !(self.min_feed_mm_min.is_finite()
+            && self.min_feed_mm_min > 0.0
+            && self.min_feed_mm_min <= 30000.0)
+        {
+            return Err(format!(
+                "calibrate min_feed_mm_min is {}: it must be more than 0 up to 30000",
+                self.min_feed_mm_min
             ));
         }
         Ok(())
@@ -852,6 +876,8 @@ fn set_global(s: &mut Settings, section: &str, key: &str, value: &str) -> Result
         ("calibrate", "spread_percent") => s.calibrate.spread_percent = number(value)?,
         ("calibrate", "labels") => s.calibrate.labels = switch(value)?,
         ("calibrate", "label_mm") => s.calibrate.label_mm = number(value)?,
+        ("calibrate", "min_power_percent") => s.calibrate.min_power_percent = number(value)?,
+        ("calibrate", "min_feed_mm_min") => s.calibrate.min_feed_mm_min = number(value)?,
         ("trace", "threshold") => {
             s.trace.threshold = u8::try_from(whole(value)?)
                 .map_err(|_| "trace threshold must be from 0 to 255".to_string())?
@@ -1547,15 +1573,20 @@ mod tests {
     #[test]
     fn the_calibrate_settings_are_read_and_the_defaults_are_the_ones_of_the_example() {
         assert_eq!(Settings::default().calibrate, CalibrateSettings::default());
-        let s = parse("[calibrate]\nsteps = 7\nspread_percent = 25.5\nlabels = on\nlabel_mm = 4\n")
-            .unwrap();
+        assert!(CalibrateSettings::default().labels);
+        let s = parse(
+            "[calibrate]\nsteps = 7\nspread_percent = 25.5\nlabels = off\nlabel_mm = 4\nmin_power_percent = 2.5\nmin_feed_mm_min = 50\n",
+        )
+        .unwrap();
         assert_eq!(
             s.calibrate,
             CalibrateSettings {
                 steps: 7,
                 spread_percent: 25.5,
-                labels: true,
+                labels: false,
                 label_mm: 4.0,
+                min_power_percent: 2.5,
+                min_feed_mm_min: 50.0,
             }
         );
         for text in [
@@ -1567,6 +1598,10 @@ mod tests {
             "[calibrate]\nlabels = maybe\n",
             "[calibrate]\nlabel_mm = 0.9\n",
             "[calibrate]\nlabel_mm = 20.1\n",
+            "[calibrate]\nmin_power_percent = 0\n",
+            "[calibrate]\nmin_power_percent = 101\n",
+            "[calibrate]\nmin_feed_mm_min = 0\n",
+            "[calibrate]\nmin_feed_mm_min = 30001\n",
             "[calibrate]\nspeed = 5\n",
         ] {
             assert!(parse(text).is_err(), "{text:?}");

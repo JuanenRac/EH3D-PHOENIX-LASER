@@ -226,16 +226,18 @@ The only key of `[verify]` is `overscan_mm`.
 
 ### `[calibrate]`
 
-The test grid made from a material (`phoenix-laser calibrate --material NAME --materials FILE`): a grid of squares with the powers and the feeds spread around the power and the speed of the material, and, when asked, the power of each column and the feed of each row burnt next to the squares. The powers are held between 1 % and `max_power_percent`, the feeds between 10 mm/min and `max_speed_mm_min`, and a value that comes out twice is given once, so the grid never asks for more than the limits allow; the material itself over a limit is refused. `--powers` and `--feeds` give a list and win over the ladder, and the options `--steps`, `--spread`, `--labels`, `--no-labels` and `--label-mm` take the place of these keys.
+The test grid made from a material (`phoenix-laser calibrate --material NAME --materials FILE`): a grid of squares with the powers and the feeds spread around the power and the speed of the material, and, when asked, the power of each column and the feed of each row burnt next to the squares. The powers are held between `min_power_percent` (1 %) and `max_power_percent`, the feeds between `min_feed_mm_min` (10 mm/min) and `max_speed_mm_min`, and a value that comes out twice is given once, so the grid never asks for more than the limits allow; the material itself over a limit is refused. `--powers` and `--feeds` give a list and win over the ladder, and the options `--steps`, `--spread`, `--labels`, `--no-labels` and `--label-mm` take the place of these keys. With a material the figures come by default and `--no-labels` takes them away; without a material the output is the same as ever, with figures only when `--labels` asks for them.
 
 | Key | Default | Meaning |
 |---|---|---|
 | `steps` | 5 | how many powers and how many feeds the ladder has, from 1 to 12 |
 | `spread_percent` | 40 | how far the ladder goes below and above what the material says, as a percent of it, from 0 to 90 |
-| `labels` | off | burn the power of each column and the feed of each row next to the squares, at the power and the speed of the material (or the middle of the lists) |
+| `labels` | on | with a material, burn the power of each column and the feed of each row next to the squares, at the power and the speed of the material (`--labels` asks for them with lists too) |
 | `label_mm` | 3 | the height of the figures, from 1 to 20 mm |
+| `min_power_percent` | 1 | the lowest power of the ladder, more than 0 up to 100 % of full power: the ladder is held at it and never goes under |
+| `min_feed_mm_min` | 10 | the lowest feed of the ladder, more than 0 up to 30000 mm/min |
 
-The keys of `[calibrate]` are `steps`, `spread_percent`, `labels` and `label_mm`.
+The keys of `[calibrate]` are `steps`, `spread_percent`, `labels`, `label_mm`, `min_power_percent` and `min_feed_mm_min`.
 
 ### `[defaults]` and `[layer NAME]`
 

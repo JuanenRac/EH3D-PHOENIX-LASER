@@ -329,9 +329,35 @@ fn calibrate_spreads_the_powers_and_the_feeds_around_a_material_and_burns_the_fi
     );
     let text = std::fs::read_to_string(&out_file).unwrap();
     assert!(
-        !text.contains("(figures"),
-        "no figures unless they are asked for"
+        text.contains("(figures at 50% feed 1000)"),
+        "a grid made from a material has its figures by default"
     );
+    // --no-labels takes them away
+    let (ok, _, err) = run(&[
+        "calibrate",
+        &out_file,
+        "--material",
+        "test wood",
+        "--materials",
+        &lib,
+        "--no-labels",
+    ]);
+    assert!(ok, "{err}");
+    let text = std::fs::read_to_string(&out_file).unwrap();
+    assert!(!text.contains("(figures"), "{text}");
+    // a grid from lists, with no material, has none unless they are asked for
+    let (ok, _, err) = run(&[
+        "calibrate",
+        &out_file,
+        "--powers",
+        "10,20",
+        "--feeds",
+        "1000",
+    ]);
+    assert!(ok, "{err}");
+    assert!(!std::fs::read_to_string(&out_file)
+        .unwrap()
+        .contains("(figures"));
     // the figures, with the option, and the check of the program passes
     let (ok, out, err) = run(&[
         "calibrate",
@@ -456,7 +482,7 @@ fn the_figures_and_the_ladder_can_come_from_the_settings_file() {
     let cfg = tmp("calibrate-cfg.cfg");
     std::fs::write(
         &cfg,
-        "[calibrate]\nsteps = 3\nspread_percent = 20\nlabels = on\nlabel_mm = 4\n",
+        "[calibrate]\nsteps = 3\nspread_percent = 20\nlabels = on\nlabel_mm = 4\nmin_power_percent = 5\nmin_feed_mm_min = 100\n",
     )
     .unwrap();
     let out_file = tmp("calibrate-cfg.nc");
@@ -499,6 +525,8 @@ fn the_figures_and_the_ladder_can_come_from_the_settings_file() {
         ("steps", "13"),
         ("spread_percent", "91"),
         ("label_mm", "0.5"),
+        ("min_power_percent", "0"),
+        ("min_feed_mm_min", "30001"),
     ] {
         std::fs::write(&cfg, format!("[calibrate]\n{key} = {bad}\n")).unwrap();
         let (ok, _, err) = run(&[
@@ -514,6 +542,57 @@ fn the_figures_and_the_ladder_can_come_from_the_settings_file() {
         assert!(!ok, "{key}");
         assert!(err.contains(key), "{err}");
     }
+}
+
+#[test]
+fn the_lowest_power_and_feed_of_the_ladder_come_from_the_settings() {
+    let lib = tmp("ladder-min-lib.cfg");
+    std::fs::write(&lib, "[material m]\npower = 10\nspeed = 200\n").unwrap();
+    let out_file = tmp("ladder-min.nc");
+    // by default the ladder goes down to 1 % and 10 mm/min: 10 % with a spread of 90 % is 1 %, 200 with the same is 20
+    let (ok, out, err) = run(&[
+        "calibrate",
+        &out_file,
+        "--material",
+        "m",
+        "--materials",
+        &lib,
+        "--steps",
+        "3",
+        "--spread",
+        "90",
+    ]);
+    assert!(ok, "{err}");
+    assert!(
+        out.contains("powers 1, 10, 19 %, feeds 20, 200, 380 mm/min"),
+        "{out}"
+    );
+    // the keys of the file hold the ladder higher
+    let cfg = tmp("ladder-min.cfg");
+    std::fs::write(
+        &cfg,
+        "[calibrate]\nmin_power_percent = 5\nmin_feed_mm_min = 100\n",
+    )
+    .unwrap();
+    let (ok, out, err) = run(&[
+        "calibrate",
+        &out_file,
+        "--material",
+        "m",
+        "--materials",
+        &lib,
+        "--steps",
+        "3",
+        "--spread",
+        "90",
+        "--config",
+        &cfg,
+    ]);
+    assert!(ok, "{err}");
+    assert!(
+        out.contains("powers 5, 10, 19 %, feeds 100, 200, 380 mm/min"),
+        "{out}"
+    );
 }
 
 #[test]
