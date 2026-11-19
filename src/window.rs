@@ -16,8 +16,9 @@ use crate::raster::{engrave, overscan_for, Params};
 use crate::safety;
 use crate::svg::read_svg;
 use crate::tone::Tone;
+use crate::trace;
 use crate::vconfig::{
-    self, FocusSettings, FrameSettings, KerfSide, LayerMode, LayerParams, Settings,
+    self, FocusSettings, FrameSettings, KerfSide, LayerMode, LayerParams, Settings, TraceSettings,
 };
 use crate::vector::{Drawing, ReadOptions};
 use crate::viewport::Viewport;
@@ -82,6 +83,8 @@ pub enum Mode {
     Frame,
     /// A G-code program that was opened to see: its path, its time and what looks dangerous. It is never written again.
     Preview,
+    /// The outline of the picture that is open (a logo, a silhouette, a stencil), cut or filled with lines like the shapes of a drawing.
+    Trace,
 }
 
 /// How a grey picture becomes dots.
@@ -155,6 +158,9 @@ pub enum Key {
     FramePilot,
     FrameLaps,
     FrameFeed,
+    TraceThreshold,
+    TraceSimplify,
+    TraceMinArea,
 }
 
 /// The group of the side panel a setting belongs to.
@@ -166,6 +172,7 @@ pub enum Section {
     Vector,
     Focus,
     Frame,
+    Trace,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -224,6 +231,14 @@ fn default_fields() -> Vec<Field> {
         f(Key::FramePilot, Msg::PilotPower, Section::Frame, "0"),
         f(Key::FrameLaps, Msg::Laps, Section::Frame, "1"),
         f(Key::FrameFeed, Msg::FrameFeed, Section::Frame, "3000"),
+        f(Key::TraceThreshold, Msg::Threshold, Section::Trace, "128"),
+        f(
+            Key::TraceSimplify,
+            Msg::TraceSimplify,
+            Section::Trace,
+            "0.02",
+        ),
+        f(Key::TraceMinArea, Msg::TraceMinArea, Section::Trace, "0.05"),
     ]
 }
 
@@ -548,6 +563,14 @@ pub enum Summary {
         travel_mm: f64,
         seconds: f64,
     },
+    /// The outline of a picture, cut or engraved.
+    Traced {
+        contours: usize,
+        points: usize,
+        cut_mm: f64,
+        engrave_mm: f64,
+        seconds: f64,
+    },
 }
 
 /// The G-code that was worked out and what goes in its header.
@@ -670,6 +693,22 @@ impl Status {
                     &format!("{seconds:.0}"),
                 ],
             ),
+            Status::Done(Summary::Traced {
+                contours,
+                points,
+                cut_mm,
+                engrave_mm,
+                seconds,
+            }) => fill(
+                Msg::TraceMade.tr(lang),
+                &[
+                    &contours.to_string(),
+                    &points.to_string(),
+                    &format!("{cut_mm:.0}"),
+                    &format!("{engrave_mm:.0}"),
+                    &format!("{seconds:.0}"),
+                ],
+            ),
             Status::Done(Summary::Focused { lines, length_mm }) => fill(
                 Msg::FocusMade.tr(lang),
                 &[&lines.to_string(), &format!("{length_mm}")],
@@ -742,6 +781,10 @@ pub struct Window {
     pub pilot_confirmed: bool,
     /// The overscan is worked out from the feed and the acceleration instead of being typed.
     pub overscan_auto: bool,
+    /// The light parts of the picture are the ink when its outline is followed.
+    pub trace_invert: bool,
+    /// The outline is filled with lines (engraved) instead of being cut.
+    pub trace_engrave: bool,
     pub picture: Option<Picture>,
     /// The drawing that is open and the table of its layers.
     pub vector: Option<VectorFile>,
@@ -779,6 +822,8 @@ impl Window {
             work_mode: Mode::Engrave,
             pilot_confirmed: false,
             overscan_auto: false,
+            trace_invert: false,
+            trace_engrave: false,
             picture: None,
             vector: None,
             rows: Vec::new(),
@@ -815,6 +860,7 @@ impl Window {
             Mode::Preview => self.program.is_some(),
             Mode::Engrave => self.picture.is_some(),
             Mode::Cut => self.vector.is_some(),
+            Mode::Trace => self.picture.is_some(),
         }
     }
 
@@ -839,7 +885,7 @@ impl Window {
     pub fn set_mode(&mut self, mode: Mode) {
         if self.mode != mode {
             self.mode = mode;
-            if matches!(mode, Mode::Engrave | Mode::Cut) {
+            if matches!(mode, Mode::Engrave | Mode::Cut | Mode::Trace) {
                 self.work_mode = mode;
             }
             self.mark_stale();
@@ -863,6 +909,20 @@ impl Window {
     pub fn set_tone_auto_level(&mut self, on: bool) {
         if self.tone_auto_level != on {
             self.tone_auto_level = on;
+            self.mark_stale();
+        }
+    }
+
+    pub fn set_trace_invert(&mut self, on: bool) {
+        if self.trace_invert != on {
+            self.trace_invert = on;
+            self.mark_stale();
+        }
+    }
+
+    pub fn set_trace_engrave(&mut self, on: bool) {
+        if self.trace_engrave != on {
+            self.trace_engrave = on;
             self.mark_stale();
         }
     }
@@ -1010,7 +1070,7 @@ impl Window {
                 let stem = v.path.file_stem()?.to_string_lossy().into_owned();
                 Some(v.path.with_file_name(format!("{stem}.nc")))
             }
-            (Some(p), Mode::Engrave) => {
+            (Some(p), Mode::Engrave | Mode::Trace) => {
                 let stem = p.path.file_stem()?.to_string_lossy().into_owned();
                 Some(p.path.with_file_name(format!("{stem}.nc")))
             }
@@ -1039,10 +1099,16 @@ impl Window {
                     bytes,
                     gray,
                 });
-                // what was worked out from the old picture is not valid any more
-                self.work_mode = Mode::Engrave;
-                if matches!(self.mode, Mode::Engrave | Mode::Cut | Mode::Preview) {
-                    self.mode = Mode::Engrave;
+                // what was worked out from the old picture is not valid any more; the outline stays the way of working when it was chosen
+                let tracing = self.mode == Mode::Trace;
+                self.work_mode = if tracing { Mode::Trace } else { Mode::Engrave };
+                if matches!(
+                    self.mode,
+                    Mode::Engrave | Mode::Cut | Mode::Preview | Mode::Trace
+                ) {
+                    if !tracing {
+                        self.mode = Mode::Engrave;
+                    }
                     self.warnings.clear();
                     self.done = None;
                     self.segs.clear();
@@ -1254,6 +1320,10 @@ impl Window {
                 self.put(Key::Brightness, t(s.tone.brightness));
                 self.tone_invert = s.tone.invert;
                 self.tone_auto_level = s.tone.auto_level;
+                self.put(Key::TraceThreshold, s.trace.threshold.to_string());
+                self.put(Key::TraceSimplify, t(s.trace.simplify_mm));
+                self.put(Key::TraceMinArea, t(s.trace.min_area_mm2));
+                self.trace_invert = s.trace.invert;
                 self.settings = s;
                 self.config_path = Some(path.to_path_buf());
                 self.rebuild_rows();
@@ -1413,6 +1483,7 @@ impl Window {
             Mode::Focus => self.focus_job(),
             Mode::Frame => self.frame_job(),
             Mode::Preview => self.preview_job(),
+            Mode::Trace => self.trace_job(),
         };
         match made {
             Ok(done) => {
@@ -1427,7 +1498,7 @@ impl Window {
                     done.s_max,
                     matches!(
                         self.mode,
-                        Mode::Cut | Mode::Focus | Mode::Frame | Mode::Preview
+                        Mode::Cut | Mode::Focus | Mode::Frame | Mode::Preview | Mode::Trace
                     ),
                 );
                 self.segs = segs;
@@ -1505,6 +1576,63 @@ impl Window {
         })
     }
 
+    /// The outline of the picture that is open, followed with the boxes of its group and the limits of the settings file (`[trace]`), and the settings of the one layer it makes (`trace`):
+    /// the power and the speed are the ones of the laser boxes and obey the same limits, and the layer cuts unless the person asked to fill it with lines.
+    fn trace_job(&self) -> Result<Done, Status> {
+        let pic = self.picture.as_ref().ok_or(Status::NeedImage)?;
+        let width = self.number(Key::WidthMm)?;
+        if !(width > 0.0 && width <= trace::MAX_WIDTH_MM) {
+            return Err(Status::BadValue(Msg::WidthMm));
+        }
+        let t = TraceSettings {
+            threshold: self.whole(Key::TraceThreshold, 0.0, 255.0)? as u8,
+            invert: self.trace_invert,
+            simplify_mm: self.number(Key::TraceSimplify)?,
+            min_area_mm2: self.number(Key::TraceMinArea)?,
+            ..self.settings.trace
+        };
+        t.validate().map_err(Status::Failed)?;
+        let drawing = trace::trace(&pic.gray, width, &t, self.settings.read.limits)
+            .map_err(Status::Failed)?;
+        let feed = self.number(Key::Feed)?;
+        let mut s = self.settings.clone();
+        s.machine.s_max = self.whole(Key::SMax, 1.0, 100_000.0)?;
+        (s.machine.max_power_percent, s.machine.max_speed_mm_min) = self.limits()?;
+        s.machine.overscan_mm = if self.overscan_auto {
+            overscan_for(feed, self.number(Key::Accel)?).map_err(Status::Failed)?
+        } else {
+            self.number(Key::Overscan)?
+        };
+        s.machine.origin = (self.number(Key::OriginX)?, self.number(Key::OriginY)?);
+        let mut p = self.settings.params_for(trace::LAYER);
+        p.mode = if self.trace_engrave {
+            LayerMode::Engrave
+        } else {
+            LayerMode::Cut
+        };
+        p.power_percent = self.number(Key::Power)?;
+        p.speed_mm_min = feed;
+        s.layers = vec![(trace::LAYER.to_string(), p)];
+        s.validate().map_err(Status::Failed)?;
+        let plan = plan_cut(&drawing, &s).map_err(Status::Failed)?;
+        let points: usize = drawing.shapes.iter().map(|d| d.pts.len()).sum();
+        Ok(Done {
+            gcode: plan.gcode,
+            source: Some((pic.name.clone(), sha256_hex(&pic.bytes))),
+            tools: format!("laser, S 0-{}, outline of a picture", s.machine.s_max),
+            s_max: s.machine.s_max,
+            line_mm: 0.1,
+            summary: Summary::Traced {
+                contours: drawing.shapes.len(),
+                points,
+                cut_mm: plan.stats.cut_mm,
+                engrave_mm: plan.stats.engrave_mm,
+                seconds: plan.stats.seconds,
+            },
+            notes: plan.warnings,
+        })
+    }
+
     /// What the preview is told about the machine: the acceleration of the box, the speed of the moves with the laser off and the bed of the settings file.
     fn preview_options(&self, s_max: u32) -> preview::Options {
         let mut o = preview::Options {
@@ -1572,6 +1700,7 @@ impl Window {
             self.picture.is_some(),
             self.vector.is_some(),
         ) {
+            (Mode::Trace, true, _) => Some(Mode::Trace),
             (Mode::Cut, _, true) | (_, false, true) => Some(Mode::Cut),
             (_, true, _) => Some(Mode::Engrave),
             _ => None,
@@ -1596,6 +1725,7 @@ impl Window {
     fn frame_job(&self) -> Result<Done, Status> {
         let work = match self.framed_mode() {
             Some(Mode::Cut) => self.cut_job()?,
+            Some(Mode::Trace) => self.trace_job()?,
             Some(_) => self.engrave_job()?,
             None => return Err(Status::NeedImage),
         };
@@ -3399,5 +3529,236 @@ mod tests {
         }
         assert!(Job::OpenGcode.extensions().contains(&"nc"));
         assert!(!Job::OpenGcode.is_export());
+    }
+
+    /// Two dark dots in a white picture: two contours.
+    const TWO_DOTS: &str =
+        "P2\n5 3\n255\n255 255 255 255 255\n255 0 255 0 255\n255 255 255 255 255\n";
+
+    /// A window with the picture of the two dots open, 5 mm wide, in the mode of the outline.
+    fn tracing(tag: &str) -> (Scratch, Window) {
+        let s = Scratch::new(tag);
+        let p = s.write("dots.pgm", TWO_DOTS);
+        let mut w = Window::new(Lang::En);
+        assert!(w.open_image(&p));
+        set(&mut w, Key::WidthMm, "5");
+        w.set_mode(Mode::Trace);
+        (s, w)
+    }
+
+    #[test]
+    fn the_outline_is_cut_like_the_command_line_cuts_it() {
+        let (_s, mut w) = tracing("trace-same");
+        assert!(w.can_compute() && w.can_export());
+        assert!(w.compute());
+        let img = from_bytes(TWO_DOTS.as_bytes()).unwrap();
+        let drawing =
+            trace::trace(&img, 5.0, &TraceSettings::default(), w.settings.read.limits).unwrap();
+        let mut s = Settings::default();
+        s.machine.s_max = 1000;
+        let mut p = s.params_for(trace::LAYER);
+        p.mode = LayerMode::Cut;
+        p.power_percent = 50.0;
+        p.speed_mm_min = 3000.0;
+        s.layers = vec![(trace::LAYER.to_string(), p)];
+        let expected = plan_cut(&drawing, &s).unwrap();
+        let done = w.done.as_ref().unwrap();
+        assert_eq!(done.gcode, expected.gcode);
+        let Summary::Traced {
+            contours,
+            points,
+            cut_mm,
+            engrave_mm,
+            ..
+        } = done.summary
+        else {
+            panic!("{:?}", done.summary)
+        };
+        assert_eq!(contours, 2);
+        assert!(points >= 6 && cut_mm > 0.0 && engrave_mm == 0.0);
+        assert!(!w.segs.is_empty() && !w.stale);
+        assert_eq!(w.current_name().as_deref(), Some("dots.pgm"));
+        assert_eq!(
+            w.suggested_output_for(Job::ExportGcode)
+                .and_then(|p| p.file_name().map(|n| n.to_string_lossy().into_owned())),
+            Some("dots.nc".to_string())
+        );
+        assert!(done.source.as_ref().is_some_and(|(n, _)| n == "dots.pgm"));
+    }
+
+    #[test]
+    fn the_outline_can_be_filled_with_lines_and_the_light_part_can_be_the_ink() {
+        let (_s, mut w) = tracing("trace-fill");
+        assert!(w.compute());
+        let cut = w.done.as_ref().unwrap().gcode.clone();
+        w.set_trace_engrave(true);
+        assert!(w.stale);
+        assert!(w.compute());
+        let Summary::Traced {
+            cut_mm, engrave_mm, ..
+        } = w.done.as_ref().unwrap().summary
+        else {
+            panic!()
+        };
+        assert!(engrave_mm > 0.0 && cut_mm == 0.0);
+        assert_ne!(w.done.as_ref().unwrap().gcode, cut);
+        // the light part of the picture is the ink: one contour round the paper instead of two round the dots
+        w.set_trace_engrave(false);
+        w.set_trace_invert(true);
+        assert!(w.compute());
+        let Summary::Traced { contours, .. } = w.done.as_ref().unwrap().summary else {
+            panic!()
+        };
+        assert_ne!(contours, 2);
+        // a threshold under every grey level leaves no ink at all
+        w.set_trace_invert(false);
+        set(&mut w, Key::TraceThreshold, "0");
+        assert!(!w.compute());
+        assert!(matches!(&w.status, Status::Failed(_)), "{:?}", w.status);
+    }
+
+    #[test]
+    fn the_outline_obeys_the_limits_of_power_and_speed_and_of_the_picture() {
+        let (_s, mut w) = tracing("trace-limits");
+        set(&mut w, Key::MaxPower, "40");
+        assert!(!w.compute());
+        assert!(
+            matches!(&w.status, Status::Failed(e) if e.contains("max_power_percent")),
+            "{:?}",
+            w.status
+        );
+        assert_eq!(text_of(&w, Key::Power), "50");
+        set(&mut w, Key::MaxPower, "100");
+        set(&mut w, Key::MaxSpeed, "2000");
+        assert!(!w.compute());
+        assert!(matches!(&w.status, Status::Failed(e) if e.contains("max_speed_mm_min")));
+        set(&mut w, Key::MaxSpeed, "30000");
+        // the limits of the picture are the ones of [trace]: more contours than allowed is an error
+        w.settings.trace.max_contours = 1;
+        assert!(!w.compute());
+        assert!(
+            matches!(&w.status, Status::Failed(e) if e.contains("max_contours")),
+            "{:?}",
+            w.status
+        );
+        w.settings.trace.max_contours = TraceSettings::default().max_contours;
+        assert!(w.compute());
+        // a box that is not valid says which
+        for (key, bad, label) in [
+            (Key::TraceThreshold, "256", Msg::Threshold),
+            (Key::TraceThreshold, "1.5", Msg::Threshold),
+            (Key::TraceSimplify, "x", Msg::TraceSimplify),
+            (Key::TraceMinArea, "", Msg::TraceMinArea),
+            (Key::WidthMm, "0", Msg::WidthMm),
+            (Key::WidthMm, "5001", Msg::WidthMm),
+        ] {
+            let (_s2, mut v) = tracing("trace-bad");
+            set(&mut v, key, bad);
+            assert!(!v.compute(), "{bad}");
+            assert_eq!(v.status, Status::BadValue(label), "{bad}");
+        }
+        // a value out of its range is refused by the same rule as the file of settings
+        let (_s3, mut v) = tracing("trace-range");
+        set(&mut v, Key::TraceSimplify, "9");
+        assert!(!v.compute());
+        assert!(matches!(&v.status, Status::Failed(e) if e.contains("simplify_mm")));
+    }
+
+    #[test]
+    fn the_outline_needs_a_picture_and_keeps_its_mode_when_another_picture_is_opened() {
+        let mut w = Window::new(Lang::En);
+        w.set_mode(Mode::Trace);
+        assert!(!w.can_compute());
+        assert!(!w.compute());
+        assert_eq!(w.status, Status::NeedImage);
+        let (s, mut v) = tracing("trace-keep");
+        assert!(v.compute());
+        let again = s.write("again.pgm", TWO_DOTS);
+        assert!(v.open_image(&again));
+        assert_eq!(v.mode, Mode::Trace);
+        assert_eq!(v.work_mode, Mode::Trace);
+        assert!(v.done.is_none() && v.segs.is_empty());
+        assert!(v.compute());
+        // a picture opened in the other modes still goes to engraving
+        let (_s4, mut e) = ready("trace-other");
+        assert_eq!(e.mode, Mode::Engrave);
+        assert_eq!(e.work_mode, Mode::Engrave);
+        e.set_mode(Mode::Trace);
+        assert_eq!(e.work_mode, Mode::Trace);
+    }
+
+    #[test]
+    fn the_frame_follows_the_outline_when_that_is_the_work() {
+        let (_s, mut w) = tracing("trace-frame");
+        w.set_mode(Mode::Frame);
+        assert_eq!(w.framed_mode(), Some(Mode::Trace));
+        assert!(w.compute());
+        let Summary::Framed {
+            width_mm,
+            height_mm,
+            pilot_percent,
+            ..
+        } = w.done.as_ref().unwrap().summary
+        else {
+            panic!()
+        };
+        // the box of the two dots, not the box of the whole picture
+        assert!(width_mm > 2.0 && width_mm < 5.0, "{width_mm}");
+        assert!(height_mm > 0.0 && height_mm < 3.0);
+        assert_eq!(pilot_percent, 0.0);
+        assert!(!w.done.as_ref().unwrap().gcode.contains("M3"));
+    }
+
+    #[test]
+    fn a_file_of_settings_fills_the_boxes_of_the_outline() {
+        let s = Scratch::new("trace-cfg");
+        let cfg = s.write(
+            "t.cfg",
+            "[trace]\nthreshold = 90\ninvert = on\nsimplify_mm = 0.1\nmin_area_mm2 = 1\nmax_contours = 7\n",
+        );
+        let mut w = Window::new(Lang::En);
+        assert!(w.load_config(&cfg));
+        assert_eq!(text_of(&w, Key::TraceThreshold), "90");
+        assert_eq!(text_of(&w, Key::TraceSimplify), "0.1");
+        assert_eq!(text_of(&w, Key::TraceMinArea), "1");
+        assert!(w.trace_invert);
+        assert_eq!(w.settings.trace.max_contours, 7);
+        // the defaults of the boxes are the ones of the settings
+        let plain = Window::new(Lang::En);
+        let d = TraceSettings::default();
+        assert_eq!(
+            text_of(&plain, Key::TraceThreshold),
+            d.threshold.to_string()
+        );
+        assert_eq!(
+            text_of(&plain, Key::TraceSimplify),
+            format!("{}", d.simplify_mm)
+        );
+        assert_eq!(
+            text_of(&plain, Key::TraceMinArea),
+            format!("{}", d.min_area_mm2)
+        );
+        assert!(!plain.trace_invert && !plain.trace_engrave);
+    }
+
+    #[test]
+    fn the_words_of_the_outline_speak_every_language() {
+        let done = Status::Done(Summary::Traced {
+            contours: 2,
+            points: 17,
+            cut_mm: 12.4,
+            engrave_mm: 0.0,
+            seconds: 9.0,
+        });
+        assert_eq!(
+            done.text(Lang::En),
+            "Outline: 2 contours of 17 points, 12 mm cut, 0 mm engraved, 9 s"
+        );
+        for l in Lang::ALL {
+            let text = done.text(l);
+            assert!(text.contains("17") && text.contains("12"), "{text}");
+            assert!(!Msg::ModeTrace.tr(l).is_empty() && !Msg::SectionTrace.tr(l).is_empty());
+        }
+        assert_ne!(done.text(Lang::De), done.text(Lang::En));
     }
 }

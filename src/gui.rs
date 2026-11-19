@@ -187,6 +187,11 @@ impl App {
                             self.vector_group(ui);
                             self.material_group(ui);
                         }
+                        Mode::Trace => {
+                            self.trace_group(ui);
+                            self.laser_group(ui);
+                            self.material_group(ui);
+                        }
                     }
                     self.preview_group(ui);
                     self.layers_group(ui);
@@ -276,6 +281,7 @@ impl App {
                     Mode::Focus => Msg::ModeFocus,
                     Mode::Frame => Msg::ModeFrame,
                     Mode::Preview => Msg::ModePreview,
+                    Mode::Trace => Msg::ModeTrace,
                 };
                 egui::ComboBox::from_id_salt("mode")
                     .selected_text(shown.tr(lang))
@@ -290,6 +296,7 @@ impl App {
                         ui.selectable_value(&mut mode, Mode::Focus, Msg::ModeFocus.tr(lang));
                         ui.selectable_value(&mut mode, Mode::Frame, Msg::ModeFrame.tr(lang));
                         ui.selectable_value(&mut mode, Mode::Preview, Msg::ModePreview.tr(lang));
+                        ui.selectable_value(&mut mode, Mode::Trace, Msg::ModeTrace.tr(lang));
                     });
                 if mode != self.win.mode {
                     self.win.set_mode(mode);
@@ -357,6 +364,25 @@ impl App {
                     });
                 if let Some(n) = chosen {
                     self.win.apply_material(&n);
+                }
+            });
+    }
+
+    /// The outline of the picture: the width of the work, how the ink is told from the paper, how much the line is simplified and whether the shapes are cut or filled with lines.
+    fn trace_group(&mut self, ui: &mut egui::Ui) {
+        let lang = self.win.lang;
+        egui::CollapsingHeader::new(self.heading(Msg::SectionTrace))
+            .default_open(true)
+            .show(ui, |ui| {
+                self.field_for(ui, Key::WidthMm);
+                self.fields_of(ui, Section::Trace);
+                let mut ink = self.win.trace_invert;
+                if ui.checkbox(&mut ink, Msg::TraceInk.tr(lang)).changed() {
+                    self.win.set_trace_invert(ink);
+                }
+                let mut fill = self.win.trace_engrave;
+                if ui.checkbox(&mut fill, Msg::TraceEngrave.tr(lang)).changed() {
+                    self.win.set_trace_engrave(fill);
                 }
             });
     }
@@ -743,7 +769,7 @@ impl App {
         }
         let line_mm = self.win.done.as_ref().map_or(0.1, |d| d.line_mm);
         let burn_width = ((line_mm * vp.px_per_mm) as f32).max(1.2);
-        let drawing = self.win.mode == Mode::Cut;
+        let drawing = matches!(self.win.mode, Mode::Cut | Mode::Trace);
         if self.win.show_travel {
             for s in self.win.segs.iter().filter(|s| !s.burn) {
                 painter.line_segment([at(s.x0, s.y0), at(s.x1, s.y1)], Stroke::new(0.8, TRAVEL));
@@ -772,7 +798,7 @@ impl App {
         }
         let lang = self.win.lang;
         let mut y = rect.min.y + 12.0;
-        if self.win.mode == Mode::Cut {
+        if matches!(self.win.mode, Mode::Cut | Mode::Trace) {
             painter.rect_filled(
                 Rect::from_min_size(Pos2::new(rect.min.x + 12.0, y), Vec2::new(24.0, 6.0)),
                 0.0,

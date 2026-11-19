@@ -17,7 +17,7 @@
 
 ---
 
-**Honesty check - what actually runs today:** a Rust library and a command line program (`phoenix-laser`) with 473 tests that run on a computer: turns an image into dots by dithering and writes the G-code of a laser that burns line by line with dynamic power and overscan, reads SVG and DXF drawings and writes the G-code that cuts their contours (the inside ones first, the width of the beam taken into account, bridges, several passes) and engraves their shapes with lines, with the settings of each layer in a file, and a power-against-feed test grid. It has a window (built with `--features gui`) that opens a picture or a drawing, shows the path of the laser, lets the settings be changed and exports the G-code, but the window has not been looked at on a screen yet; it has not been tried on a machine and it has not been checked against a collection of real files.
+**Honesty check - what actually runs today:** a Rust library and a command line program (`phoenix-laser`) with 480 tests that run on a computer: turns an image into dots by dithering and writes the G-code of a laser that burns line by line with dynamic power and overscan, reads SVG and DXF drawings and writes the G-code that cuts their contours (the inside ones first, the width of the beam taken into account, bridges, several passes) and engraves their shapes with lines, with the settings of each layer in a file, and a power-against-feed test grid. It has a window (built with `--features gui`) that opens a picture or a drawing, shows the path of the laser, lets the settings be changed and exports the G-code, but the window has not been looked at on a screen yet; it has not been tried on a machine and it has not been checked against a collection of real files.
 
 ---
 
@@ -30,7 +30,7 @@
 |---|---|
 | Version | `0.0.8` |
 | Maturity | Functional |
-| Tests | 473 |
+| Tests | 480 |
 | Stack | Rust |
 | On real hardware | Not tried: nothing here has run on a machine |
 
@@ -46,7 +46,7 @@ Each line is one part of this repository and the light says how far it is today.
 |---|---|---|
 | Core | 🟡 | turns an image into dots by dithering and writes the G-code of a laser that burns line by line with dynamic power and overscan, reads SVG and DXF drawings and cuts or engraves them by layer (ordered contours, beam width, bridges, passes, hatch), and a power-against-feed test grid; tested on a computer with normal and damaged input, not with a collection of real files. |
 | Command line | 🟡 | `phoenix-laser` (`engrave`, `calibrate`, `info`, `cut`, `vector`, `layers`) runs the same functions as the library and prints the result; every error comes back as a message and a non-zero exit code. |
-| Tests | 🟡 | 473 tests pass (`cargo test`), with normal cases, edge cases and damaged input. |
+| Tests | 🟡 | 480 tests pass (`cargo test`), with normal cases, edge cases and damaged input. |
 | Security | 🟡 | Plain safe Rust (`forbid(unsafe_code)`): nothing panics on the files it is given and a bad value is an error with its reason; no independent review. |
 | Window | 🟠 | Written (egui, `--features gui`): open or drop a picture or an SVG or DXF drawing, see the path of the laser (the cut in one colour, the travel dim), edit the table of layers, a calibration grid, zoom and pan, estimate the time, export; its logic is tested, but it has not been built or looked at on a screen yet. |
 | Real hardware | 🔴 | Not tried: nothing here has been run on a machine. |
@@ -73,6 +73,7 @@ Each line is one part of this repository and the light says how far it is today.
 * **The focus test in the window** (`src/window.rs`): a mode with the boxes of the `[focus]` section (the height of the first line, the step, the number and length of the lines, their spacing, the speed and the power); the test is worked out with the same function as `phoenix-laser focus`, its power and speed obey the limits, there is no default step because which way is down depends on the machine, and a warning that the test moves Z stays in the notes.
 * **The frame in the window** (`src/window.rs`, `[frame]` in the settings file): a mode that frames the picture or the drawing that is open with the laser off; the margin, the laps and the speed are boxes. A pilot power above 0 turns the laser on, so the window asks and nothing is worked out or written until the person answers yes, every time (changing a box, changing the mode or writing the file takes the answer back), under the cap of `max_pilot_percent`, the limit of power and the bed.
 * **The preview in the window** (`src/window.rs`): every G-code the window works out is counted by the same preview as `phoenix-laser preview` (moves, burnt and travelled length, a time that counts the corners with the acceleration of the box, and what looks dangerous, such as work outside the bed of the settings file), and a program of any origin (`.nc`, `.ngc`, `.gcode`, `.gc`, `.tap`) can be opened or dropped on the window to see its path and its notes. It is read as text, never run, and never written again.
+* **The outline in the window** (`src/window.rs`, `[trace]` in the settings file): a mode that follows the outline of the picture that is open with the same function as `phoenix-laser trace` and cuts it, or fills its shapes with lines, as a layer called `trace`; the boxes are the threshold, the simplification and the smallest piece, with a switch for a light ink; the power and the speed are the ones of the laser boxes and obey the limits, and the limits of the picture (`max_pixels`, `max_contours`, `max_segments`) are the ones of the settings file, so a picture that is too detailed is an error and not a slow program.
 * **The check of a program** (`src/verify.rs`): `phoenix-laser verify PROGRAM.nc` reads a G-code program (this program's or another's) as text, never runs it, and gives the SHA-256 of the exact file, what it does and a verdict: it passes only under the limit of power and of speed of the machine, inside the bed, with the laser off during every rapid move and a feed on every burning move. `--json` gives the report for another program to keep next to an authorisation bound to that hash, and the exit code is 1 when it fails.
 * **Ordered dithering** (`src/dither.rs`): `--dither bayer` (also in the window) decides each dot by its own place and grey with an 8 x 8 Bayer matrix, so the pattern is regular and the same grey always burns the same dots; the tests check that each level of the matrix appears once and that the darkness of a grey is kept.
 * **The tone curve** (`src/tone.rs`): before the dots are made the grey levels can be stretched to the full range (`--auto-level`), given more or less contrast and brightness, bent with a gamma or inverted, with one table of 256 entries; with the default values the picture is not changed at all.
@@ -165,7 +166,7 @@ To take a picture of the window without opening it by hand, run it with `--shot 
 
 ## 🧪 Testing
 
-The suite has 473 tests (`cargo test`, run on Windows and Linux in the CI). They check the normal cases, the edge cases and damaged input: empty files, garbage and cut files never panic. The CI also runs `cargo fmt --check`, `cargo clippy` with warnings as errors and `python -I tools/ci_validate.py`.
+The suite has 480 tests (`cargo test`, run on Windows and Linux in the CI). They check the normal cases, the edge cases and damaged input: empty files, garbage and cut files never panic. The CI also runs `cargo fmt --check`, `cargo clippy` with warnings as errors and `python -I tools/ci_validate.py`.
 
 ## 🏗️ Build & Release
 

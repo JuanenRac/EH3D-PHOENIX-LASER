@@ -17,7 +17,7 @@
 
 ---
 
-**Vérification d'honnêteté - ce qui fonctionne aujourd'hui :** une bibliothèque Rust et un programme en ligne de commande (`phoenix-laser`) avec 473 tests qui s'exécutent sur un ordinateur : il transforme une image en points par tramage et écrit le G-code d'un laser qui brûle ligne par ligne avec une puissance dynamique et un dépassement, lit des dessins SVG et DXF et écrit le G-code qui découpe leurs contours (ceux de l'intérieur d'abord, avec la largeur du faisceau, des ponts et plusieurs passes) et grave leurs formes avec des lignes, avec les réglages de chaque calque dans un fichier, et une grille d'essai puissance contre avance. Il a une fenêtre (compilée avec `--features gui`) qui ouvre une image ou un dessin, montre le trajet du laser, permet de changer les réglages et exporte le G-code, mais la fenêtre n'a pas encore été vue sur un écran ; il n'a pas été essayé sur une machine et n'a pas été comparé à une collection de fichiers réels.
+**Vérification d'honnêteté - ce qui fonctionne aujourd'hui :** une bibliothèque Rust et un programme en ligne de commande (`phoenix-laser`) avec 480 tests qui s'exécutent sur un ordinateur : il transforme une image en points par tramage et écrit le G-code d'un laser qui brûle ligne par ligne avec une puissance dynamique et un dépassement, lit des dessins SVG et DXF et écrit le G-code qui découpe leurs contours (ceux de l'intérieur d'abord, avec la largeur du faisceau, des ponts et plusieurs passes) et grave leurs formes avec des lignes, avec les réglages de chaque calque dans un fichier, et une grille d'essai puissance contre avance. Il a une fenêtre (compilée avec `--features gui`) qui ouvre une image ou un dessin, montre le trajet du laser, permet de changer les réglages et exporte le G-code, mais la fenêtre n'a pas encore été vue sur un écran ; il n'a pas été essayé sur une machine et n'a pas été comparé à une collection de fichiers réels.
 
 ---
 
@@ -30,7 +30,7 @@
 |---|---|
 | Version | `0.0.8` |
 | Maturité | Fonctionnel |
-| Tests | 473 |
+| Tests | 480 |
 | Pile technique | Rust |
 | Sur du matériel réel | Non essayé : rien ici n'a fonctionné sur une machine |
 
@@ -46,7 +46,7 @@ Chaque ligne est une partie de ce dépôt et le feu dit où elle en est aujourd'
 |---|---|---|
 | Cœur | 🟡 | transforme une image en points par tramage et écrit le G-code d'un laser qui brûle ligne par ligne avec une puissance dynamique et un dépassement, lit des dessins SVG et DXF et les découpe ou les grave par calque (contours ordonnés, largeur du faisceau, ponts, passes, hachures), et une grille d'essai puissance contre avance ; testé sur un ordinateur avec des entrées normales et abîmées, pas avec une collection de fichiers réels. |
 | Ligne de commande | 🟡 | `phoenix-laser` (`engrave`, `calibrate`, `info`, `cut`, `vector`, `layers`) exécute les mêmes fonctions que la bibliothèque et affiche le résultat ; chaque erreur revient sous forme de message et d'un code de sortie non nul. |
-| Tests | 🟡 | 473 tests passent (`cargo test`), avec des cas normaux, des cas limites et des entrées abîmées. |
+| Tests | 🟡 | 480 tests passent (`cargo test`), avec des cas normaux, des cas limites et des entrées abîmées. |
 | Sécurité | 🟡 | Rust sûr et simple (`forbid(unsafe_code)`) : rien ne panique sur les fichiers reçus et une mauvaise valeur est une erreur avec sa raison ; pas de revue indépendante. |
 | Fenêtre | 🟠 | Écrite (egui, `--features gui`) : ouvrir ou déposer une image ou un dessin SVG ou DXF, voir le trajet du laser (la découpe d'une couleur, le déplacement atténué), modifier le tableau des calques, une grille d'étalonnage, zoom et déplacement, estimer la durée, exporter ; sa logique est testée, mais elle n'a pas encore été compilée ni vue sur un écran. |
 | Matériel réel | 🔴 | Non essayé : rien ici n'a été exécuté sur une machine. |
@@ -73,6 +73,7 @@ Chaque ligne est une partie de ce dépôt et le feu dit où elle en est aujourd'
 * **Le test de mise au point dans la fenêtre** (`src/window.rs`) : un mode avec les cases de la section `[focus]` (la hauteur de la première ligne, le pas, le nombre et la longueur des lignes, leur espacement, la vitesse et la puissance) ; le test est calculé avec la même fonction que `phoenix-laser focus`, sa puissance et sa vitesse obéissent aux limites, il n'y a pas de pas par défaut car le sens du bas dépend de la machine, et un avertissement que le test déplace Z reste dans les notes.
 * **Le cadre dans la fenêtre** (`src/window.rs`, `[frame]` dans le fichier de réglages) : un mode qui encadre l'image ou le dessin ouvert laser éteint ; la marge, les tours et la vitesse sont des cases. Une puissance pilote supérieure à 0 allume le laser, donc la fenêtre demande et rien n'est calculé ni écrit tant que la personne n'a pas répondu oui, à chaque fois (changer une case, changer de mode ou écrire le fichier retire la réponse), sous le plafond de `max_pilot_percent`, la limite de puissance et le plateau.
 * **L'aperçu dans la fenêtre** (`src/window.rs`) : tout G-code que calcule la fenêtre est compté par le même aperçu que `phoenix-laser preview` (déplacements, longueur brûlée et parcourue, un temps qui compte les coins avec l'accélération de la case, et ce qui semble dangereux, comme un travail hors du plateau du fichier de réglages), et un programme de n'importe quelle origine (`.nc`, `.ngc`, `.gcode`, `.gc`, `.tap`) peut être ouvert ou déposé sur la fenêtre pour voir son tracé et ses notes. Il est lu comme du texte, jamais exécuté et jamais réécrit.
+* **Le contour dans la fenêtre** (`src/window.rs`, `[trace]` dans le fichier de réglages) : un mode qui suit le contour de l'image ouverte avec la même fonction que `phoenix-laser trace` et le coupe, ou remplit ses formes de lignes, comme une couche appelée `trace` ; les cases sont le seuil, la simplification et la plus petite pièce, avec un interrupteur pour une encre claire ; la puissance et la vitesse sont celles des cases du laser et respectent les limites, et les limites de l'image (`max_pixels`, `max_contours`, `max_segments`) sont celles du fichier de réglages, si bien qu'une image trop détaillée est une erreur et non un programme lent.
 * **La vérification d'un programme** (`src/verify.rs`) : `phoenix-laser verify PROGRAMME.nc` lit un programme G-code (de ce programme ou d'un autre) comme du texte, ne l'exécute jamais, et donne le SHA-256 du fichier exact, ce qu'il fait et un verdict : il ne passe que sous la limite de puissance et de vitesse de la machine, dans le plateau, avec le laser éteint pendant chaque déplacement rapide et une avance sur chaque déplacement qui brûle. `--json` donne le rapport qu'un autre programme peut conserver à côté d'une autorisation liée à ce hash, et le code de sortie est 1 en cas d'échec.
 * **Tramage ordonné** (`src/dither.rs`) : `--dither bayer` (aussi dans la fenêtre) décide chaque point selon sa place et son gris avec une matrice de Bayer 8 x 8, donc le motif est régulier et le même gris brûle toujours les mêmes points ; les tests vérifient que chaque niveau de la matrice apparaît une fois et que le noircissement d'un gris est conservé.
 * **La courbe de tons** (`src/tone.rs`) : avant de fabriquer les points, les niveaux de gris peuvent être étirés sur toute la plage (`--auto-level`), recevoir plus ou moins de contraste et de luminosité, être courbés par un gamma ou inversés, avec une seule table de 256 entrées ; avec les valeurs par défaut l'image n'est pas modifiée du tout.
@@ -165,7 +166,7 @@ Pour prendre une capture de la fenêtre sans l'ouvrir à la main, lancez-la avec
 
 ## 🧪 Tests
 
-La suite compte 473 tests (`cargo test`, exécutés sous Windows et Linux dans le CI). Ils vérifient les cas normaux, les cas limites et les entrées abîmées : fichiers vides, bruit et fichiers coupés ne font jamais paniquer. Le CI exécute aussi `cargo fmt --check`, `cargo clippy` avec les avertissements comme erreurs et `python -I tools/ci_validate.py`.
+La suite compte 480 tests (`cargo test`, exécutés sous Windows et Linux dans le CI). Ils vérifient les cas normaux, les cas limites et les entrées abîmées : fichiers vides, bruit et fichiers coupés ne font jamais paniquer. Le CI exécute aussi `cargo fmt --check`, `cargo clippy` avec les avertissements comme erreurs et `python -I tools/ci_validate.py`.
 
 ## 🏗️ Compilation et publication
 
