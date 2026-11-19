@@ -17,7 +17,7 @@
 
 ---
 
-**Verificação de honestidade - o que funciona hoje:** uma biblioteca Rust e um programa de linha de comandos (`phoenix-laser`) com 545 testes que correm num computador: converte uma imagem em pontos por tramagem e escreve o G-code de um laser que queima linha a linha com potência dinâmica e sobrecurso, lê desenhos SVG e DXF e escreve o G-code que corta os seus contornos (os de dentro primeiro, com a largura do feixe, pontes e várias passagens) e grava as suas formas com linhas, com as definições de cada camada num ficheiro, e uma grelha de teste de potência contra avanço. Tem uma janela (compilada com `--features gui`) que abre uma imagem ou um desenho, mostra o percurso do laser, permite alterar as definições e exporta o G-code, mas a janela ainda não foi vista num ecrã; não foi experimentado numa máquina e não foi verificado com uma coleção de ficheiros reais.
+**Verificação de honestidade - o que funciona hoje:** uma biblioteca Rust e um programa de linha de comandos (`phoenix-laser`) com 548 testes que correm num computador: converte uma imagem em pontos por tramagem e escreve o G-code de um laser que queima linha a linha com potência dinâmica e sobrecurso, lê desenhos SVG e DXF e escreve o G-code que corta os seus contornos (os de dentro primeiro, com a largura do feixe, pontes e várias passagens) e grava as suas formas com linhas, com as definições de cada camada num ficheiro, e uma grelha de teste de potência contra avanço. Tem uma janela (compilada com `--features gui`) que abre uma imagem ou um desenho, mostra o percurso do laser, permite alterar as definições e exporta o G-code, mas a janela ainda não foi vista num ecrã; não foi experimentado numa máquina e não foi verificado com uma coleção de ficheiros reais.
 
 ---
 
@@ -30,7 +30,7 @@
 |---|---|
 | Versão | `0.0.9` |
 | Maturidade | Funcional |
-| Testes | 545 |
+| Testes | 548 |
 | Tecnologias | Rust |
 | Em hardware real | Não experimentado: nada disto correu numa máquina |
 
@@ -46,7 +46,7 @@ Cada linha é uma parte deste repositório e a luz diz até onde chega hoje. É 
 |---|---|---|
 | Núcleo | 🟡 | converte uma imagem em pontos por tramagem e escreve o G-code de um laser que queima linha a linha com potência dinâmica e sobrecurso, lê desenhos SVG e DXF e corta-os ou grava-os por camada (contornos ordenados, largura do feixe, pontes, passagens, hachura), e uma grelha de teste de potência contra avanço; testado num computador com entradas normais e danificadas, não com uma coleção de ficheiros reais. |
 | Linha de comandos | 🟡 | `phoenix-laser` (`engrave`, `calibrate`, `info`, `cut`, `vector`, `layers`) executa as mesmas funções que a biblioteca e imprime o resultado; cada erro volta como mensagem e código de saída diferente de zero. |
-| Testes | 🟡 | 545 testes passam (`cargo test`), com casos normais, casos-limite e entradas danificadas. |
+| Testes | 🟡 | 548 testes passam (`cargo test`), com casos normais, casos-limite e entradas danificadas. |
 | Segurança | 🟡 | Rust seguro e simples (`forbid(unsafe_code)`): nada entra em pânico com os ficheiros recebidos e um valor mau é um erro com o seu motivo; sem revisão independente. |
 | Janela | 🟠 | Escrita (egui, `--features gui`): abrir ou largar uma imagem ou um desenho SVG ou DXF, ver o percurso do laser (o corte numa cor, a deslocação atenuada), editar a tabela de camadas, uma grelha de calibração, zoom e deslocamento, estimar o tempo, exportar; a sua lógica está testada, mas ainda não foi compilada nem vista num ecrã. |
 | Hardware real | 🔴 | Não experimentado: nada disto foi executado numa máquina. |
@@ -76,6 +76,7 @@ Cada linha é uma parte deste repositório e a luz diz até onde chega hoje. É 
 * **Tons, materiais e limites na janela** (`src/window.rs`): as caixas da curva de tons (gama, contraste, brilho, inverter e níveis automáticos) trabalham a imagem com a mesma função da linha de comandos; uma biblioteca de materiais carrega-se a partir de um ficheiro (ou do que `PHOENIX_LASER_MATERIALS` indicar) e escolher um material preenche as caixas de potência, velocidade, ponto, pontilhado, tons e de cada camada de um desenho; os limites de potência e de velocidade também são caixas e um valor acima é recusado, nunca baixado. Os valores iniciais vêm do ficheiro de definições (`[tone]`, `[machine]`).
 * **O teste de focagem na janela** (`src/window.rs`): um modo com as caixas da secção `[focus]` (a altura da primeira linha, o passo, o número e o comprimento das linhas, o espaçamento, a velocidade e a potência); o teste é calculado com a mesma função de `phoenix-laser focus`, a potência e a velocidade obedecem aos limites, não há passo por omissão porque o sentido para baixo depende da máquina, e um aviso de que o teste move o Z fica nas notas.
 * **Texto na janela** (`src/window.rs`): um modo com uma caixa para as palavras e as caixas da secção `[text]` (a altura de uma maiúscula, a letra mais alta, os espaços entre letras e linhas, a potência, a velocidade, as passagens e o máximo de caracteres); o texto é calculado com a mesma função que `phoenix-laser text`, a partir da origem da máquina, pelo que uma letra que o tipo de letra não tem, um texto acima de um limite, uma potência ou uma velocidade acima do limite da máquina ou um trabalho fora da mesa (quando o ficheiro de definições a indica) é recusado e a linha de estado diz porquê; é escrito como `text.nc` com o cabeçalho da linha de comandos.
+* **Código QR na janela** (`src/window.rs`): um modo com uma caixa para os dados, a escolha do nível de correção de erros e as caixas da secção `[qr]` (o lado do módulo, a distância entre as linhas, a potência, a velocidade, as passagens, o máximo de bytes, a versão e o lado máximos, e o máximo de movimentos de gravação); o símbolo é calculado com a mesma função que `phoenix-laser qr`, a partir da origem da máquina, pelo que dados que não cabem, um símbolo acima de um limite, uma potência ou uma velocidade acima do limite da máquina ou um trabalho fora da mesa (quando o ficheiro de definições a indica) são recusados e a linha de estado diz porquê; é escrito como `qr.nc` com o cabeçalho da linha de comandos.
 * **A moldura na janela** (`src/window.rs`, `[frame]` no ficheiro de definições): um modo que enquadra a imagem ou o desenho aberto com o laser desligado; a margem, as voltas e a velocidade são caixas. Uma potência piloto acima de 0 liga o laser, por isso a janela pergunta e nada é calculado nem escrito até a pessoa responder que sim, de cada vez (mudar uma caixa, mudar de modo ou escrever o ficheiro retira a resposta), sob o teto de `max_pilot_percent`, o limite de potência e a mesa.
 * **A pré-visualização na janela** (`src/window.rs`): todo o G-code que a janela calcula é contado pela mesma pré-visualização de `phoenix-laser preview` (movimentos, comprimento queimado e percorrido, um tempo que conta as esquinas com a aceleração da caixa e o que parece perigoso, como o trabalho fora da mesa do ficheiro de definições), e um programa de qualquer origem (`.nc`, `.ngc`, `.gcode`, `.gc`, `.tap`) pode ser aberto ou largado na janela para ver o seu trajeto e as suas notas. É lido como texto, nunca executado e nunca escrito de novo.
 * **O contorno na janela** (`src/window.rs`, `[trace]` no ficheiro de definições): um modo que segue o contorno da imagem aberta com a mesma função de `phoenix-laser trace` e o corta, ou preenche as suas formas com linhas, como uma camada chamada `trace`; as caixas são o limiar, a simplificação e a peça mínima, com um interruptor para uma tinta clara; a potência e a velocidade são as das caixas do laser e obedecem aos limites, e os limites da imagem (`max_pixels`, `max_contours`, `max_segments`) são os do ficheiro de definições, de modo que uma imagem demasiado detalhada é um erro e não um programa lento.
@@ -180,7 +181,7 @@ Para tirar uma captura da janela sem a abrir à mão, execute-o com `--shot FICH
 
 ## 🧪 Testes
 
-O conjunto tem 545 testes (`cargo test`, executados em Windows e Linux no CI). Verificam os casos normais, os casos-limite e as entradas danificadas: ficheiros vazios, lixo e ficheiros cortados nunca provocam pânico. O CI executa ainda `cargo fmt --check`, `cargo clippy` com avisos como erros e `python -I tools/ci_validate.py`.
+O conjunto tem 548 testes (`cargo test`, executados em Windows e Linux no CI). Verificam os casos normais, os casos-limite e as entradas danificadas: ficheiros vazios, lixo e ficheiros cortados nunca provocam pânico. O CI executa ainda `cargo fmt --check`, `cargo clippy` com avisos como erros e `python -I tools/ci_validate.py`.
 
 ## 🏗️ Compilação e publicação
 

@@ -4,7 +4,7 @@
 use crate::browse::{self, Browser};
 use crate::lang::{fill, Lang, Msg};
 use crate::shot::{ShotRequest, ShotTheme, PATIENCE_FRAMES};
-use crate::vconfig::{KerfSide, LayerMode};
+use crate::vconfig::{KerfSide, LayerMode, QrEcc};
 use crate::window::{fire, Job, Key, Kind, LayerField, Mode, Section, Window, MAX_SEGMENTS};
 use eframe::egui::{
     self, Color32, FontData, FontDefinitions, FontFamily, Pos2, Rect, Stroke, Vec2,
@@ -189,6 +189,7 @@ impl App {
                             self.material_group(ui);
                         }
                         Mode::Text => self.text_group(ui),
+                        Mode::Qr => self.qr_group(ui),
                         Mode::Trace => {
                             self.trace_group(ui);
                             self.laser_group(ui);
@@ -295,6 +296,7 @@ impl App {
                     Mode::Preview => Msg::ModePreview,
                     Mode::Trace => Msg::ModeTrace,
                     Mode::Text => Msg::ModeText,
+                    Mode::Qr => Msg::ModeQr,
                 };
                 egui::ComboBox::from_id_salt("mode")
                     .selected_text(shown.tr(lang))
@@ -311,6 +313,7 @@ impl App {
                         ui.selectable_value(&mut mode, Mode::Preview, Msg::ModePreview.tr(lang));
                         ui.selectable_value(&mut mode, Mode::Trace, Msg::ModeTrace.tr(lang));
                         ui.selectable_value(&mut mode, Mode::Text, Msg::ModeText.tr(lang));
+                        ui.selectable_value(&mut mode, Mode::Qr, Msg::ModeQr.tr(lang));
                     });
                 if mode != self.win.mode {
                     self.win.set_mode(mode);
@@ -636,6 +639,45 @@ impl App {
                     self.win.set_words(words);
                 }
                 self.fields_of(ui, Section::Text);
+                for key in [
+                    Key::SMax,
+                    Key::OriginX,
+                    Key::OriginY,
+                    Key::MaxPower,
+                    Key::MaxSpeed,
+                ] {
+                    self.field_for(ui, key);
+                }
+            });
+    }
+
+    /// The QR mode: the data to burn, the level of error correction and the keys of `[qr]` (the side of a module, the distance between the lines, the power, the speed, the passes and the limits).
+    fn qr_group(&mut self, ui: &mut egui::Ui) {
+        let lang = self.win.lang;
+        egui::CollapsingHeader::new(self.heading(Msg::ModeQr))
+            .default_open(true)
+            .show(ui, |ui| {
+                ui.label(Msg::QrData.tr(lang));
+                let mut data = self.win.qr_data.clone();
+                let edit = egui::TextEdit::multiline(&mut data)
+                    .desired_rows(3)
+                    .desired_width(f32::INFINITY);
+                if ui.add(edit).changed() {
+                    self.win.set_qr_data(data);
+                }
+                ui.label(Msg::QrEccLabel.tr(lang));
+                let mut ecc = self.win.qr_ecc;
+                egui::ComboBox::from_id_salt("qr-ecc")
+                    .selected_text(ecc.word())
+                    .show_ui(ui, |ui| {
+                        for e in [QrEcc::L, QrEcc::M, QrEcc::Q, QrEcc::H] {
+                            ui.selectable_value(&mut ecc, e, e.word());
+                        }
+                    });
+                if ecc != self.win.qr_ecc {
+                    self.win.set_qr_ecc(ecc);
+                }
+                self.fields_of(ui, Section::Qr);
                 for key in [
                     Key::SMax,
                     Key::OriginX,

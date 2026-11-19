@@ -12,6 +12,7 @@ use crate::image::{from_bytes, Gray};
 use crate::lang::{fill, Lang, Msg};
 use crate::materials::{self, Library, Material};
 use crate::preview;
+use crate::qr;
 use crate::raster::{engrave, overscan_for, Params};
 use crate::safety;
 use crate::svg::read_svg;
@@ -19,8 +20,8 @@ use crate::text;
 use crate::tone::Tone;
 use crate::trace;
 use crate::vconfig::{
-    self, CalibrateSettings, FocusSettings, FrameSettings, KerfSide, LayerMode, LayerParams,
-    Settings, TextSettings, TraceSettings,
+    self, CalibrateSettings, FocusSettings, FrameSettings, KerfSide, LayerMode, LayerParams, QrEcc,
+    QrSettings, Settings, TextSettings, TraceSettings,
 };
 use crate::vector::{Drawing, ReadOptions};
 use crate::verify;
@@ -90,6 +91,8 @@ pub enum Mode {
     Trace,
     /// A line of text, or several, burnt with the font of strokes of the program.
     Text,
+    /// Some data burnt as a QR code, filling its dark modules.
+    Qr,
 }
 
 /// How a grey picture becomes dots.
@@ -180,6 +183,15 @@ pub enum Key {
     TextSpeed,
     TextPasses,
     TextMaxChars,
+    QrModule,
+    QrLine,
+    QrPower,
+    QrSpeed,
+    QrPasses,
+    QrMaxBytes,
+    QrMaxVersion,
+    QrMaxSize,
+    QrMaxLines,
 }
 
 /// The group of the side panel a setting belongs to.
@@ -194,6 +206,7 @@ pub enum Section {
     Trace,
     Verify,
     Text,
+    Qr,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -212,6 +225,7 @@ fn default_fields() -> Vec<Field> {
         text: text.to_string(),
     };
     let d = TextSettings::default();
+    let qd = QrSettings::default();
     let t = |v: f64| format!("{v}");
     vec![
         f(Key::WidthMm, Msg::WidthMm, Section::Image, "50"),
@@ -320,6 +334,45 @@ fn default_fields() -> Vec<Field> {
             Msg::TextMaxChars,
             Section::Text,
             &d.max_chars.to_string(),
+        ),
+        f(
+            Key::QrModule,
+            Msg::QrModuleMm,
+            Section::Qr,
+            &t(qd.module_mm),
+        ),
+        f(Key::QrLine, Msg::QrLineMm, Section::Qr, &t(qd.line_mm)),
+        f(Key::QrPower, Msg::Power, Section::Qr, &t(qd.power_percent)),
+        f(Key::QrSpeed, Msg::Feed, Section::Qr, &t(qd.speed_mm_min)),
+        f(
+            Key::QrPasses,
+            Msg::Passes,
+            Section::Qr,
+            &qd.passes.to_string(),
+        ),
+        f(
+            Key::QrMaxBytes,
+            Msg::QrMaxBytes,
+            Section::Qr,
+            &qd.max_bytes.to_string(),
+        ),
+        f(
+            Key::QrMaxVersion,
+            Msg::QrMaxVersion,
+            Section::Qr,
+            &qd.max_version.to_string(),
+        ),
+        f(
+            Key::QrMaxSize,
+            Msg::QrMaxSize,
+            Section::Qr,
+            &t(qd.max_size_mm),
+        ),
+        f(
+            Key::QrMaxLines,
+            Msg::QrMaxLines,
+            Section::Qr,
+            &qd.max_lines.to_string(),
         ),
     ]
 }
@@ -663,6 +716,13 @@ pub enum Summary {
         height_mm: f64,
         strokes: usize,
     },
+    /// A QR code burnt by filling its modules.
+    QrMade {
+        bytes: usize,
+        version: u32,
+        modules: usize,
+        side_mm: f64,
+    },
 }
 
 /// The G-code that was worked out and what goes in its header.
@@ -822,6 +882,20 @@ impl Status {
                     &strokes.to_string(),
                 ],
             ),
+            Status::Done(Summary::QrMade {
+                bytes,
+                version,
+                modules,
+                side_mm,
+            }) => fill(
+                Msg::QrMade.tr(lang),
+                &[
+                    &bytes.to_string(),
+                    &version.to_string(),
+                    &modules.to_string(),
+                    &format!("{side_mm:.1}"),
+                ],
+            ),
             Status::Done(Summary::Focused { lines, length_mm }) => fill(
                 Msg::FocusMade.tr(lang),
                 &[&lines.to_string(), &format!("{length_mm}")],
@@ -938,6 +1012,9 @@ pub struct Window {
     pub show_travel: bool,
     /// The text that the text mode burns.
     pub words: String,
+    /// The data that the QR mode burns, and the level of error correction.
+    pub qr_data: String,
+    pub qr_ecc: QrEcc,
 }
 
 impl Window {
@@ -976,6 +1053,8 @@ impl Window {
             viewport: Viewport::default(),
             show_travel: true,
             words: String::new(),
+            qr_data: String::new(),
+            qr_ecc: QrSettings::default().ecc,
         }
     }
 
@@ -994,7 +1073,7 @@ impl Window {
     /// Whether the G-code can be worked out now.
     pub fn can_compute(&self) -> bool {
         match self.mode {
-            Mode::Calibrate | Mode::Focus | Mode::Text => true,
+            Mode::Calibrate | Mode::Focus | Mode::Text | Mode::Qr => true,
             Mode::Frame => self.framed_mode().is_some(),
             Mode::Preview => self.program.is_some(),
             Mode::Engrave => self.picture.is_some(),
@@ -1035,6 +1114,21 @@ impl Window {
     pub fn set_words(&mut self, words: String) {
         if self.words != words {
             self.words = words;
+            self.mark_stale();
+        }
+    }
+
+    /// Writes the data that the QR mode burns.
+    pub fn set_qr_data(&mut self, data: String) {
+        if self.qr_data != data {
+            self.qr_data = data;
+            self.mark_stale();
+        }
+    }
+
+    pub fn set_qr_ecc(&mut self, ecc: QrEcc) {
+        if self.qr_ecc != ecc {
+            self.qr_ecc = ecc;
             self.mark_stale();
         }
     }
@@ -1249,6 +1343,7 @@ impl Window {
             }
             (_, Mode::Focus) => Some(PathBuf::from("focus.nc")),
             (_, Mode::Text) => Some(PathBuf::from("text.nc")),
+            (_, Mode::Qr) => Some(PathBuf::from("qr.nc")),
             (_, Mode::Frame) => Some(PathBuf::from("frame.nc")),
             _ => Some(PathBuf::from("calibration.nc")),
         }
@@ -1514,6 +1609,16 @@ impl Window {
                 self.put(Key::TextSpeed, t(s.text.speed_mm_min));
                 self.put(Key::TextPasses, s.text.passes.to_string());
                 self.put(Key::TextMaxChars, s.text.max_chars.to_string());
+                self.put(Key::QrModule, t(s.qr.module_mm));
+                self.put(Key::QrLine, t(s.qr.line_mm));
+                self.put(Key::QrPower, t(s.qr.power_percent));
+                self.put(Key::QrSpeed, t(s.qr.speed_mm_min));
+                self.put(Key::QrPasses, s.qr.passes.to_string());
+                self.put(Key::QrMaxBytes, s.qr.max_bytes.to_string());
+                self.put(Key::QrMaxVersion, s.qr.max_version.to_string());
+                self.put(Key::QrMaxSize, t(s.qr.max_size_mm));
+                self.put(Key::QrMaxLines, s.qr.max_lines.to_string());
+                self.qr_ecc = s.qr.ecc;
                 self.settings = s;
                 self.config_path = Some(path.to_path_buf());
                 self.rebuild_rows();
@@ -1716,6 +1821,7 @@ impl Window {
             Mode::Preview => self.preview_job(),
             Mode::Trace => self.trace_job(),
             Mode::Text => self.text_job(),
+            Mode::Qr => self.qr_job(),
         };
         match made {
             Ok(done) => {
@@ -1741,6 +1847,7 @@ impl Window {
                             | Mode::Preview
                             | Mode::Trace
                             | Mode::Text
+                            | Mode::Qr
                     ),
                 );
                 self.segs = segs;
@@ -2116,6 +2223,47 @@ impl Window {
                 width_mm: l.width_mm,
                 height_mm: l.height_mm,
                 strokes: l.strokes.len(),
+            },
+            notes: Vec::new(),
+        })
+    }
+
+    /// The QR code of the window burnt like `phoenix-laser qr`: the boxes of its group are the settings of `[qr]`, the level is the one chosen, the lower left corner is the origin of the machine,
+    /// and the limits of power, speed and bed hold over it. Data that does not fit, a symbol over a limit or work outside of the bed is refused and nothing is made.
+    fn qr_job(&self) -> Result<Done, Status> {
+        let q = QrSettings {
+            module_mm: self.number(Key::QrModule)?,
+            line_mm: self.number(Key::QrLine)?,
+            power_percent: self.number(Key::QrPower)?,
+            speed_mm_min: self.number(Key::QrSpeed)?,
+            passes: self.whole(Key::QrPasses, 1.0, 20.0)?,
+            max_bytes: self.whole(Key::QrMaxBytes, 1.0, 78.0)?,
+            max_version: self.whole(Key::QrMaxVersion, 1.0, 4.0)?,
+            ecc: self.qr_ecc,
+            max_size_mm: self.number(Key::QrMaxSize)?,
+            max_lines: self.whole(Key::QrMaxLines, 1.0, 1_000_000.0)?,
+        };
+        let s_max = self.whole(Key::SMax, 1.0, 100_000.0)?;
+        let (max_power, max_speed) = self.limits()?;
+        let m = qr::Machine {
+            s_max,
+            max_power_percent: max_power,
+            max_speed_mm_min: max_speed,
+            bed_mm: self.settings.machine.bed_mm,
+        };
+        let origin = (self.number(Key::OriginX)?, self.number(Key::OriginY)?);
+        let (gcode, sym) = qr::program(&self.qr_data, origin, &q, &m).map_err(Status::Failed)?;
+        Ok(Done {
+            gcode,
+            source: None,
+            tools: format!("laser, S 0-{s_max}, QR code filled with lines"),
+            s_max,
+            line_mm: q.line_mm,
+            summary: Summary::QrMade {
+                bytes: self.qr_data.len(),
+                version: sym.version,
+                modules: sym.size,
+                side_mm: sym.size as f64 * q.module_mm,
             },
             notes: Vec::new(),
         })
@@ -3593,6 +3741,192 @@ hatch_cross = on
             }
             let said = w.status.text(l);
             assert!(said.contains("2"), "{said}");
+        }
+    }
+
+    #[test]
+    fn the_qr_mode_burns_the_data_like_the_command_and_says_what_it_made() {
+        let mut w = Window::new(Lang::En);
+        w.set_mode(Mode::Qr);
+        assert!(w.can_compute());
+        // the boxes start from the settings of [qr]
+        let d = QrSettings::default();
+        assert_eq!(text_of(&w, Key::QrModule), d.module_mm.to_string());
+        assert_eq!(text_of(&w, Key::QrMaxBytes), d.max_bytes.to_string());
+        assert_eq!(text_of(&w, Key::QrMaxVersion), d.max_version.to_string());
+        assert_eq!(w.qr_ecc, d.ecc);
+        // no data: nothing to encode
+        assert!(!w.compute());
+        assert!(
+            matches!(&w.status, Status::Failed(e) if e.contains("nothing to encode")),
+            "{:?}",
+            w.status
+        );
+        w.set_qr_data("EH3D 42".to_string());
+        assert!(w.compute());
+        let m = qr::Machine {
+            s_max: 1000,
+            max_power_percent: 100.0,
+            max_speed_mm_min: 30_000.0,
+            bed_mm: None,
+        };
+        let (g, sym) = qr::program("EH3D 42", (0.0, 0.0), &d, &m).unwrap();
+        let done = w.done.as_ref().unwrap();
+        assert_eq!(done.gcode, g);
+        assert_eq!(
+            done.summary,
+            Summary::QrMade {
+                bytes: 7,
+                version: 1,
+                modules: sym.size,
+                side_mm: 21.0
+            }
+        );
+        assert_eq!(
+            w.status.text(Lang::En),
+            "QR code: 7 bytes, version 1, 21 modules a side, 21.0 mm a side"
+        );
+        assert!(w
+            .status
+            .text(Lang::Pt)
+            .starts_with("Código QR: 7 bytes, versão 1"));
+        // the level of the box is the one that is burnt, and changing it makes the work stale
+        w.set_qr_ecc(QrEcc::H);
+        assert!(w.stale);
+        assert!(w.compute());
+        let h = QrSettings { ecc: QrEcc::H, ..d };
+        assert_eq!(
+            w.done.as_ref().unwrap().gcode,
+            qr::program("EH3D 42", (0.0, 0.0), &h, &m).unwrap().0
+        );
+        // the strokes are drawn and the program is written with the header of the command line
+        assert!(w.segs.iter().any(|s| s.burn));
+        assert!(w.bounds().is_some());
+        assert_eq!(
+            w.suggested_output_for(Job::ExportGcode),
+            Some(PathBuf::from("qr.nc"))
+        );
+        let s = Scratch::new("qr-export");
+        let out = s.0.join("qr.nc");
+        assert!(w.export(&out));
+        let text = fs::read_to_string(&out).unwrap();
+        assert!(text.contains("; tools: laser, S 0-1000, QR code filled with lines"));
+        assert!(text.ends_with("M2\n"));
+        w.set_qr_data("EH3D 42".to_string());
+        assert!(!w.stale);
+        w.set_qr_data("EH3D 43".to_string());
+        assert!(w.stale);
+    }
+
+    #[test]
+    fn the_qr_mode_refuses_what_does_not_fit_or_is_over_a_limit_and_names_the_box() {
+        let mut w = Window::new(Lang::En);
+        w.set_mode(Mode::Qr);
+        w.set_qr_data("A".to_string());
+        assert!(w.compute());
+        // more bytes than the box allows, and more than the version allows
+        set(&mut w, Key::QrMaxBytes, "3");
+        w.set_qr_data("ABCD".to_string());
+        assert!(!w.compute());
+        assert!(matches!(&w.status, Status::Failed(e) if e.contains("max_bytes")));
+        set(&mut w, Key::QrMaxBytes, "40");
+        set(&mut w, Key::QrMaxVersion, "1");
+        w.set_qr_data("a".repeat(15));
+        assert!(!w.compute());
+        assert!(
+            matches!(&w.status, Status::Failed(e) if e.contains("max_version") && e.contains("version 2"))
+        );
+        set(&mut w, Key::QrMaxVersion, "4");
+        assert!(w.compute());
+        // a symbol larger than the size that is allowed
+        set(&mut w, Key::QrMaxSize, "20");
+        assert!(!w.compute());
+        assert!(matches!(&w.status, Status::Failed(e) if e.contains("max_size_mm")));
+        set(&mut w, Key::QrMaxSize, "100");
+        // the limits of the machine hold over the power and the speed
+        set(&mut w, Key::MaxPower, "10");
+        assert!(!w.compute());
+        assert!(matches!(&w.status, Status::Failed(e) if e.contains("the power of the QR code")));
+        set(&mut w, Key::MaxPower, "100");
+        set(&mut w, Key::MaxSpeed, "500");
+        assert!(!w.compute());
+        assert!(matches!(&w.status, Status::Failed(e) if e.contains("the speed of the QR code")));
+        set(&mut w, Key::MaxSpeed, "30000");
+        // work outside of the bed
+        w.settings.machine.bed_mm = Some((10.0, 10.0));
+        assert!(!w.compute());
+        assert!(matches!(&w.status, Status::Failed(e) if e.contains("outside of the bed")));
+        w.settings.machine.bed_mm = None;
+        assert!(w.compute());
+        // a box that is not a number or not a whole number says which one
+        for (key, text, label) in [
+            (Key::QrModule, "", Msg::QrModuleMm),
+            (Key::QrLine, "x", Msg::QrLineMm),
+            (Key::QrPasses, "2.5", Msg::Passes),
+            (Key::QrPasses, "21", Msg::Passes),
+            (Key::QrMaxBytes, "79", Msg::QrMaxBytes),
+            (Key::QrMaxVersion, "5", Msg::QrMaxVersion),
+            (Key::QrMaxLines, "0", Msg::QrMaxLines),
+        ] {
+            let before = text_of(&w, key);
+            set(&mut w, key, text);
+            assert!(!w.compute(), "{key:?} {text}");
+            assert_eq!(w.status, Status::BadValue(label), "{key:?} {text}");
+            set(&mut w, key, &before);
+        }
+        // the data is never in a comment of the program
+        w.set_qr_data("A) (B".to_string());
+        assert!(w.compute());
+        for line in w.done.as_ref().unwrap().gcode.lines() {
+            if line.starts_with('(') {
+                assert!(line.starts_with("(qr code of ") && line.matches(')').count() == 1);
+            }
+        }
+    }
+
+    #[test]
+    fn a_file_of_settings_fills_the_boxes_of_the_qr_code_and_the_words_speak_every_language() {
+        let s = Scratch::new("qr-config");
+        let cfg = s.write(
+            "q.cfg",
+            "[qr]\nmodule_mm = 0.5\nline_mm = 0.25\npower_percent = 12\nspeed_mm_min = 800\npasses = 2\nmax_bytes = 30\nmax_version = 3\necc = Q\nmax_size_mm = 40\nmax_lines = 5000\n",
+        );
+        let mut w = Window::new(Lang::En);
+        assert!(w.load_config(&cfg));
+        for (key, text) in [
+            (Key::QrModule, "0.5"),
+            (Key::QrLine, "0.25"),
+            (Key::QrPower, "12"),
+            (Key::QrSpeed, "800"),
+            (Key::QrPasses, "2"),
+            (Key::QrMaxBytes, "30"),
+            (Key::QrMaxVersion, "3"),
+            (Key::QrMaxSize, "40"),
+            (Key::QrMaxLines, "5000"),
+        ] {
+            assert_eq!(text_of(&w, key), text, "{key:?}");
+        }
+        assert_eq!(w.qr_ecc, QrEcc::Q);
+        w.set_mode(Mode::Qr);
+        w.set_qr_data("OK".to_string());
+        assert!(w.compute());
+        let g = &w.done.as_ref().unwrap().gcode;
+        assert!(g.contains("S120 F800"), "{g}");
+        for l in Lang::ALL {
+            for m in [
+                Msg::ModeQr,
+                Msg::QrData,
+                Msg::QrModuleMm,
+                Msg::QrLineMm,
+                Msg::QrMaxBytes,
+                Msg::QrMaxVersion,
+                Msg::QrMaxSize,
+                Msg::QrMaxLines,
+                Msg::QrEccLabel,
+            ] {
+                assert!(!m.tr(l).is_empty());
+            }
+            assert!(w.status.text(l).contains("21"), "{}", w.status.text(l));
         }
     }
 

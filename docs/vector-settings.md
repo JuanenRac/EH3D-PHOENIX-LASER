@@ -281,6 +281,8 @@ Data that does not fit is refused, never cut down: more than `max_bytes` bytes, 
 
 The keys of `[qr]` are `module_mm`, `line_mm`, `power_percent`, `speed_mm_min`, `passes`, `max_bytes`, `max_version`, `ecc`, `max_size_mm` and `max_lines`.
 
+In the window, the QR mode has a box for the data, a choice of `ecc` and one box for each of the other keys (a file of settings fills them); the symbol is worked out with the same function as the command, from the origin of the machine, and is refused for the same reasons, with the status line naming the box that is wrong. The bed is the one of the machine of the file.
+
 ### `[defaults]` and `[layer NAME]`
 
 | Key | Default | Range | Meaning |
