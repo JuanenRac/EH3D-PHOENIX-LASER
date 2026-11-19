@@ -13,6 +13,7 @@ Every key is optional, and a command takes from a material only what it says. Th
 | `focus_step` | -20 to 20 | drawings | mm the focus moves at each pass |
 | `kerf` | 0 to 5 | drawings | the width of the beam, mm |
 | `hatch_spacing`, `hatch_angle` | 0.01 to 5, -360 to 360 | drawings | the hatch of the shapes that are engraved |
+| `hatch_cross` | `on` / `off` | drawings | fill the engraved shapes a second time at right angles to the first lines |
 | `dot` | 0.01 to 5 | pictures | the size of a dot, mm |
 | `overscan` | 0 to 50 | pictures | the run past the work at each end of a line, mm |
 | `dither` | `fs`, `atkinson`, `threshold`, `bayer` | pictures | how the grey levels become dots |

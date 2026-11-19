@@ -33,6 +33,8 @@ pub struct Material {
     pub kerf: Option<f64>,
     pub hatch_spacing: Option<f64>,
     pub hatch_angle: Option<f64>,
+    /// Whether the shapes that are engraved are filled a second time at right angles to the first lines.
+    pub hatch_cross: Option<bool>,
     /// The size of a dot of a picture, in mm.
     pub dot: Option<f64>,
     pub overscan: Option<f64>,
@@ -66,6 +68,7 @@ impl Material {
         p.kerf_mm = self.kerf.unwrap_or(p.kerf_mm);
         p.hatch_spacing_mm = self.hatch_spacing.unwrap_or(p.hatch_spacing_mm);
         p.hatch_angle_deg = self.hatch_angle.unwrap_or(p.hatch_angle_deg);
+        p.hatch_cross = self.hatch_cross.unwrap_or(p.hatch_cross);
     }
 
     /// The parameters of the engraving of a picture with what the material says over them.
@@ -100,6 +103,7 @@ impl Material {
         add("kerf", self.kerf.map(|v| format!("{v} mm")));
         add("hatch", self.hatch_spacing.map(|v| format!("{v} mm")));
         add("angle", self.hatch_angle.map(|v| format!("{v} deg")));
+        add("cross hatch", self.hatch_cross.map(|v| v.to_string()));
         add("dot", self.dot.map(|v| format!("{v} mm")));
         add("overscan", self.overscan.map(|v| format!("{v} mm")));
         add("dither", self.dither.clone());
@@ -197,6 +201,7 @@ fn set(m: &mut Material, key: &str, value: &str) -> Result<(), String> {
         "kerf" => m.kerf = Some(ranged(value, "kerf", 0.0, 5.0)?),
         "hatch_spacing" => m.hatch_spacing = Some(ranged(value, "hatch_spacing", 0.01, 5.0)?),
         "hatch_angle" => m.hatch_angle = Some(ranged(value, "hatch_angle", -360.0, 360.0)?),
+        "hatch_cross" => m.hatch_cross = Some(switch(value)?),
         "dot" => m.dot = Some(ranged(value, "dot", 0.01, 5.0)?),
         "overscan" => m.overscan = Some(ranged(value, "overscan", 0.0, 50.0)?),
         "dither" => {
@@ -335,6 +340,40 @@ mod tests {
         lib.materials[1].apply_to_tone(&mut t);
         assert_eq!((t.gamma, t.auto_level, t.contrast), (1.4, true, 0.0));
         assert!(t.validate().is_ok());
+    }
+
+    #[test]
+    fn a_material_can_ask_for_the_cross_hatch_and_says_so_in_its_list() {
+        let lib = parse(
+            "[material a]
+hatch_cross = ON
+[material b]
+hatch_cross = off
+[material c]
+power = 5
+",
+        )
+        .unwrap();
+        let mut p = LayerParams {
+            hatch_cross: false,
+            ..LayerParams::default()
+        };
+        lib.materials[0].apply_to_layer(&mut p);
+        assert!(p.hatch_cross);
+        // a material that says off turns it off, and one that says nothing leaves it as it is
+        lib.materials[1].apply_to_layer(&mut p);
+        assert!(!p.hatch_cross);
+        p.hatch_cross = true;
+        lib.materials[2].apply_to_layer(&mut p);
+        assert!(p.hatch_cross);
+        assert_eq!(lib.materials[0].describe(), "cross hatch true");
+        assert!(parse(
+            "[material a]
+hatch_cross = twice
+"
+        )
+        .unwrap_err()
+        .contains("line 2"));
     }
 
     #[test]

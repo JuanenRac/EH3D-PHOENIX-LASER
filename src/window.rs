@@ -316,6 +316,8 @@ pub struct LayerRow {
     pub shapes: usize,
     pub mode: LayerMode,
     pub kerf_side: KerfSide,
+    /// Whether the shapes that are engraved are filled a second time at right angles.
+    pub hatch_cross: bool,
     /// The text of each box, in the order of [`LayerField::ALL`].
     pub fields: [String; 9],
 }
@@ -328,6 +330,7 @@ impl LayerRow {
             shapes,
             mode: p.mode,
             kerf_side: p.kerf_side,
+            hatch_cross: p.hatch_cross,
             fields: [
                 t(p.power_percent),
                 t(p.speed_mm_min),
@@ -1282,6 +1285,7 @@ impl Window {
         let mut p = self.settings.params_for(&row.key);
         p.mode = row.mode;
         p.kerf_side = row.kerf_side;
+        p.hatch_cross = row.hatch_cross;
         p.power_percent = num(LayerField::Power)?;
         p.speed_mm_min = num(LayerField::Speed)?;
         p.passes = whole(LayerField::Passes)?;
@@ -1580,6 +1584,15 @@ impl Window {
         if let Some(r) = self.rows.get_mut(row) {
             if r.mode != mode {
                 r.mode = mode;
+                self.mark_stale();
+            }
+        }
+    }
+
+    pub fn set_layer_cross(&mut self, row: usize, on: bool) {
+        if let Some(r) = self.rows.get_mut(row) {
+            if r.hatch_cross != on {
+                r.hatch_cross = on;
                 self.mark_stale();
             }
         }
@@ -3230,6 +3243,54 @@ mod tests {
         set(&mut w, Key::MaxPower, "80");
         assert!(!w.compute());
         assert!(matches!(&w.status, Status::Failed(e) if e.contains("max_power_percent")));
+    }
+
+    #[test]
+    fn the_cross_hatch_is_a_box_of_the_table_that_a_file_and_a_material_can_fill() {
+        let (s, mut w, _p) = drawn("cross");
+        assert!(w.rows.iter().all(|r| !r.hatch_cross));
+        w.set_layer_mode(0, LayerMode::Engrave);
+        assert!(w.compute());
+        let once = cut_summary(&w).3;
+        // the box makes the work stale and doubles the length that is engraved
+        w.set_layer_cross(0, true);
+        assert!(w.stale);
+        assert!(w.compute());
+        let twice = cut_summary(&w).3;
+        assert!((twice - 2.0 * once).abs() < 1e-6, "{once} {twice}");
+        assert!(w.vector_settings().unwrap().layers[0].1.hatch_cross);
+        w.set_layer_cross(0, false);
+        assert!(w.compute());
+        assert!((cut_summary(&w).3 - once).abs() < 1e-6);
+        // a material turns it on or off for every layer, and one that says nothing leaves it
+        let lib = s.write(
+            "cross.cfg",
+            "[material on]
+hatch_cross = on
+[material off]
+hatch_cross = off
+[material none]
+power = 10
+",
+        );
+        assert!(w.load_materials(&lib));
+        assert!(w.apply_material("on"));
+        assert!(w.rows.iter().all(|r| r.hatch_cross));
+        assert!(w.apply_material("none"));
+        assert!(w.rows.iter().all(|r| r.hatch_cross));
+        assert!(w.apply_material("off"));
+        assert!(w.rows.iter().all(|r| !r.hatch_cross));
+        // a file of settings fills it for the layer it names
+        let cfg = s.write(
+            "c.cfg",
+            "[layer #ff0000]
+mode = engrave
+hatch_cross = on
+",
+        );
+        assert!(w.load_config(&cfg));
+        assert!(w.rows[0].hatch_cross && !w.rows[1].hatch_cross);
+        assert!(Msg::HatchCross.tr(Lang::Pt).contains("cruzada"));
     }
 
     #[test]

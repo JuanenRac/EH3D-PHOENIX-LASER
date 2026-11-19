@@ -681,6 +681,7 @@ impl App {
                                     Msg::TabWidth,
                                     Msg::HatchAngle,
                                     Msg::HatchSpacing,
+                                    Msg::HatchCross,
                                 ];
                                 for h in heads {
                                     ui.label(
@@ -754,6 +755,10 @@ impl App {
             LayerField::HatchSpacing,
         ] {
             self.layer_box(ui, r, f);
+        }
+        let mut cross = self.win.rows[r].hatch_cross;
+        if ui.checkbox(&mut cross, "").changed() {
+            self.win.set_layer_cross(r, cross);
         }
     }
 

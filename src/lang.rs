@@ -172,6 +172,7 @@ pub enum Msg {
     TabWidth,
     HatchAngle,
     HatchSpacing,
+    HatchCross,
     LegendCut,
     VectorOpened,
     NeedVector,
@@ -243,7 +244,7 @@ pub enum Msg {
 }
 
 impl Msg {
-    pub const ALL: [Msg; 152] = [
+    pub const ALL: [Msg; 153] = [
         Msg::Language,
         Msg::Fit,
         Msg::Cancel,
@@ -328,6 +329,7 @@ impl Msg {
         Msg::TabWidth,
         Msg::HatchAngle,
         Msg::HatchSpacing,
+        Msg::HatchCross,
         Msg::LegendCut,
         Msg::VectorOpened,
         Msg::NeedVector,
@@ -1240,6 +1242,16 @@ impl Msg {
                 "ハッチ間隔 mm",
                 "填充间距 mm",
                 "Espaçamento da hachura mm",
+            ],
+            Msg::HatchCross => [
+                "Cross hatch",
+                "Rayado cruzado",
+                "Kreuzschraffur",
+                "Hachures croisées",
+                "Tratteggio incrociato",
+                "クロスハッチ",
+                "交叉填充",
+                "Hachura cruzada",
             ],
             Msg::LegendCut => [
                 "Cut or engraved line",
