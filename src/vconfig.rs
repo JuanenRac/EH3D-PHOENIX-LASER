@@ -1556,21 +1556,6 @@ fn set_global(s: &mut Settings, section: &str, key: &str, value: &str) -> Result
     Ok(())
 }
 
-fn set_zone(z: &mut Zone, key: &str, value: &str) -> Result<(), String> {
-    match key {
-        "x_mm" => z.x_mm = number(value)?,
-        "y_mm" => z.y_mm = number(value)?,
-        "width_mm" => z.width_mm = number(value)?,
-        "height_mm" => z.height_mm = number(value)?,
-        "kind" => {
-            z.kind = ZoneKind::from_word(value)
-                .ok_or_else(|| format!("'{}' is not no_burn or no_go", value.trim()))?
-        }
-        _ => return Err(format!("'{key}' is not a setting of a zone")),
-    }
-    Ok(())
-}
-
 fn set_profile(p: &mut Profile, key: &str, value: &str) -> Result<(), String> {
     match key {
         "travel_x_mm" => p.travel_x_mm = Some(number(value)?),
@@ -1583,6 +1568,21 @@ fn set_profile(p: &mut Profile, key: &str, value: &str) -> Result<(), String> {
         }
         "laser_watts" => p.laser_watts = Some(number(value)?),
         _ => return Err(format!("'{key}' is not a setting of a profile")),
+    }
+    Ok(())
+}
+
+fn set_zone(z: &mut Zone, key: &str, value: &str) -> Result<(), String> {
+    match key {
+        "x_mm" => z.x_mm = number(value)?,
+        "y_mm" => z.y_mm = number(value)?,
+        "width_mm" => z.width_mm = number(value)?,
+        "height_mm" => z.height_mm = number(value)?,
+        "kind" => {
+            z.kind = ZoneKind::from_word(value)
+                .ok_or_else(|| format!("'{}' is not no_burn or no_go", value.trim()))?
+        }
+        _ => return Err(format!("'{key}' is not a setting of a zone")),
     }
     Ok(())
 }

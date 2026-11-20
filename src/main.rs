@@ -365,6 +365,16 @@ fn drawing_settings(
         over.apply(p);
     }
     s.validate()?;
+    // the ceiling of the material holds over the options of the command line too
+    if let Some((m, _)) = &material {
+        for (name, p) in std::iter::once(("[defaults]", &s.defaults))
+            .chain(s.layers.iter().map(|(n, p)| (n.as_str(), p)))
+            .filter(|(_, p)| p.mode != LayerMode::Skip)
+        {
+            m.check_limits(Some(p.power_percent), Some(p.speed_mm_min))
+                .map_err(|e| format!("{name}: {e}"))?;
+        }
+    }
     let sources = config.into_iter().chain(material.map(|(_, f)| f)).collect();
     Ok((s, sources))
 }
@@ -1443,6 +1453,14 @@ fn calibrate_job(mut args: Vec<String>) -> Result<(), String> {
     let limits = machine_limits(&mut args)?;
     let (max_power, max_speed, config) =
         (limits.max_power, limits.max_speed, limits.config.clone());
+    // the ladder of a material is held below the ceiling of the material as well
+    let (max_power, max_speed) = match &material {
+        Some((m, _)) => (
+            max_power.min(m.max_power.unwrap_or(max_power)),
+            max_speed.min(m.max_speed.unwrap_or(max_speed)),
+        ),
+        None => (max_power, max_speed),
+    };
     let mut c = limits.calibrate;
     if let Some(v) = &steps_arg {
         c.steps = whole(v, "--steps")?;
@@ -1619,6 +1637,10 @@ fn run(mut args: Vec<String>) -> Result<(), String> {
             }
             if let Some(v) = flag(&mut args, "--smax")? {
                 p.s_max = whole(&v, "--smax")?;
+            }
+            // the ceiling of the material holds over the options of the command line too
+            if let Some((m, _)) = &material {
+                m.check_limits(Some(p.power_percent), Some(p.feed_mm_min))?;
             }
             if let Some(v) = flag(&mut args, "--origin")? {
                 let o = list(&v, "--origin")?;

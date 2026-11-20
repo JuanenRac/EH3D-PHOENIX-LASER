@@ -4,6 +4,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+- **The ceiling of a material holds over the command line:** `engrave` and `cut` refuse a power or a speed (from the library, from `--config` or from `--power` and `--speed`) that is over the `max_power` or `max_speed` of the material in use and say which layer asked for it, and the ladder of `calibrate --material` is held below that ceiling as well as below the limits of the machine; nothing is lowered quietly.
+
 - **Materials say whether they were verified and how far they may be pushed:** a material of a library can carry `verified` (`off` says its values are only a place to start from), `max_power` and `max_speed`, its own ceiling. A library whose `power` or `speed` is over the ceiling of its own material is refused when it is read, the list of `phoenix-laser materials` marks each entry `[verified]` or `[not verified]` (an entry that says nothing is left unmarked, as before), using a material that is `verified = off` prints a note on the error output to try it on a scrap first, the marks are written back and kept when a material is edited in the window, and the file keeps what it says when it is rewritten.
 
 - **A starter library of materials:** `examples/materials-starter.cfg` holds seven places to start from for a weak diode laser (plywood cut, engraved and as a picture, cardboard, paper, leather and black acrylic), every one marked `verified = off` with a ceiling of its own and a note on what to watch; the values are round numbers from general experience, not copied from any table, and nobody has tried them on a real machine.
