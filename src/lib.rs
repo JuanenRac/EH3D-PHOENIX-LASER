@@ -25,6 +25,7 @@ pub mod order;
 pub mod preview;
 pub mod qr;
 pub mod raster;
+pub mod register;
 pub mod safety;
 pub mod server;
 pub mod shot;

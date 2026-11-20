@@ -458,7 +458,7 @@ pub struct FireInfo {
 impl FireInfo {
     pub fn from_json(v: &Json) -> FireInfo {
         let num = |k: &str| match v.get(k) {
-            Some(Json::Num(n)) => *n,
+            Some(Json::Num(n)) if n.is_finite() => *n,
             _ => 0.0,
         };
         FireInfo {

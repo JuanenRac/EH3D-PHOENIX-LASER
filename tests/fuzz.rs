@@ -571,3 +571,218 @@ fn the_same_work_is_written_byte_for_byte_every_time() {
         );
     }
 }
+
+/// A name of a layer made of whatever the generator brings: quotes, backslashes, controls, accents and characters of several bytes.
+fn wild_name(rng: &mut Rng) -> String {
+    const PIECES: [&str; 14] = [
+        "a", "Z", "7", "\"", "\\", "/", "\n", "\t", "\u{1}", "é", "ß", "日本", "😀", " ",
+    ];
+    (0..1 + rng.below(12))
+        .map(|_| PIECES[rng.below(PIECES.len())])
+        .collect()
+}
+
+fn wild_number(rng: &mut Rng) -> f64 {
+    match rng.below(6) {
+        0 => 0.0,
+        1 => -(rng.below(100_000) as f64) / 7.0,
+        2 => rng.below(1_000_000) as f64 / 1000.0,
+        3 => 1e-9 * rng.below(1000) as f64,
+        4 => 1e9 * rng.below(1000) as f64,
+        _ => rng.below(500) as f64,
+    }
+}
+
+#[test]
+fn a_vector_job_with_wild_names_and_numbers_is_written_as_json_that_reads_back_into_it() {
+    use eh3d_phoenix_laser::server::{vector_request, VectorJob, VectorOp, VectorPath, APP};
+    use eh3d_serverclient::Json;
+    let mut rng = Rng(0x5eed_1a5e_0000_0009);
+    for _ in 0..300 {
+        let mut job = VectorJob::default();
+        for _ in 0..1 + rng.below(4) {
+            let layer = wild_name(&mut rng);
+            let points = (0..2 + rng.below(8))
+                .map(|_| (wild_number(&mut rng), wild_number(&mut rng)))
+                .collect();
+            job.paths.push(VectorPath {
+                layer: layer.clone(),
+                points,
+                closed: rng.below(2) == 0,
+            });
+            job.ops.push(VectorOp {
+                layer,
+                mode: rng.pick(&["cut", "engrave"]),
+                power_pct: wild_number(&mut rng),
+                speed_mm_min: wild_number(&mut rng),
+                passes: rng.below(100) as u32,
+            });
+        }
+        let name = wild_name(&mut rng);
+        let body = vector_request("laser-1", &name, &job);
+        let v = Json::parse(&body).unwrap_or_else(|e| panic!("{e}: {body}"));
+        assert_eq!(v.get("name").and_then(Json::as_str), Some(name.as_str()));
+        assert_eq!(v.get("app").and_then(Json::as_str), Some(APP));
+        let r = v.get("request").unwrap();
+        let paths = r.get("paths").and_then(Json::as_array).unwrap();
+        let ops = r.get("operations").and_then(Json::as_array).unwrap();
+        assert_eq!((paths.len(), ops.len()), (job.paths.len(), job.ops.len()));
+        for (p, back) in job.paths.iter().zip(paths) {
+            assert_eq!(
+                back.get("layer").and_then(Json::as_str),
+                Some(p.layer.as_str())
+            );
+            assert_eq!(back.get("closed").and_then(Json::as_bool), Some(p.closed));
+            let pts = back.get("points").and_then(Json::as_array).unwrap();
+            assert_eq!(pts.len(), p.points.len());
+            for (q, b) in p.points.iter().zip(pts) {
+                let xy = b.as_array().unwrap();
+                assert_eq!(xy, [Json::Num(q.0), Json::Num(q.1)], "{q:?}");
+            }
+        }
+        for (o, back) in job.ops.iter().zip(ops) {
+            assert_eq!(back.get("power_pct"), Some(&Json::Num(o.power_pct)));
+            assert_eq!(back.get("speed"), Some(&Json::Num(o.speed_mm_min)));
+            assert_eq!(
+                back.get("passes").and_then(Json::as_u64),
+                Some(u64::from(o.passes))
+            );
+        }
+    }
+}
+
+#[test]
+fn a_vector_job_with_wild_numbers_is_refused_or_passes_the_limits_and_never_panics() {
+    use eh3d_phoenix_laser::server::{check_vector_before_send, VectorJob, VectorOp, VectorPath};
+    use eh3d_phoenix_laser::vconfig::Settings;
+    let mut rng = Rng(0x5eed_1a5e_0000_000a);
+    for _ in 0..400 {
+        let mut s = Settings::default();
+        s.machine.max_power_percent = 1.0 + rng.below(100) as f64;
+        s.machine.max_speed_mm_min = 1.0 + rng.below(20_000) as f64;
+        s.machine.bed_mm = if rng.below(2) == 0 {
+            None
+        } else {
+            Some((1.0 + rng.below(800) as f64, 1.0 + rng.below(800) as f64))
+        };
+        let mut job = VectorJob::default();
+        for _ in 0..1 + rng.below(3) {
+            let layer = wild_name(&mut rng);
+            job.paths.push(VectorPath {
+                layer: layer.clone(),
+                points: (0..2 + rng.below(6))
+                    .map(|_| {
+                        (
+                            wild_number(&mut rng) % 1000.0,
+                            wild_number(&mut rng) % 1000.0,
+                        )
+                    })
+                    .collect(),
+                closed: false,
+            });
+            job.ops.push(VectorOp {
+                layer,
+                mode: "cut",
+                power_pct: wild_number(&mut rng) % 120.0,
+                speed_mm_min: wild_number(&mut rng) % 30_000.0,
+                passes: 1,
+            });
+        }
+        let verdict = check_vector_before_send(&job, &s);
+        let over_power = job
+            .ops
+            .iter()
+            .any(|o| o.power_pct > s.machine.max_power_percent);
+        let over_speed = job
+            .ops
+            .iter()
+            .any(|o| o.speed_mm_min > s.machine.max_speed_mm_min);
+        let outside = s.machine.bed_mm.is_some_and(|(bx, by)| {
+            job.paths
+                .iter()
+                .flat_map(|p| p.points.iter())
+                .any(|q| q.0 < 0.0 || q.1 < 0.0 || q.0 > bx || q.1 > by)
+        });
+        assert_eq!(
+            verdict.is_ok(),
+            !(over_power || over_speed || outside),
+            "{verdict:?}"
+        );
+    }
+}
+
+#[test]
+fn a_test_fire_with_wild_numbers_is_refused_or_sent_as_numbers_that_read_back() {
+    use eh3d_phoenix_laser::server::{check_test_fire, test_fire_request};
+    use eh3d_phoenix_laser::vconfig::Settings;
+    use eh3d_serverclient::Json;
+    let mut rng = Rng(0x5eed_1a5e_0000_000b);
+    let s = Settings::default();
+    for _ in 0..500 {
+        let power = match rng.below(8) {
+            0 => f64::NAN,
+            1 => f64::INFINITY,
+            2 => -wild_number(&mut rng),
+            _ => wild_number(&mut rng) % 150.0,
+        };
+        let seconds = match rng.below(8) {
+            0 => f64::NAN,
+            1 => f64::NEG_INFINITY,
+            _ => wild_number(&mut rng) % 20.0,
+        };
+        let verdict = check_test_fire(power, seconds, &s);
+        let fine = power.is_finite()
+            && power > 0.0
+            && power <= s.machine.max_power_percent
+            && seconds.is_finite()
+            && (0.01..=10.0).contains(&seconds);
+        assert_eq!(verdict.is_ok(), fine, "{power} {seconds}");
+        if fine {
+            let v = Json::parse(&test_fire_request(power, seconds)).unwrap();
+            assert_eq!(v.get("power_pct"), Some(&Json::Num(power)));
+            assert_eq!(v.get("seconds"), Some(&Json::Num(seconds)));
+        }
+    }
+}
+
+#[test]
+fn a_damaged_answer_of_the_server_is_read_without_a_panic() {
+    use eh3d_phoenix_laser::server::{FireInfo, JobInfo, MachineInfo};
+    use eh3d_serverclient::Json;
+    let whole = "{\"id\":\"w-1\",\"name\":\"L\",\"state\":\"running\",\"done\":30,\"total\":120,\"message\":\"x\",\"fired\":true,\"power_pct\":1,\"seconds\":0.2,\"detail\":{\"estop_latched\":true,\"beam_on\":false}}";
+    let mut rng = Rng(0x5eed_1a5e_0000_000c);
+    let read = |text: &str| {
+        if let Ok(v) = Json::parse(text) {
+            let j = JobInfo::from_json(&v);
+            let _ = (j.percent(), j.finished(), j.active(), j.held());
+            let m = MachineInfo::from_json(&v);
+            let _ = (m.latched, m.beam_on);
+            let f = FireInfo::from_json(&v);
+            assert!(f.power_pct.is_finite() && f.seconds.is_finite());
+        }
+    };
+    assert!(Json::parse(whole).is_ok());
+    for end in 0..whole.len() {
+        if whole.is_char_boundary(end) {
+            read(&whole[..end]);
+        }
+    }
+    let bytes = whole.as_bytes();
+    for _ in 0..2000 {
+        let mut copy = bytes.to_vec();
+        for _ in 0..1 + rng.below(4) {
+            let at = rng.below(copy.len());
+            match rng.below(3) {
+                0 => copy[at] = rng.next() as u8,
+                1 => copy.insert(at, rng.next() as u8),
+                _ => {
+                    copy.remove(at);
+                }
+            }
+        }
+        read(&String::from_utf8_lossy(&copy));
+    }
+    // numbers that are not whole or are huge give zeros and a percent that holds
+    let j = JobInfo::from_json(&Json::parse("{\"done\":1e300,\"total\":-5}").unwrap());
+    assert_eq!((j.done, j.total, j.percent()), (0, 0, 0));
+}

@@ -2752,3 +2752,228 @@ fn verify_fails_a_program_that_is_not_the_one_that_was_authorised() {
         assert!(err.contains("64 hex digits"), "{err}");
     }
 }
+
+#[test]
+fn a_simulated_picture_of_the_marks_is_read_back_into_the_shift_and_the_turn_that_made_it() {
+    let pic = tmp("align-shifted.pgm");
+    let (ok, out, err) = run(&[
+        "align",
+        "--simulate",
+        &pic,
+        "--size",
+        "60,40",
+        "--origin",
+        "10,10",
+        "--px-per-mm",
+        "10",
+        "--shift",
+        "2.5,-1",
+        "--turn",
+        "0.5",
+        "--centre-cross",
+        "--picture-px",
+        "900,700",
+    ]);
+    assert!(ok, "{out} {err}");
+    assert!(
+        out.contains("a simulated picture of 900 x 700 pixels"),
+        "{out}"
+    );
+    let head = std::fs::read(&pic).unwrap();
+    assert!(head.starts_with(b"P5\n900 700\n255\n") && head.len() == 15 + 900 * 700);
+    // the marks are found with the same layout, and the shift and the turn come back
+    let (ok, out, err) = run(&[
+        "align",
+        &pic,
+        "--size",
+        "60,40",
+        "--origin",
+        "10,10",
+        "--px-per-mm",
+        "10",
+        "--centre-cross",
+    ]);
+    assert!(ok, "{out} {err}");
+    assert!(out.contains("found 5 marks"), "{out}");
+    assert!(out.contains("+2.50, -1.00 mm"), "{out}");
+    assert!(out.contains("+0.50 degrees"), "{out}");
+    assert!(out.contains("use --origin 12.5,9"), "{out}");
+    assert!(out.contains("the material is turned"), "{out}");
+    // without a turn there is nothing to warn about
+    let straight = tmp("align-straight.pgm");
+    let (ok, _, err) = run(&[
+        "align",
+        "--simulate",
+        &straight,
+        "--size",
+        "60,40",
+        "--origin",
+        "10,10",
+        "--px-per-mm",
+        "10",
+        "--shift",
+        "-3,4",
+        "--picture-px",
+        "900,700",
+    ]);
+    assert!(ok, "{err}");
+    let (ok, out, err) = run(&[
+        "align",
+        &straight,
+        "--size",
+        "60,40",
+        "--origin",
+        "10,10",
+        "--px-per-mm",
+        "10",
+    ]);
+    assert!(ok, "{out} {err}");
+    assert!(
+        out.contains("found 4 marks") && out.contains("-3.00, +4.00 mm"),
+        "{out}"
+    );
+    assert!(
+        out.contains("use --origin 7,14") && !out.contains("is turned"),
+        "{out}"
+    );
+}
+
+#[test]
+fn a_picture_that_does_not_hold_the_marks_or_an_option_that_is_wrong_is_refused() {
+    let blank = tmp("align-blank.pgm");
+    std::fs::write(
+        &blank,
+        [b"P5\n300 200\n255\n".as_slice(), &vec![230u8; 300 * 200]].concat(),
+    )
+    .unwrap();
+    let (ok, _, err) = run(&[
+        "align",
+        &blank,
+        "--size",
+        "20,10",
+        "--origin",
+        "5,5",
+        "--arm-mm",
+        "2",
+        "--px-per-mm",
+        "10",
+    ]);
+    assert!(!ok);
+    assert!(err.contains("0 of 4 marks"), "{err}");
+    // a turn over the limit of the search
+    let turned = tmp("align-turned.pgm");
+    let (ok, _, err) = run(&[
+        "align",
+        "--simulate",
+        &turned,
+        "--size",
+        "60,40",
+        "--origin",
+        "10,10",
+        "--px-per-mm",
+        "10",
+        "--turn",
+        "9",
+        "--picture-px",
+        "900,700",
+    ]);
+    assert!(ok, "{err}");
+    let (ok, _, err) = run(&[
+        "align",
+        &turned,
+        "--size",
+        "60,40",
+        "--origin",
+        "10,10",
+        "--px-per-mm",
+        "10",
+        "--max-shift-mm",
+        "100",
+    ]);
+    assert!(!ok);
+    assert!(err.contains("turned by"), "{err}");
+    for (args, what) in [
+        (vec!["align", &blank, "--px-per-mm", "10"], "--size"),
+        (vec!["align", &blank, "--size", "20,10"], "--px-per-mm"),
+        (
+            vec!["align", "--size", "20,10", "--px-per-mm", "10"],
+            "a picture",
+        ),
+        (
+            vec![
+                "align",
+                &blank,
+                "--size",
+                "20,10",
+                "--px-per-mm",
+                "10",
+                "--threshold",
+                "300",
+            ],
+            "--threshold",
+        ),
+        (
+            vec!["align", &blank, "--size", "20", "--px-per-mm", "10"],
+            "--size needs W,H",
+        ),
+        (
+            vec![
+                "align",
+                &blank,
+                "--size",
+                "20,10",
+                "--px-per-mm",
+                "10",
+                "--centre-cross",
+                "--no-centre-cross",
+            ],
+            "cannot be given together",
+        ),
+        (
+            vec![
+                "align",
+                "/no/such/picture.pgm",
+                "--size",
+                "20,10",
+                "--px-per-mm",
+                "10",
+            ],
+            "picture.pgm",
+        ),
+    ] {
+        let (ok, _, err) = run(&args);
+        assert!(!ok, "{args:?}");
+        assert!(err.contains(what), "{args:?}: {err}");
+    }
+    // the simulator does not write a picture over the settings it is made from
+    let cfg = tmp("align-settings.cfg");
+    std::fs::write(&cfg, "[marks]\narm_mm = 3\n").unwrap();
+    let (ok, _, err) = run(&[
+        "align",
+        "--simulate",
+        &cfg,
+        "--size",
+        "20,10",
+        "--px-per-mm",
+        "10",
+        "--config",
+        &cfg,
+    ]);
+    assert!(!ok);
+    assert!(err.contains("written over the settings"), "{err}");
+    assert_eq!(
+        std::fs::read_to_string(&cfg).unwrap(),
+        "[marks]\narm_mm = 3\n"
+    );
+}
+
+#[test]
+fn the_help_tells_the_align_command_and_what_it_is_tried_on() {
+    let (ok, out, _) = run(&["help"]);
+    assert!(ok);
+    assert!(
+        out.contains("phoenix-laser align PICTURE.pgm|png --size W,H --px-per-mm S"),
+        "{out}"
+    );
+    assert!(out.contains("never on a real camera"), "{out}");
+}

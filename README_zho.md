@@ -17,7 +17,7 @@
 
 ---
 
-**诚实检查 - 当前真正能运行的内容：** 一个 Rust 库和一个命令行程序（`phoenix-laser`），有 671 个在计算机上运行的测试：用抖动把图像变成点，并写出逐行烧蚀、带动态功率和超程的激光 G 代码；读取 SVG 和 DXF 图纸，写出切割其轮廓的 G 代码（先内后外，考虑光束宽度、连接桥和多遍），并用线条雕刻其图形，各图层的设置放在一个文件里；还有功率对进给的测试网格。它有一个窗口（用 `--features gui` 构建），可打开图像或图纸、显示激光路径、修改设置并导出 G 代码，但窗口尚未在屏幕上查看过；也没有在机器上试过，没有用一批真实文件检查过。 它还可以把程序发送到 EH3D 服务器的激光插件，并跟踪、暂停或停止作业（`phoenix-laser server`），仅针对服务器的替身测试过。
+**诚实检查 - 当前真正能运行的内容：** 一个 Rust 库和一个命令行程序（`phoenix-laser`），有 687 个在计算机上运行的测试：用抖动把图像变成点，并写出逐行烧蚀、带动态功率和超程的激光 G 代码；读取 SVG 和 DXF 图纸，写出切割其轮廓的 G 代码（先内后外，考虑光束宽度、连接桥和多遍），并用线条雕刻其图形，各图层的设置放在一个文件里；还有功率对进给的测试网格。它有一个窗口（用 `--features gui` 构建），可打开图像或图纸、显示激光路径、修改设置并导出 G 代码，但窗口尚未在屏幕上查看过；也没有在机器上试过，没有用一批真实文件检查过。 它还可以把程序发送到 EH3D 服务器的激光插件，并跟踪、暂停或停止作业（`phoenix-laser server`），仅针对服务器的替身测试过。
 
 ---
 
@@ -30,7 +30,7 @@
 |---|---|
 | 版本 | `0.1.3` |
 | 成熟度 | 可用 |
-| 测试 | 671 |
+| 测试 | 687 |
 | 技术栈 | Rust |
 | 真实硬件 | 未试过：这里的任何内容都没有在机器上运行过 |
 
@@ -46,7 +46,7 @@
 |---|---|---|
 | 核心 | 🟡 | 用抖动把图像变成点，并写出逐行烧蚀、带动态功率和超程的激光 G 代码；读取 SVG 和 DXF 图纸并按图层切割或雕刻（轮廓排序、光束宽度、连接桥、遍数、填充）；还有功率对进给的测试网格；已在计算机上用正常和损坏的输入测试，没有用一批真实文件检查。 |
 | 命令行 | 🟡 | `phoenix-laser`（`engrave`、`calibrate`、`info`、`cut`、`vector`、`layers`）运行与库相同的函数并打印结果；每个错误都以消息和非零退出码返回。 |
-| 测试 | 🟡 | 671 个测试通过（`cargo test`），包含正常情况、边界情况和损坏的输入。 |
+| 测试 | 🟡 | 687 个测试通过（`cargo test`），包含正常情况、边界情况和损坏的输入。 |
 | 安全 | 🟡 | 纯安全 Rust（`forbid(unsafe_code)`）：处理收到的文件时不会 panic，错误的值会返回带原因的错误；没有独立审查。 |
 | 窗口 | 🟠 | 已编写（egui，`--features gui`）：打开或拖入图像或 SVG、DXF 图纸，查看激光路径（切割为单一颜色，空移变淡），编辑图层表，校准网格，缩放与平移，估算时间，导出；其逻辑已测试，但尚未构建，也没有在屏幕上查看过。 |
 | 真实硬件 | 🔴 | 未试过：这里的任何内容都没有在机器上运行过。 |
@@ -69,7 +69,7 @@
 * **条形码**（`src/barcode.rs`，设置文件中的 `[barcode]`）：`phoenix-laser barcode OUT.nc --text 数据` 把数据烧刻成程序自带的 Code 128 条形码（空格到 `~` 的字符用 B 集，只含偶数个数字的文本用宽度减半的 C 集，并带校验符），方法是沿高度方向用线条填充每个条；测试用自己的读取器读回，但尚未用扫描器读取过。最窄条的宽度、高度、线距、功率、速度、道次和限制都是设置；不可打印字符的字节、超过 `max_chars` 的字符数、宽于 `max_width_mm` 的条形码、超过 `max_lines` 次移动的填充、耗时超过 `max_minutes` 的烧刻、超出限制的功率或速度，或超出工作台的作业都会被拒绝，绝不裁剪或缩小，数据也绝不会写进程序的注释里。`--mirror` 烧刻镜像，用于玻璃或亚克力的背面。
 * **交叉填充**（`src/cut.rs`，图层中的 `hatch_cross`）：设为 `hatch_cross = on`（或在 `vector` 与 `trace` 中使用 `--cross`）的 `engrave` 图层，会在每一遍中用与第一组线成直角、间距相同的线再填充一次，线数上限对每一组都适用；图层列表给出的每平方毫米能量会翻倍，预览和程序检查把它当作任何其他程序来处理。
 * **作业边框**（`src/frame.rs`，设置文件中的 `[frame]`）：`phoenix-laser frame` 根据尺寸或 G-code 程序烧蚀范围的外框，写出在激光关闭状态下描出作业矩形的程序，让人看到作业会落在哪里；微弱的指示功率每次都需要 `--confirm-laser-on`，上限 5 %（可由 `[frame]` 的 `max_pilot_percent` 修改），并服从功率上限，超出工作台的边框会被拒绝。
-* **定位标记**（`src/frame.rs`，设置文件中的 `[marks]`）：`phoenix-laser marks OUT.nc --size W,H` 以较低功率在作业矩形的每个角（在边上，或在外侧 `margin_mm` 处）烧刻一个 L 形，加上 `--centre-cross` 还会在中心烧刻十字，使材料可以放回同一位置，并让第二次作业与第一次对齐。与在激光关闭时描框的边框不同，标记是真正烧刻的：功率和速度遵守机器的限制，长于矩形一边一半的臂，或会超出工作台的标记，会被拒绝，绝不裁剪。臂长、边距、功率、速度和道次都是设置。
+* **定位标记**（`src/frame.rs`，设置文件中的 `[marks]`）：`phoenix-laser marks OUT.nc --size W,H` 以较低功率在作业矩形的每个角（在边上，或在外侧 `margin_mm` 处）烧刻一个 L 形，加上 `--centre-cross` 还会在中心烧刻十字，使材料可以放回同一位置，并让第二次作业与第一次对齐。与在激光关闭时描框的边框不同，标记是真正烧刻的：功率和速度遵守机器的限制，长于矩形一边一半的臂，或会超出工作台的标记，会被拒绝，绝不裁剪。臂长、边距、功率、速度和道次都是设置。`phoenix-laser align PICTURE.pgm --size W,H --px-per-mm S` 在从正上方拍摄的床面图片中找出标记，并说明它们偏离应有位置多远（要加到作业原点上的偏移和旋转）；缺少标记、偏得太远或转得太多的图片会被拒绝；它只在 `--simulate` 绘制的图片上试过，从未在真实相机上试过。
 * **预览**（`src/preview.rs`）：`phoenix-laser preview` 读取 G-code 程序（自己生成的或其他程序的），输出移动、烧蚀和空移的长度、范围、功率，以及计入拐角减速的时间；对看起来危险的情况发出警告（快速移动时激光开启、没有进给、功率超过满功率、工作超出工作台、没有结束），并把路径画成 SVG；测试会读回雕刻写出的程序并核对同样的长度。加上 `--laser-watts W`（激光满功率时的功率）后，还会给出程序烧刻的能量（每次移动的功率按 `--smax` 的比例乘以其烧刻时间）及其平均功率。
 * **材料库**（`src/materials.rs`、`examples/materials.cfg`）：每种材料和加工方式适用的值（`[material 名称]`：功率、速度、遍数、焦距步进、光束宽度、填充线、点大小、抖动和色调曲线）只需写在一个文本文件里，用 `--material 名称 --materials 文件` 选用；命令行选项优先于它，功率上限对两者都有效。`phoenix-laser materials 文件` 列出材料库。
 * **功率上限**（`src/safety.rs`、`[machine]` 中的 `max_power_percent`、`--max-power`）：功率超过上限的程序会被拒绝，错误信息指出图层或选项，绝不会悄悄调低；在文件或选项另有指定之前，上限是 100 %。
@@ -91,7 +91,7 @@
 * **程序检查**（`src/verify.rs`）：`phoenix-laser verify PROGRAM.nc` 将 G-code 程序（本程序或其他程序生成的）作为文本读取，从不执行，并给出该文件的 SHA-256、它的动作以及判定：只有在机器的功率和速度上限之下、位于工作台之内（工作台之外的加工算不通过；`--overscan-mm` 或 `[verify]` 中的 `overscan_mm` 允许机头在激光关闭时超出工作台这么远，就像其他程序的过扫描一样，而在工作台之外烧蚀始终不通过）、每次快速移动时激光关闭、每次烧蚀移动都有进给速度时才算通过。`--json` 输出报告，供其他程序与绑定到该哈希的授权一起保存（含机器配置、限制所依据的设置文件的 SHA-256 以及已执行检查的名称）；未通过时退出码为 1。
 * **与已授权程序绑定的检查**（`src/verify.rs`）：`phoenix-laser verify PROGRAM.nc --expect-sha256 HASH` 在程序的 SHA-256 不是给定的 64 位十六进制数时判其不通过，并说明它实际的值，因此在查看之后被改动的程序不会被误运行；该失败也出现在 JSON 报告中。
 * **发送到 EH3D 服务器**（`src/server.rs`，设置文件中的 `[server]`）：`phoenix-laser server send PROGRAM.nc` 通过套件共用的客户端（EH3D-COMMON 的 `eh3d-serverclient`：键 `server_address`、`server_token`、`server_machine`、`server_timeout_s`、`server_retries` 和 `server_mdns`，停顿逐渐加长的重试，创建内容的请求绝不发送两次，服务器的拒绝按代码以系统语言说明），把 G-code 程序作为 EH3D-SERVER 的 `laser` 插件的作业发送。发出之前，程序会按设置中机器的上限（功率和速度上限、工作台）检查，不合格的不会发送；`--follow` 一直等到作业结束；`status`、`job`、`pause` 和 `resume` 查询机器和作业并暂停或继续；`stop` 是激光机的紧急停止：作业立即结束，机器被锁定，在管理员运行 `release` 之前不接受、也不会被发送任何程序。令牌绝不打印（可以放在变量 `PHOENIX_LASER_SERVER_TOKEN` 中），并以明文经普通 HTTP 传输。本地命令不受影响。已针对激光插件的替身在内存中以及本机的套接字上测试；服务器的插件本身是模拟器，这里的一切都没有在真正的激光器上运行过。`phoenix-laser server vector DRAWING.svg|dxf` 将图纸作为矢量作业发送（路径和每个图层的一项操作，先按设置的上限检查），`phoenix-laser server test-fire --power-percent P --confirm-fire` 让激光短暂发射以找到焦点（作业运行期间、紧急停止锁定机器期间、外罩打开或气助吹气关闭时，以及超过服务器自身上限时，服务器会拒绝）。窗口的服务器部分显示套件的面板（地址、令牌、机器、连接以及用名称和密码登录），仅为查看而打开的程序在通过检查并经本人确认后即可发送，标记模式可以从作业取得尺寸。
-* **从窗口发送到服务器**（`src/window.rs`，设置文件中的 `[server]`）：设置中有服务器时，窗口的一个区域会把算出的程序作为激光机的作业发送，显示进度，并可暂停、继续，或用紧急停止按钮停止（作业立即结束，机器保持锁定直到管理员解除）；仅为查看而打开的程序、未经确认就会点亮激光的边框，以及未通过上限检查的程序都不会被发送。关闭窗口后，作业仍留在服务器上原来的位置。
+* **从窗口发送到服务器**（`src/window.rs`、`src/linkpane.rs`、设置文件中的 `[server]`）：窗口的服务器部分显示套件的面板（地址、令牌、机器、连接的限制、连接状态以及用名称和密码登录），其按钮将算出的程序作为激光机的作业发送，显示进度，并可暂停、继续或用紧急停止按钮停止（作业立即结束，机器保持锁定直到管理员解除）；点亮激光但未确认的外框、未通过上限检查的程序不会发送；仅为查看而打开的程序，只有在通过检查且本人勾选对应复选框后才会原样发送。关闭窗口后，作业仍留在服务器上原处。
 * **有序抖动**（`src/dither.rs`）：`--dither bayer`（窗口中也可选）用 8 x 8 的拜耳矩阵，仅凭每个点的位置和灰度决定它是否烧蚀，因此图案规则，相同的灰度总是烧同样的点；测试检查矩阵的每个级别各出现一次，并且灰度的深浅得以保持。
 * **色调曲线**（`src/tone.rs`）：生成点阵之前，可以把灰度拉伸到整个范围（`--auto-level`）、调整对比度和亮度、用伽马曲线弯曲或反相，只用一张 256 项的表；使用默认值时图像完全不变。
 * **经过检查的 G 代码：**图纸的程序在交出之前逐行检查：快速移动时或没有速度时激光不会开启，`S` 不会超过满功率，不会移动到床面之外，结尾是 `M5`；文件绝不会写在它所来自的图纸或设置之上。
@@ -177,6 +177,8 @@ phoenix-laser frame OUT.nc --size W,H | --gcode PROGRAM.nc [--origin X,Y] [--mar
               [--pilot P --confirm-laser-on] [--max-power P] [--max-speed MM/MIN] [--config FILE] [--profile NAME]
 phoenix-laser verify PROGRAM.nc [--config FILE] [--profile NAME] [--smax N] [--max-power P] [--max-speed MM/MIN] [--bed X,Y] [--overscan-mm MM] [--accel 1000] [--expect-sha256 HASH] [--json]
 phoenix-laser preview PROGRAM.nc [OUT.svg] [--accel 1000] [--rapid 6000] [--smax N] [--laser-watts W] [--bed X,Y] [--width-px 900] [--config FILE] [--profile NAME]
+phoenix-laser align PICTURE.pgm|png --size W,H --px-per-mm S [--origin X,Y] [--arm-mm 5] [--margin-mm 0] [--centre-cross|--no-centre-cross] [--threshold 128] [--max-shift-mm 20] [--max-angle-deg 5]
+              [--config FILE] [--profile NAME] | --simulate OUT.pgm --size W,H --px-per-mm S [--shift DX,DY] [--turn DEG] [--picture-px W,H]
 phoenix-laser server status|release [--address HOST:PORT] [--machine ID] [--config FILE] [--profile NAME]
 phoenix-laser server send PROGRAM.nc [--name TEXT] [--follow] | job|pause|resume|stop JOB [--address HOST:PORT] [--machine ID] [--config FILE] [--profile NAME]
 phoenix-laser server vector DRAWING.svg|dxf [--name TEXT] [--follow] [--address HOST:PORT] [--machine ID] [--config FILE] [--profile NAME] [--material NAME] [--power P] [--speed MM/MIN] [--passes N]
@@ -207,7 +209,7 @@ cargo run --release --features gui -- --shot screen.png examples/plate.svg   # a
 
 ## 🧪 测试
 
-测试套件有 671 个测试（`cargo test`，CI 在 Windows 和 Linux 上运行）。它们检查正常情况、边界情况和损坏的输入：空文件、乱码和被截断的文件绝不会 panic。CI 还运行 `cargo fmt --check`、把警告当作错误的 `cargo clippy` 以及 `python -I tools/ci_validate.py`。
+测试套件有 687 个测试（`cargo test`，CI 在 Windows 和 Linux 上运行）。它们检查正常情况、边界情况和损坏的输入：空文件、乱码和被截断的文件绝不会 panic。CI 还运行 `cargo fmt --check`、把警告当作错误的 `cargo clippy` 以及 `python -I tools/ci_validate.py`。
 
 ## 🏗️ 构建与发布
 
@@ -251,6 +253,7 @@ EH3D-PHOENIX-LASER/
 │   ├── verify.rs                                程序检查：其 SHA-256、动作以及对照机器上限的判定
 │   ├── flatten.rs                               在容差内将曲线分段为直线（贝塞尔、圆弧）
 │   ├── frame.rs                                 作业边框（在激光关闭时描出的矩形）及其四角的定位标记
+│   ├── register.rs                              作业所在位置：在图片中找到的标记和模拟相机
 │   ├── svg.rs                                   SVG 读取器：安全子集，不含脚本、图像和实体
 │   ├── dxf.rs                                   DXF 读取器：直线、多段线、圆弧、圆和样条，含单位
 │   ├── energy.rs                                由光功率算出每毫米或每平方毫米一次走刀的能量

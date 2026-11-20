@@ -314,6 +314,19 @@
           }
         },
         {
+          "name": "register.rs",
+          "desc": {
+            "en": "where the work lies: the marks found in a picture, and the simulated camera",
+            "es": "dónde está el trabajo: las marcas halladas en una imagen y la cámara simulada",
+            "de": "wo der Auftrag liegt: die in einem Bild gefundenen Marken und die simulierte Kamera",
+            "fr": "où se trouve le travail : les repères trouvés dans une image et la caméra simulée",
+            "it": "dove si trova il lavoro: i segni trovati in un'immagine e la telecamera simulata",
+            "ja": "作業の位置：画像から見つけたマークと模擬カメラ",
+            "zh": "作业所在位置：在图片中找到的标记和模拟相机",
+            "pt": "onde está o trabalho: as marcas encontradas numa imagem e a câmara simulada"
+          }
+        },
+        {
           "name": "svg.rs",
           "desc": {
             "en": "the SVG reader: a safe subset, no scripts, images or entities",

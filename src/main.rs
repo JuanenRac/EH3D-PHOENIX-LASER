@@ -21,6 +21,7 @@ use eh3d_phoenix_laser::materials::{self, Material};
 use eh3d_phoenix_laser::preview;
 use eh3d_phoenix_laser::qr;
 use eh3d_phoenix_laser::raster::{engrave, overscan_for, Params};
+use eh3d_phoenix_laser::register;
 use eh3d_phoenix_laser::safety;
 use eh3d_phoenix_laser::server::{self, Order};
 use eh3d_phoenix_laser::svg::read_svg;
@@ -30,7 +31,7 @@ use eh3d_phoenix_laser::trace;
 use eh3d_phoenix_laser::vconfig::{self, KerfSide, LayerMode, LayerParams, Settings};
 use eh3d_phoenix_laser::vector::Drawing;
 use eh3d_phoenix_laser::verify;
-use eh3d_phoenix_laser::window::{same_file, write_atomic};
+use eh3d_phoenix_laser::window::{same_file, write_atomic, write_atomic_bytes};
 use std::env;
 use std::fs;
 use std::path::Path;
@@ -63,6 +64,8 @@ const HELP: &str = "phoenix-laser: laser engraving from an image
                 [--max-power P] [--max-speed MM/MIN] [--config FILE] [--profile NAME]
   phoenix-laser marks OUT.nc --size W,H [--origin X,Y] [--arm-mm 5] [--margin-mm 0] [--power 10] [--feed 1000] [--passes 1] [--centre-cross|--no-centre-cross] [--bed X,Y] [--smax N]
                 [--max-power P] [--max-speed MM/MIN] [--config FILE] [--profile NAME]
+  phoenix-laser align PICTURE.pgm|png --size W,H --px-per-mm S [--origin X,Y] [--arm-mm 5] [--margin-mm 0] [--centre-cross|--no-centre-cross] [--threshold 128] [--max-shift-mm 20] [--max-angle-deg 5]
+                [--config FILE] [--profile NAME] | --simulate OUT.pgm --size W,H --px-per-mm S [--shift DX,DY] [--turn DEG] [--picture-px W,H]
   phoenix-laser server status|release [--address HOST:PORT] [--machine ID] [--config FILE] [--profile NAME]
   phoenix-laser server send PROGRAM.nc [--name TEXT] [--follow] | job|pause|resume|stop JOB [--address HOST:PORT] [--machine ID] [--config FILE] [--profile NAME]
   phoenix-laser server vector DRAWING.svg|dxf [--name TEXT] [--follow] [--address HOST:PORT] [--machine ID] [--config FILE] [--profile NAME] [--material NAME] [--power P] [--speed MM/MIN] [--passes N]
@@ -87,7 +90,7 @@ text burns TEXT with a font of strokes of the program (capitals, figures, space 
 qr burns DATA as a QR code of its own (versions 1 to 4, byte mode, with the level of error correction --ecc L, M, Q or H and the mask of the lowest penalty), filling each dark module with lines --line-mm apart (--invert fills the light ones instead, so the symbol is left bare in a burnt plate; --no-invert undoes invert = on of the settings; --border-modules N, only with --invert, also burns a border N modules wide around it, and the square counts as the symbol for --origin, the bed and max_size_mm; --overscan-mm runs the head up that far before each line and out past it with the laser off, and is refused when it would leave the bed): --mirror turns the symbol into its mirror image, to be burnt on the back of glass or acrylic; --module-mm is the side of a module and --origin X,Y the lower left corner; leave a light margin of four modules around the symbol on the material. --print also shows the symbol as text. Data of more than max_bytes bytes, a symbol that needs a version over max_version or is larger than max_size_mm, a fill of more than max_lines moves, a burning that would take more than --max-minutes (240 unless the file says another), a power or a speed over the limit, or work that would go outside of the bed (--bed X,Y or the machine of --config) is refused, never cut down; the [qr] section of --config holds the usual values.
 barcode burns DATA as a Code 128 barcode of its own (the characters from space to ~ in set B, and a text of an even number of figures in set C, which is half as wide), filling each bar with lines along its height --line-mm apart: --module-mm is the width of the narrowest bar, --height-mm the height of the bars, --mirror burns its mirror image (for the back of glass or acrylic) and --origin X,Y is the lower left corner; leave a light margin of ten modules at each side on the material. A byte that is not a printable character, more than max_chars characters, a barcode wider than max_width_mm, a fill of more than max_lines moves, a burning that would take more than --max-minutes (240 unless the file says another), a power or a speed over the limit, or work that would go outside of the bed (--bed X,Y or the machine of --config) is refused, never cut down; the [barcode] section of --config holds the usual values.
 marks burns positioning marks round the rectangle --size W,H whose lower left corner is --origin X,Y: an L at each corner, on the edges of the rectangle or --margin-mm outside of them, with arms --arm-mm long, and a cross in the middle with --centre-cross, so that the material can be put back in the same place. Unlike frame, which keeps the laser off, the marks are burnt, at a low power (--power, 10 % unless the file says another): a power or a speed over the limit, an arm longer than half a side of the rectangle the marks go round, or marks that would go outside of the bed (--bed X,Y or the machine of --config) are refused, never cut down; the [marks] section of --config holds the usual values.
-server works with the EH3D server (the [server] section of --config holds server_address, server_token, server_machine, server_timeout_s, server_retries and server_mdns; the token may also be in the variable PHOENIX_LASER_SERVER_TOKEN, and it is never printed): status says whether the server is there and whether an emergency stop holds the laser machine; send reads a G-code program, checks it against the limits of the machine of --config (the limit of power and of speed, the bed: a program that fails is not sent) and sends it as a job of the laser machine, which the server holds to its own limits, and --follow stays until the job ends (the job goes on without it when it is left); job, pause and resume ask after a job and hold it or let it go on; stop is the EMERGENCY STOP: the job ends at once and the machine is latched, so that no program is taken until an administrator runs release; vector sends a drawing (SVG or DXF) as a vector job, with the paths in the millimetres of the machine and one operation for each layer of --config (cut or engrave, power, speed, passes: the limits of the machine of --config are checked, and the server makes its own program from the shapes, so the kerf, the tabs and the hatch are not applied); test-fire fires the laser for a moment at a low power with no job (--power-percent above 0 and up to the limit of the machine, --seconds from 0.01 to 10, 0.05 by default) to find the focus: it lights the laser, so it is not sent without --confirm-fire, and the server refuses it while a job runs, while an emergency stop holds the machine, with the enclosure open or the air assist off, and above its own limit of a test fire. The token travels in the clear over plain HTTP: use it on a network you trust or through a tunnel.
+align finds the positioning marks (the ones `marks` burns, with the same --size, --origin, --arm-mm, --margin-mm and --centre-cross or the [marks] of --config) in a picture of the bed taken from straight above, with the machine axes along the rows and the columns and the origin of the machine at the lower left corner, and says how far they lie from where they should be: the shift to add to the origin of the work (dx, dy, in mm) and the turn (degrees); it refuses a picture in which a mark is missing or further than --max-shift-mm, a turn over --max-angle-deg or marks that do not move as one piece. It reads a picture file, not a camera, and it has only been tried on pictures that --simulate draws (the marks moved by --shift and turned by --turn about the origin of the machine), never on a real camera. server works with the EH3D server (the [server] section of --config holds server_address, server_token, server_machine, server_timeout_s, server_retries and server_mdns; the token may also be in the variable PHOENIX_LASER_SERVER_TOKEN, and it is never printed): status says whether the server is there and whether an emergency stop holds the laser machine; send reads a G-code program, checks it against the limits of the machine of --config (the limit of power and of speed, the bed: a program that fails is not sent) and sends it as a job of the laser machine, which the server holds to its own limits, and --follow stays until the job ends (the job goes on without it when it is left); job, pause and resume ask after a job and hold it or let it go on; stop is the EMERGENCY STOP: the job ends at once and the machine is latched, so that no program is taken until an administrator runs release; vector sends a drawing (SVG or DXF) as a vector job, with the paths in the millimetres of the machine and one operation for each layer of --config (cut or engrave, power, speed, passes: the limits of the machine of --config are checked, and the server makes its own program from the shapes, so the kerf, the tabs and the hatch are not applied); test-fire fires the laser for a moment at a low power with no job (--power-percent above 0 and up to the limit of the machine, --seconds from 0.01 to 10, 0.05 by default) to find the focus: it lights the laser, so it is not sent without --confirm-fire, and the server refuses it while a job runs, while an emergency stop holds the machine, with the enclosure open or the air assist off, and above its own limit of a test fire. The token travels in the clear over plain HTTP: use it on a network you trust or through a tunnel.
 frame writes a program that traces the rectangle of the work with the laser OFF, to see where it will land: --size W,H from the corner --origin, or the box of what burns in --gcode PROGRAM.nc (its real place). --margin widens it. A --pilot power (a percent, at most max_pilot_percent of [frame], 5 unless the file says another, and at most the limit of power) turns the laser on weakly and only with --confirm-laser-on; the [frame] section of --config holds the usual values.
 preview reads a G-code program (this program's or another's) and says what it would do: moves, burnt and travelled length, the box, the powers, a time that counts the corners (--accel in mm/s2), with --laser-watts the energy that the program burns (the power of each move as a part of the full power --smax, over the time it burns) and its mean power, and what looks dangerous (the laser on during a rapid move, a burning move with no feed, S above --smax, work outside --bed, no end); with OUT.svg it also draws the path. It only reads text.
 verify reads a G-code program as text (it never runs it) and says its SHA-256, what it does and whether it passes: under the limit of power and of speed, inside the bed (--overscan-mm lets the head go that far past the bed with the laser off, as the overscan of another program does; burning outside the bed always fails, and [verify] overscan_mm of --config sets the same), with the laser off during every rapid move and a feed on every burning move; --expect-sha256 HASH ties the check to a program that was authorised: when the SHA-256 of the file is not that one (64 hex digits) the program fails, so a program that was changed after it was looked at is not run by mistake; --json gives the report for another program to keep, and the exit code is 1 when it fails.
@@ -1142,6 +1145,143 @@ fn follow_to_end(
     Ok(())
 }
 
+/// `align`: where the positioning marks lie in a picture of the bed, or the picture a simulated camera would take of them.
+fn align_job(mut args: Vec<String>) -> Result<(), String> {
+    let config = flag(&mut args, "--config")?;
+    let mut settings = match &config {
+        Some(path) => vconfig::load(Path::new(path))?,
+        None => Settings::default(),
+    };
+    take_profile(&mut args, &mut settings, config.is_some())?;
+    let mut k = settings.marks;
+    let mut origin = settings.machine.origin;
+    let size = flag(&mut args, "--size")?.ok_or("align needs --size W,H")?;
+    let size = list(&size, "--size")?;
+    if size.len() != 2 {
+        return Err("--size needs W,H".into());
+    }
+    let px_per_mm = num(
+        &flag(&mut args, "--px-per-mm")?.ok_or("align needs --px-per-mm S")?,
+        "--px-per-mm",
+    )?;
+    if let Some(v) = flag(&mut args, "--arm-mm")? {
+        k.arm_mm = num(&v, "--arm-mm")?;
+    }
+    if let Some(v) = flag(&mut args, "--margin-mm")? {
+        k.margin_mm = num(&v, "--margin-mm")?;
+    }
+    if let Some(v) = flag(&mut args, "--origin")? {
+        let o = list(&v, "--origin")?;
+        if o.len() != 2 {
+            return Err("--origin needs X,Y".into());
+        }
+        origin = (o[0], o[1]);
+    }
+    let (on, off) = (
+        switch(&mut args, "--centre-cross"),
+        switch(&mut args, "--no-centre-cross"),
+    );
+    if on && off {
+        return Err("--centre-cross and --no-centre-cross cannot be given together".into());
+    }
+    if on {
+        k.centre_cross = true;
+    } else if off {
+        k.centre_cross = false;
+    }
+    let strokes = frame::marks_strokes((size[0], size[1]), origin, &k)?;
+    if let Some(out) = flag(&mut args, "--simulate")? {
+        let shift = match flag(&mut args, "--shift")? {
+            Some(v) => {
+                let s = list(&v, "--shift")?;
+                if s.len() != 2 {
+                    return Err("--shift needs DX,DY".into());
+                }
+                (s[0], s[1])
+            }
+            None => (0.0, 0.0),
+        };
+        let turn = match flag(&mut args, "--turn")? {
+            Some(v) => num(&v, "--turn")?,
+            None => 0.0,
+        };
+        // the picture covers the bed, or the marks and a margin of 10 mm when the bed is not known
+        let (w_mm, h_mm) = settings.machine.bed_mm.unwrap_or((
+            origin.0 + size[0] + k.margin_mm + 10.0,
+            origin.1 + size[1] + k.margin_mm + 10.0,
+        ));
+        let (w_px, h_px) = match flag(&mut args, "--picture-px")? {
+            Some(v) => {
+                let p = list(&v, "--picture-px")?;
+                if p.len() != 2 || p.iter().any(|x| x.fract() != 0.0 || *x < 1.0) {
+                    return Err("--picture-px needs W,H in whole pixels".into());
+                }
+                (p[0] as usize, p[1] as usize)
+            }
+            None => (
+                (w_mm * px_per_mm).ceil().max(1.0) as usize,
+                (h_mm * px_per_mm).ceil().max(1.0) as usize,
+            ),
+        };
+        finish(&args, 0)?;
+        if config
+            .as_deref()
+            .is_some_and(|c| same_file(Path::new(c), Path::new(&out)))
+        {
+            return Err(format!(
+                "{out}: the output would be written over the settings it is made from"
+            ));
+        }
+        let mut cam = register::Camera::new(px_per_mm, w_px, h_px);
+        cam.dx_mm = shift.0;
+        cam.dy_mm = shift.1;
+        cam.angle_deg = turn;
+        let img = register::simulate(&strokes, &cam)?;
+        write_atomic_bytes(Path::new(&out), &register::to_pgm(&img))?;
+        println!(
+            "wrote {out}: a simulated picture of {w_px} x {h_px} pixels, {px_per_mm} px/mm, the marks moved by {},{} mm and turned by {turn} degrees",
+            shift.0, shift.1
+        );
+        return Ok(());
+    }
+    let mut search = register::Search::new(px_per_mm);
+    if let Some(v) = flag(&mut args, "--threshold")? {
+        let t = whole(&v, "--threshold")?;
+        search.threshold = u8::try_from(t).map_err(|_| "--threshold is from 0 to 255")?;
+    }
+    if let Some(v) = flag(&mut args, "--max-shift-mm")? {
+        search.max_shift_mm = num(&v, "--max-shift-mm")?;
+    }
+    if let Some(v) = flag(&mut args, "--max-angle-deg")? {
+        search.max_angle_deg = num(&v, "--max-angle-deg")?;
+    }
+    finish(&args, 1)?;
+    let path = args.first().ok_or("align needs a picture")?;
+    let meta = fs::metadata(path).map_err(|e| format!("{path}: {e}"))?;
+    if meta.len() > settings.read.limits.max_file_bytes as u64 {
+        return Err(format!(
+            "{path}: the file is larger than {} bytes (max_file_bytes)",
+            settings.read.limits.max_file_bytes
+        ));
+    }
+    let bytes = fs::read(path).map_err(|e| format!("{path}: {e}"))?;
+    let img = eh3d_phoenix_laser::image::from_bytes(&bytes).map_err(|e| format!("{path}: {e}"))?;
+    let r = register::register(&img, &strokes, &search).map_err(|e| format!("{path}: {e}"))?;
+    println!(
+        "found {} marks: they lie {:+.2}, {:+.2} mm from where they should be and are turned {:+.2} degrees (off by {:.2} mm at the most from one piece)",
+        r.found, r.dx_mm, r.dy_mm, r.angle_deg, r.residual_mm
+    );
+    println!(
+        "to put the work on the marks use --origin {},{}",
+        ((origin.0 + r.dx_mm) * 100.0).round() / 100.0,
+        ((origin.1 + r.dy_mm) * 100.0).round() / 100.0
+    );
+    if r.angle_deg.abs() > 0.1 {
+        println!("note: the material is turned; a shift alone does not put the work on the marks");
+    }
+    Ok(())
+}
+
 /// `qr`: some data burnt as a QR code, filling its dark modules.
 fn qr_job(mut args: Vec<String>) -> Result<(), String> {
     let config = flag(&mut args, "--config")?;
@@ -1552,6 +1692,7 @@ fn run(mut args: Vec<String>) -> Result<(), String> {
         "qr" => qr_job(args),
         "barcode" => barcode_job(args),
         "marks" => marks_job(args),
+        "align" => align_job(args),
         "server" => server_job(args),
         "cut" => drawing_job(args, LayerMode::Cut),
         "vector" => drawing_job(args, LayerMode::Engrave),

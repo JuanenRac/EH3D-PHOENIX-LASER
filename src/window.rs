@@ -741,8 +741,13 @@ fn read_file(path: &Path) -> Result<Vec<u8>, String> {
 
 /// Written beside and renamed, so that a file is never left half written.
 pub fn write_atomic(path: &Path, text: &str) -> Result<(), String> {
+    write_atomic_bytes(path, text.as_bytes())
+}
+
+/// As `write_atomic`, for bytes that are not text (a picture).
+pub fn write_atomic_bytes(path: &Path, bytes: &[u8]) -> Result<(), String> {
     let tmp = PathBuf::from(format!("{}.tmp", path.display()));
-    std::fs::write(&tmp, text)
+    std::fs::write(&tmp, bytes)
         .and_then(|()| std::fs::rename(&tmp, path))
         .map_err(|e| {
             let _ = std::fs::remove_file(&tmp);
