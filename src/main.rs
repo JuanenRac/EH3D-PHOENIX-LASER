@@ -209,6 +209,10 @@ fn take_material(args: &mut Vec<String>) -> Result<Option<(Material, String)>, S
             lib.names().join(", ")
         )
     })?;
+    // a material that says it was never tried is used, but the person is told
+    if let Some(note) = found.trust_note() {
+        eprintln!("note: {note}");
+    }
     Ok(Some((found.clone(), file)))
 }
 

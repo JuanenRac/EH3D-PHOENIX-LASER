@@ -46,6 +46,12 @@ pub struct Material {
     pub brightness: Option<f64>,
     pub invert: Option<bool>,
     pub auto_level: Option<bool>,
+    /// Whether a person has tried the values on the material and machine they are for (`verified` in the file): `Some(false)` says they are only a place to start from, `None` says nothing.
+    pub verified: Option<bool>,
+    /// The most power (a percent of full power) this material may be burnt at (`max_power`): a library whose own `power` is over it is an error, and so is a program that asks for more.
+    pub max_power: Option<f64>,
+    /// The most speed (mm/min) this material may be burnt at (`max_speed`).
+    pub max_speed: Option<f64>,
 }
 
 /// The level of the threshold when a material asks for it and does not say which.
@@ -88,6 +94,37 @@ impl Material {
         t.auto_level = self.auto_level.unwrap_or(t.auto_level);
     }
 
+    /// A sentence to show when the material is used and its values were never tried (`verified = off`); nothing for a material that is verified or that does not say.
+    pub fn trust_note(&self) -> Option<String> {
+        (self.verified == Some(false)).then(|| {
+            format!(
+                "the material '{}' is not verified: its values are a place to start from, so try them on a scrap of the material (phoenix-laser calibrate) before a real job",
+                self.name
+            )
+        })
+    }
+
+    /// Whether the material keeps to its own limits: the power and the speed it sets, and the ones it is given, may not be over its `max_power` and `max_speed`. `what` names where the value comes from.
+    pub fn check_limits(&self, power: Option<f64>, speed: Option<f64>) -> Result<(), String> {
+        if let (Some(p), Some(cap)) = (power, self.max_power) {
+            if p > cap {
+                return Err(format!(
+                    "the power {p} % is more than the max_power of the material '{}', {cap} %",
+                    self.name
+                ));
+            }
+        }
+        if let (Some(s), Some(cap)) = (speed, self.max_speed) {
+            if s > cap {
+                return Err(format!(
+                    "the speed {s} mm/min is more than the max_speed of the material '{}', {cap} mm/min",
+                    self.name
+                ));
+            }
+        }
+        Ok(())
+    }
+
     /// One line with what the material says, for the list of a library.
     pub fn describe(&self) -> String {
         let mut parts: Vec<String> = Vec::new();
@@ -120,6 +157,11 @@ impl Material {
         };
         if !self.note.is_empty() {
             line.push_str(&format!(" ({})", self.note));
+        }
+        match self.verified {
+            Some(true) => line.push_str(" [verified]"),
+            Some(false) => line.push_str(" [not verified]"),
+            None => {}
         }
         line
     }
@@ -217,6 +259,9 @@ fn set(m: &mut Material, key: &str, value: &str) -> Result<(), String> {
         "brightness" => m.brightness = Some(ranged(value, "brightness", -100.0, 100.0)?),
         "invert" => m.invert = Some(switch(value)?),
         "auto_level" => m.auto_level = Some(switch(value)?),
+        "verified" => m.verified = Some(switch(value)?),
+        "max_power" => m.max_power = Some(ranged(value, "max_power", 0.001, 100.0)?),
+        "max_speed" => m.max_speed = Some(ranged(value, "max_speed", 1.0, 30_000.0)?),
         _ => return Err(format!("'{key}' is not a setting of a material")),
     }
     Ok(())
@@ -269,6 +314,9 @@ pub fn parse(text: &str) -> Result<Library, String> {
             ));
         };
         set(current, key.trim(), value).map_err(|e| format!("line {line}: {e}"))?;
+    }
+    for m in &lib.materials {
+        m.check_limits(m.power, m.speed)?;
     }
     Ok(lib)
 }
@@ -363,10 +411,19 @@ pub fn render(m: &Material) -> String {
     if !m.note.is_empty() {
         out.push_str(&format!("note = {}\n", m.note));
     }
+    if let Some(v) = m.verified {
+        out.push_str(&format!("verified = {}\n", word(v)));
+    }
     for key in KEYS {
         if let Some(v) = value_of(m, key) {
             out.push_str(&format!("{key} = {v}\n"));
         }
+    }
+    if let Some(v) = m.max_power {
+        out.push_str(&format!("max_power = {v}\n"));
+    }
+    if let Some(v) = m.max_speed {
+        out.push_str(&format!("max_speed = {v}\n"));
     }
     out
 }
@@ -691,6 +748,108 @@ hatch_cross = twice
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    #[test]
+    fn a_material_says_whether_it_was_verified_and_how_far_it_may_be_pushed() {
+        let lib = parse(
+            "[material a]\nverified = off\nmax_power = 40\nmax_speed = 3000\npower = 30\nspeed = 2000\n[material b]\nverified = on\n[material c]\npower = 10\n",
+        )
+        .unwrap();
+        let a = lib.find("a").unwrap();
+        assert_eq!(a.verified, Some(false));
+        assert_eq!((a.max_power, a.max_speed), (Some(40.0), Some(3000.0)));
+        assert_eq!(lib.find("b").unwrap().verified, Some(true));
+        assert_eq!(lib.find("c").unwrap().verified, None);
+        // what the list shows
+        assert!(a.describe().ends_with("[not verified]"), "{}", a.describe());
+        assert!(lib.find("b").unwrap().describe().ends_with("[verified]"));
+        assert!(!lib.find("c").unwrap().describe().contains("verified"));
+        // only a material that says it was not verified warns when it is used
+        assert!(a
+            .trust_note()
+            .is_some_and(|n| n.contains("not verified") && n.contains("'a'")));
+        assert_eq!(lib.find("b").unwrap().trust_note(), None);
+        assert_eq!(lib.find("c").unwrap().trust_note(), None);
+    }
+
+    #[test]
+    fn a_material_whose_power_or_speed_is_over_its_own_limit_is_refused_when_the_library_is_read() {
+        for (text, reason) in [
+            ("[material a]\npower = 50\nmax_power = 40\n", "max_power"),
+            ("[material a]\nmax_power = 40\npower = 40.5\n", "max_power"),
+            (
+                "[material a]\nspeed = 3001\nmax_speed = 3000\n",
+                "max_speed",
+            ),
+            ("[material a]\nmax_power = 0\n", "max_power is 0"),
+            ("[material a]\nmax_speed = 30001\n", "max_speed"),
+            ("[material a]\nverified = perhaps\n", "on or off"),
+        ] {
+            let e = parse(text).unwrap_err();
+            assert!(e.contains(reason), "{text:?}: {e}");
+        }
+        assert!(parse(
+            "[material a]\npower = 40\nmax_power = 40\nspeed = 3000\nmax_speed = 3000\n"
+        )
+        .is_ok());
+        // a material that sets no power has nothing to compare, and the limit holds for a power it is given
+        let lib = parse("[material a]\nmax_power = 40\nmax_speed = 1000\n").unwrap();
+        let a = lib.find("a").unwrap();
+        assert!(a.check_limits(Some(40.0), Some(1000.0)).is_ok());
+        assert!(a.check_limits(None, None).is_ok());
+        assert!(a
+            .check_limits(Some(41.0), None)
+            .unwrap_err()
+            .contains("max_power"));
+        assert!(a
+            .check_limits(None, Some(1001.0))
+            .unwrap_err()
+            .contains("max_speed"));
+    }
+
+    #[test]
+    fn the_marks_of_verification_and_the_limits_are_written_back_and_kept_when_a_material_is_edited(
+    ) {
+        let m = Material {
+            name: "x".to_string(),
+            note: "start".to_string(),
+            power: Some(20.0),
+            verified: Some(false),
+            max_power: Some(30.0),
+            max_speed: Some(2500.0),
+            ..Material::default()
+        };
+        let text = render(&m);
+        assert_eq!(text, "[material x]\nnote = start\nverified = off\npower = 20\nmax_power = 30\nmax_speed = 2500\n");
+        assert_eq!(parse(&text).unwrap().materials, vec![m.clone()]);
+        // put in a library with another material, nothing else changes
+        let file = "# mine\n[material y]\npower = 5\n";
+        let added = upsert_text(file, None, &m).unwrap();
+        assert!(added.starts_with(file) && added.contains("verified = off"));
+        assert_eq!(parse(&added).unwrap().find("x"), Some(&m));
+    }
+
+    #[test]
+    fn the_starter_library_is_all_unverified_and_keeps_to_its_own_limits() {
+        let text = std::fs::read_to_string(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/materials-starter.cfg"),
+        )
+        .unwrap();
+        let lib = parse(&text).unwrap();
+        assert!(lib.materials.len() >= 6, "{}", lib.materials.len());
+        for m in &lib.materials {
+            assert_eq!(m.verified, Some(false), "{}", m.name);
+            assert!(m.note.to_lowercase().contains("start"), "{}", m.name);
+            // a place to start from has a ceiling of its own, and it is the power of a weak laser that most hold to
+            assert!(m.max_power.is_some_and(|p| p <= 60.0), "{}", m.name);
+            assert!(m.power.is_some() && m.speed.is_some(), "{}", m.name);
+            assert!(m.trust_note().is_some());
+        }
+        // no name twice (the reader refuses it) and no value copied as a decimal table: every power is a round number
+        for m in &lib.materials {
+            assert_eq!(m.power.unwrap().fract(), 0.0, "{}", m.name);
+        }
+    }
+
     fn full() -> Material {
         Material {
             name: "Birch 3 mm cut".to_string(),
@@ -712,6 +871,9 @@ hatch_cross = twice
             brightness: Some(5.0),
             invert: Some(false),
             auto_level: Some(true),
+            verified: None,
+            max_power: None,
+            max_speed: None,
         }
     }
 

@@ -20,6 +20,10 @@ Every key is optional, and a command takes from a material only what it says. Th
 | `threshold` | 0 to 255 | pictures | the level of `dither = threshold` (128 when it is not said) |
 | `gamma`, `contrast`, `brightness` | 0.1 to 10, -100 to 100, -100 to 100 | pictures | the tone curve (see `phoenix-laser help`) |
 | `invert`, `auto_level` | `on` / `off` | pictures | the tone curve |
+| `verified` | `on` / `off` | all | whether a person tried the values on their machine: `off` says they are only a place to start from, and using such a material prints a note; a material that does not say is left unmarked |
+| `max_power`, `max_speed` | 0.001 to 100, 1 to 30000 | all | the ceiling of this material: a library whose `power` or `speed` is over it is refused. The window keeps `verified` and these two when a material is edited, though it has no box for them |
+
+`examples/materials-starter.cfg` is a library of seven places to start from for a weak diode laser, every one marked `verified = off` and with a ceiling of its own: the values are round numbers from general experience, not copied from any table, and nobody has tried them on a real machine. Test each on a scrap with `calibrate`, write what works for you in your own library and mark it `verified = on`.
 
 The library is read as a whole, so a line that is not understood, a key that is not known, a value out of its range, a name used twice or a file larger than 1 MiB is an error that names the line. The values are the ones the person found for their own machine: the program knows no material.
 

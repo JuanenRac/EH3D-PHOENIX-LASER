@@ -2300,6 +2300,16 @@ impl Window {
             ..Material::default()
         };
         materials::check_name(&m.name)?;
+        // what the boxes do not show (whether it was verified and its own limits) stays as the file has it
+        if let Some(old) = d
+            .original
+            .as_deref()
+            .and_then(|n| self.materials.as_ref().and_then(|l| l.find(n)))
+        {
+            m.verified = old.verified;
+            m.max_power = old.max_power;
+            m.max_speed = old.max_speed;
+        }
         materials::set_value(&mut m, "note", &d.note).map_err(|e| format!("note: {e}"))?;
         for (key, text) in materials::KEYS.iter().zip(&d.values) {
             if !text.trim().is_empty() {
@@ -5941,6 +5951,33 @@ hatch_cross = on
             w.status.text(Lang::Pt),
             "Material Birch photo 2 guardado em m.cfg"
         );
+    }
+
+    #[test]
+    fn editing_a_material_keeps_its_verified_mark_and_its_own_limits_and_the_limits_still_hold() {
+        let s = Scratch::new("mat-marks");
+        let lib = s.write(
+            "m.cfg",
+            "[material Start]\nnote = a place to start\nverified = off\npower = 20\nspeed = 1000\nmax_power = 30\nmax_speed = 2000\n",
+        );
+        let mut w = Window::new(Lang::En);
+        assert!(w.load_materials(&lib));
+        assert!(w.material_edit("start"));
+        w.set_draft_value(draft_index("power"), "25".to_string());
+        assert!(w.material_save());
+        let text = fs::read_to_string(&lib).unwrap();
+        assert_eq!(
+            text,
+            "[material Start]\nnote = a place to start\nverified = off\npower = 25\nspeed = 1000\nmax_power = 30\nmax_speed = 2000\n"
+        );
+        let m = w.materials.as_ref().unwrap().find("Start").unwrap();
+        assert_eq!(m.verified, Some(false));
+        assert_eq!(m.max_power, Some(30.0));
+        // a power over the ceiling of the material is refused and the file stays
+        assert!(w.material_edit("Start"));
+        w.set_draft_value(draft_index("power"), "31".to_string());
+        assert!(!w.material_save());
+        assert_eq!(fs::read_to_string(&lib).unwrap(), text);
     }
 
     #[test]
