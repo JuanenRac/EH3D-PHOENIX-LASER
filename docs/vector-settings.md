@@ -140,6 +140,8 @@ the settings file it is made from.
 
 The keys of `[machine]` are `s_max`, `overscan_mm`, `rapid_mm_min`, `laser_watts`, `origin_x`, `origin_y`, `focus_z_mm`, `bed_x_mm`, `bed_y_mm`, `max_passes`, `max_power_percent`, `max_speed_mm_min` and `profile`.
 
+In the window, a box holds `laser_watts` (the settings file and a machine profile fill it, and 0 means it is not known): the preview of what the window works out or opens then tells the energy that the program burns and its mean power, as `phoenix-laser preview --laser-watts` does.
+
 ### `[profile NAME]`
 
 A person with two machines, or a laser module that is changed for another, keeps one profile for each in the same file. A profile holds the travel of the machine, its limits and its full-power value; what it leaves out stays as `[machine]` says. The profile that is chosen (`profile = NAME` in `[machine]`, or `--profile NAME` on the command line, which wins) is the machine: its values win over `[machine]`, and the options of the command line (`--smax`, `--bed`, `--max-power`...) win over both. The name is not case sensitive and may have spaces. The limits of a profile hold over everything, so a `[defaults]` or a `[layer NAME]` that asks for more power or speed than the profile allows is an error.
@@ -185,6 +187,8 @@ The focus test (`phoenix-laser focus`): short lines side by side, each burnt wit
 The keys of `[focus]` are `z_start_mm`, `z_step_mm`, `steps`, `length_mm`, `spacing_mm`, `feed_mm_min` and `power_percent`.
 
 `--powers P1,P2,...` (from 1 to 10 powers, as percents of full power) makes a focus grid instead of the test of one power: the same lines once for each power, side by side with a column for each (`spacing_mm` apart, in the order given) and a row for each height, so the power that burns the thinnest line at the height of the focus can be read off. Each power must be more than 0 up to 100, at least one step of `S` and at most the limit of power of the machine, and `--powers` cannot be given together with `--power`; the other keys of `[focus]` work as for the test.
+
+In the window, the focus mode has a box for the powers of the grid: with powers in it the grid is burnt and the box of the single `power_percent` is not used, and the powers are held to the same rules as in the command (more than 0 up to 100, under the limit of power, from 1 to 10 of them).
 
 ### `[trace]`
 
@@ -315,6 +319,8 @@ Data that cannot be written is refused, never cut down: a byte that is not a pri
 
 The keys of `[barcode]` are `module_mm`, `height_mm`, `line_mm`, `power_percent`, `speed_mm_min`, `passes`, `max_chars`, `max_width_mm`, `max_lines`, `max_minutes` and `mirror`.
 
+In the window, the barcode mode has a box for the data, a switch for `mirror` and one box for each of the other keys (a file of settings fills them); the barcode is worked out with the same function as the command, from the origin of the machine, and is refused for the same reasons, with the status line naming the box or the reason.
+
 ### `[marks]`
 
 Positioning marks burnt with a low power (`phoenix-laser marks OUT.nc --size W,H`): an L at each corner of the rectangle of the work, and a cross in the middle when `centre_cross` is on, so that the material can be put back in the same place after it is taken out and a second job can be lined up with the first. The rectangle starts at `--origin X,Y` (the machine origin otherwise) and is `W` by `H` mm; the marks lie on its edges, or `margin_mm` outside of them. Unlike the frame, which is traced with the laser off, the marks are burnt: they obey the limits of power and of speed of the machine (`--max-power`, `--max-speed`) and are refused when they would go outside of the bed (`--bed X,Y` or the machine of the file) or when an arm is longer than half a side of the rectangle that the marks go round. The options `--arm-mm`, `--margin-mm`, `--power`, `--feed`, `--passes` and `--centre-cross` (and `--no-centre-cross`) take the place of the keys with the same meaning.
@@ -329,6 +335,8 @@ Positioning marks burnt with a low power (`phoenix-laser marks OUT.nc --size W,H
 | `centre_cross` | off | `on` burns a cross in the middle of the rectangle too, with arms half as long as an arm of an L |
 
 The keys of `[marks]` are `arm_mm`, `margin_mm`, `power_percent`, `speed_mm_min`, `passes` and `centre_cross`.
+
+In the window, the marks mode has boxes for the size of the rectangle (50 x 50 mm until they are changed), one box for each key and a switch for `centre_cross`; the lower left corner of the rectangle is the origin of the machine, and the marks are refused for the same reasons as by the command.
 
 ### `[defaults]` and `[layer NAME]`
 
