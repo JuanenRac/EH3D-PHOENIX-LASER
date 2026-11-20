@@ -8,6 +8,7 @@ pub use eh3d_image as image;
 pub mod barcode;
 pub mod browse;
 pub mod calibrate;
+pub mod contract;
 pub mod cut;
 pub mod dither;
 pub mod dxf;

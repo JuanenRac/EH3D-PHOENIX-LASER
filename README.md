@@ -178,6 +178,7 @@ phoenix-laser frame OUT.nc --size W,H | --gcode PROGRAM.nc [--origin X,Y] [--mar
               [--pilot P --confirm-laser-on] [--max-power P] [--max-speed MM/MIN] [--config FILE] [--profile NAME]
 phoenix-laser verify PROGRAM.nc [--config FILE] [--profile NAME] [--smax N] [--max-power P] [--max-speed MM/MIN] [--bed X,Y] [--overscan-mm MM] [--accel 1000] [--expect-sha256 HASH] [--json]
 phoenix-laser report PROGRAM.nc [--config FILE] [--profile NAME] [--lang CODE] [--material NAME --materials FILE]
+phoenix-laser settings [--json]
 phoenix-laser preview PROGRAM.nc [OUT.svg] [--accel 1000] [--rapid 6000] [--smax N] [--laser-watts W] [--bed X,Y] [--width-px 900] [--config FILE] [--profile NAME]
 phoenix-laser align PICTURE.pgm|png --size W,H --px-per-mm S [--origin X,Y] [--arm-mm 5] [--margin-mm 0] [--centre-cross|--no-centre-cross] [--threshold 128] [--max-shift-mm 20] [--max-angle-deg 5]
               [--config FILE] [--profile NAME] | --simulate OUT.pgm --size W,H --px-per-mm S [--shift DX,DY] [--turn DEG] [--picture-px W,H]
@@ -192,7 +193,7 @@ phoenix-laser [gui] [FILE]                       the window (a build with --feat
 
 ## ⚙️ Configuration
 
-The engraving of a picture is set with arguments of the command line (see Interfaces) and every default is written in the help of the command (`phoenix-laser help`). Cutting and engraving a drawing is set with a settings file (`--config FILE`, or "Load settings" in the window): the limits of the readers, how a file is read, the order of the cuts, the machine and, for each layer or colour, the mode (cut, engrave or skip), the power, the speed, the passes, the step of the focus, the width of the beam and its side, the bridges and the hatch. Every key, its default and its range are in [docs/vector-settings.md](docs/vector-settings.md) and an example is in `examples/plate.cfg`; a key that is not known or a value out of range is an error that names its line. The fixed limits of the picture reader live in the code as named constants and are covered by tests.
+The engraving of a picture is set with arguments of the command line (see Interfaces) and every default is written in the help of the command (`phoenix-laser help`). Cutting and engraving a drawing is set with a settings file (`--config FILE`, or "Load settings" in the window): the limits of the readers, how a file is read, the order of the cuts, the machine and, for each layer or colour, the mode (cut, engrave or skip), the power, the speed, the passes, the step of the focus, the width of the beam and its side, the bridges and the hatch. Every key, its default and its range are in [docs/vector-settings.md](docs/vector-settings.md) and an example is in `examples/plate.cfg`; a key that is not known or a value out of range is an error that names its line. The fixed limits of the picture reader live in the code as named constants and are covered by tests. `phoenix-laser settings` lists every setting (section, key, kind of value, default and whether it is a safety setting) as text, or as JSON with `--json`, for another program to read.
 
 ## 🚀 Quick start
 

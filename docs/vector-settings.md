@@ -20,6 +20,8 @@ key = value
 Sections: `[limits]`, `[read]`, `[order]`, `[offset]`, `[hatch]`, `[machine]`, `[frame]`, `[focus]`, `[trace]`, `[tone]`, `[verify]`, `[calibrate]`, `[text]`, `[qr]`, `[send]`, `[interlocks]`, `[defaults]`, one `[layer NAME]` for each layer or colour, one `[profile NAME]` for each machine and one `[zone NAME]` for each forbidden zone of the bed. `[defaults]` is what a layer gets that the file
 does not name, and also what every `[layer NAME]` starts from (wherever in the file `[defaults]` is written). The switches are `on` and `off`.
 
+`phoenix-laser settings` lists every key of this file and of a library of materials (section, key, kind of value, default and whether it is a safety setting), as text or as JSON with `--json`; a test keeps that list equal to the keys the reader takes and to the defaults of the tables below.
+
 ## What a layer is
 
 The shapes of a drawing are grouped, and each group has its own settings:

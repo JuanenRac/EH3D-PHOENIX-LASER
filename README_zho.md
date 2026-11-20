@@ -178,6 +178,7 @@ phoenix-laser frame OUT.nc --size W,H | --gcode PROGRAM.nc [--origin X,Y] [--mar
               [--pilot P --confirm-laser-on] [--max-power P] [--max-speed MM/MIN] [--config FILE] [--profile NAME]
 phoenix-laser verify PROGRAM.nc [--config FILE] [--profile NAME] [--smax N] [--max-power P] [--max-speed MM/MIN] [--bed X,Y] [--overscan-mm MM] [--accel 1000] [--expect-sha256 HASH] [--json]
 phoenix-laser report PROGRAM.nc [--config FILE] [--profile NAME] [--lang CODE] [--material NAME --materials FILE]
+phoenix-laser settings [--json]
 phoenix-laser preview PROGRAM.nc [OUT.svg] [--accel 1000] [--rapid 6000] [--smax N] [--laser-watts W] [--bed X,Y] [--width-px 900] [--config FILE] [--profile NAME]
 phoenix-laser align PICTURE.pgm|png --size W,H --px-per-mm S [--origin X,Y] [--arm-mm 5] [--margin-mm 0] [--centre-cross|--no-centre-cross] [--threshold 128] [--max-shift-mm 20] [--max-angle-deg 5]
               [--config FILE] [--profile NAME] | --simulate OUT.pgm --size W,H --px-per-mm S [--shift DX,DY] [--turn DEG] [--picture-px W,H]
@@ -192,7 +193,7 @@ phoenix-laser [gui] [FILE]                       the window (a build with --feat
 
 ## ⚙️ 配置
 
-图像的雕刻通过命令行参数设置（见“接口”），每个默认值都写在命令的帮助里（`phoenix-laser help`）。图纸的切割和雕刻通过设置文件设置（`--config FILE`，或窗口中的“加载设置”）：读取器的限制、文件的读取方式、切割顺序、机器，以及每个图层或颜色的模式（切割、雕刻或跳过）、功率、速度、遍数、焦点步进、光束宽度及其位置、连接桥和填充。每个键、它的默认值和范围都在 [docs/vector-settings.md](docs/vector-settings.md) 中，示例见 `examples/plate.cfg`；未知的键或超出范围的值会产生指明所在行的错误。图像读取器的固定限制以具名常量的形式放在代码里，并有测试覆盖。
+图像的雕刻通过命令行参数设置（见“接口”），每个默认值都写在命令的帮助里（`phoenix-laser help`）。图纸的切割和雕刻通过设置文件设置（`--config FILE`，或窗口中的“加载设置”）：读取器的限制、文件的读取方式、切割顺序、机器，以及每个图层或颜色的模式（切割、雕刻或跳过）、功率、速度、遍数、焦点步进、光束宽度及其位置、连接桥和填充。每个键、它的默认值和范围都在 [docs/vector-settings.md](docs/vector-settings.md) 中，示例见 `examples/plate.cfg`；未知的键或超出范围的值会产生指明所在行的错误。图像读取器的固定限制以具名常量的形式放在代码里，并有测试覆盖。`phoenix-laser settings` 以文本或（加 `--json`）JSON 形式列出每一项设置（节、键、值的类型、默认值以及是否为安全设置），供其他程序读取。
 
 ## 🚀 快速开始
 

@@ -9,6 +9,7 @@ use eh3d_phoenix_laser::barcode;
 use eh3d_phoenix_laser::calibrate::{
     focus_grid, focus_test, grid, labelled_grid, ladder, Grid, Labels,
 };
+use eh3d_phoenix_laser::contract;
 use eh3d_phoenix_laser::cut::{self, layer_times, layers as layer_list, plan, Plan};
 use eh3d_phoenix_laser::dither::{dither, Method};
 use eh3d_phoenix_laser::dxf::read_dxf;
@@ -78,6 +79,7 @@ const HELP: &str = "phoenix-laser: laser engraving from an image
   phoenix-laser preview PROGRAM.nc [OUT.svg] [--accel 1000] [--rapid 6000] [--smax N] [--laser-watts W] [--bed X,Y] [--width-px 900] [--config FILE] [--profile NAME]
   phoenix-laser verify PROGRAM.nc [--config FILE] [--profile NAME] [--smax N] [--max-power P] [--max-speed MM/MIN] [--bed X,Y] [--overscan-mm MM] [--accel 1000] [--expect-sha256 HASH] [--json]
   phoenix-laser report PROGRAM.nc [--config FILE] [--profile NAME] [--lang CODE] [--material NAME --materials FILE]
+  phoenix-laser settings [--json]
   phoenix-laser [gui] [FILE]                     the window (a build with --features gui): with no arguments, with a file or with gui it opens; the commands above never open it
   phoenix-laser gui [FILE] --shot OUT.png [--size WxH] [--theme forge|dark|light] [--wait N] [--window NAME] [--lang CODE] [--replace]   a picture of the window (a build with --features gui)
 
@@ -100,6 +102,7 @@ frame writes a program that traces the rectangle of the work with the laser OFF,
 preview reads a G-code program (this program's or another's) and says what it would do: moves, burnt and travelled length, the box, the powers, a time that counts the corners (--accel in mm/s2), with --laser-watts the energy that the program burns (the power of each move as a part of the full power --smax, over the time it burns) and its mean power, and what looks dangerous (the laser on during a rapid move, a burning move with no feed, S above --smax, work outside --bed, no end); with OUT.svg it also draws the path. It only reads text.
 verify reads a G-code program as text (it never runs it) and says its SHA-256, what it does and whether it passes: under the limit of power and of speed, inside the bed (--overscan-mm lets the head go that far past the bed with the laser off, as the overscan of another program does; burning outside the bed always fails, and [verify] overscan_mm of --config sets the same), with the laser off during every rapid move and a feed on every burning move; --expect-sha256 HASH ties the check to a program that was authorised: when the SHA-256 of the file is not that one (64 hex digits) the program fails, so a program that was changed after it was looked at is not run by mistake; --json gives the report for another program to keep, and the exit code is 1 when it fails.
 report is the check of verify written to be read before a job in one of eight languages (--lang en, es, de, fr, it, ja, zh or pt, the one of the system when it is not given): the SHA-256 of the file, the moves, the length burnt and the time, the box of the work, the highest power and speed against the limits, the energy when [machine] laser_watts is set, whether the material of --material was verified, how many forbidden zones were checked, what the interlocks say, the reasons of a failure (these in English, as verify gives them) and a verdict; it reads the file as text, runs nothing, and the exit code is 1 when the program fails.
+settings lists every setting of the program (the keys of the settings file and of a library of materials) with its section, the kind of value it takes, its default and whether it is a safety setting (a limit, a zone, an interlock, the token of the server), as lines of text or, with --json, as JSON for another program to read: it is the contract of the settings of this program, and a test keeps it equal to the keys the reader takes.
 calibrate with --material takes the powers and the feeds from the library: a ladder of --steps values (5) from --spread percent (40) below to the same above the power and the speed of the material, held between the limits and given once each, unless --powers or --feeds give a list; the power of each column is burnt below it and the feed of each row on its left, at the power and the speed of the material, so the squares can be read on the material: with --material they come by default and --no-labels takes them away, and --labels asks for them with lists too (--label-mm is the height of the figures; [calibrate] of --config holds the usual values, and also the lowest power and feed of the ladder, min_power_percent and min_feed_mm_min).
 --max-power is the limit of power, a percent of full power (100 when nothing says another): a program whose power is more than the limit is refused, never lowered. engrave and calibrate also read the limit and --smax from the [machine] section of the file of --config, and engrave the tone curve from its [tone] section (a material and the tone options win over it). --max-speed is the limit of speed (mm/min, 30000 when nothing says another) and works the same way: a feed over it is refused, never lowered.
 A [profile NAME] section of the file of --config describes a machine and laser (its travel, its limit of power and of speed, its S and its watts); --profile NAME (or profile = NAME in [machine]) makes it the machine, over [machine] and under the options of the command line.";
@@ -658,7 +661,9 @@ fn report_job(mut args: Vec<String>) -> Result<(), String> {
                 limits: &limits,
                 analysis: &analysis,
                 laser_watts: watts,
-                material: material.as_ref().map(|(mat, _)| (mat.name.as_str(), mat.verified)),
+                material: material
+                    .as_ref()
+                    .map(|(mat, _)| (mat.name.as_str(), mat.verified)),
                 zones: settings.zones.len(),
                 interlocks: &settings.interlocks,
             },
@@ -1861,6 +1866,19 @@ fn run(mut args: Vec<String>) -> Result<(), String> {
         "vector" => drawing_job(args, LayerMode::Engrave),
         "layers" => layers_job(args),
         "convert" => convert_job(args),
+        "settings" => {
+            let json = switch(&mut args, "--json");
+            finish(&args, 0)?;
+            print!(
+                "{}",
+                if json {
+                    contract::json()
+                } else {
+                    contract::text()
+                }
+            );
+            Ok(())
+        }
         "report" => report_job(args),
         "trace" => trace_job(args),
         "focus" => {

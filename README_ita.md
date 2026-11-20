@@ -178,6 +178,7 @@ phoenix-laser frame OUT.nc --size W,H | --gcode PROGRAM.nc [--origin X,Y] [--mar
               [--pilot P --confirm-laser-on] [--max-power P] [--max-speed MM/MIN] [--config FILE] [--profile NAME]
 phoenix-laser verify PROGRAM.nc [--config FILE] [--profile NAME] [--smax N] [--max-power P] [--max-speed MM/MIN] [--bed X,Y] [--overscan-mm MM] [--accel 1000] [--expect-sha256 HASH] [--json]
 phoenix-laser report PROGRAM.nc [--config FILE] [--profile NAME] [--lang CODE] [--material NAME --materials FILE]
+phoenix-laser settings [--json]
 phoenix-laser preview PROGRAM.nc [OUT.svg] [--accel 1000] [--rapid 6000] [--smax N] [--laser-watts W] [--bed X,Y] [--width-px 900] [--config FILE] [--profile NAME]
 phoenix-laser align PICTURE.pgm|png --size W,H --px-per-mm S [--origin X,Y] [--arm-mm 5] [--margin-mm 0] [--centre-cross|--no-centre-cross] [--threshold 128] [--max-shift-mm 20] [--max-angle-deg 5]
               [--config FILE] [--profile NAME] | --simulate OUT.pgm --size W,H --px-per-mm S [--shift DX,DY] [--turn DEG] [--picture-px W,H]
@@ -192,7 +193,7 @@ phoenix-laser [gui] [FILE]                       the window (a build with --feat
 
 ## ⚙️ Configurazione
 
-L'incisione di un'immagine si imposta con argomenti della riga di comando (vedi Interfacce) e ogni valore predefinito è scritto nella guida del comando (`phoenix-laser help`). Il taglio e l'incisione di un disegno si impostano con un file di impostazioni (`--config FILE`, o «Carica impostazioni» nella finestra): i limiti dei lettori, come si legge un file, l'ordine dei tagli, la macchina e, per ogni livello o colore, la modalità (tagliare, incidere o saltare), la potenza, la velocità, le passate, il passo del fuoco, la larghezza del fascio e il suo lato, i ponticelli e il tratteggio. Ogni chiave, il suo valore predefinito e il suo intervallo sono in [docs/vector-settings.md](docs/vector-settings.md) e un esempio è in `examples/plate.cfg`; una chiave sconosciuta o un valore fuori intervallo è un errore che nomina la sua riga. I limiti fissi del lettore di immagini sono costanti con nome nel codice e sono coperti da test.
+L'incisione di un'immagine si imposta con argomenti della riga di comando (vedi Interfacce) e ogni valore predefinito è scritto nella guida del comando (`phoenix-laser help`). Il taglio e l'incisione di un disegno si impostano con un file di impostazioni (`--config FILE`, o «Carica impostazioni» nella finestra): i limiti dei lettori, come si legge un file, l'ordine dei tagli, la macchina e, per ogni livello o colore, la modalità (tagliare, incidere o saltare), la potenza, la velocità, le passate, il passo del fuoco, la larghezza del fascio e il suo lato, i ponticelli e il tratteggio. Ogni chiave, il suo valore predefinito e il suo intervallo sono in [docs/vector-settings.md](docs/vector-settings.md) e un esempio è in `examples/plate.cfg`; una chiave sconosciuta o un valore fuori intervallo è un errore che nomina la sua riga. I limiti fissi del lettore di immagini sono costanti con nome nel codice e sono coperti da test. `phoenix-laser settings` elenca ogni impostazione (sezione, chiave, tipo di valore, valore predefinito e se è un'impostazione di sicurezza) come testo, o come JSON con `--json`, perché un altro programma possa leggerla.
 
 ## 🚀 Avvio rapido
 

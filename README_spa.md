@@ -178,6 +178,7 @@ phoenix-laser frame OUT.nc --size W,H | --gcode PROGRAM.nc [--origin X,Y] [--mar
               [--pilot P --confirm-laser-on] [--max-power P] [--max-speed MM/MIN] [--config FILE] [--profile NAME]
 phoenix-laser verify PROGRAM.nc [--config FILE] [--profile NAME] [--smax N] [--max-power P] [--max-speed MM/MIN] [--bed X,Y] [--overscan-mm MM] [--accel 1000] [--expect-sha256 HASH] [--json]
 phoenix-laser report PROGRAM.nc [--config FILE] [--profile NAME] [--lang CODE] [--material NAME --materials FILE]
+phoenix-laser settings [--json]
 phoenix-laser preview PROGRAM.nc [OUT.svg] [--accel 1000] [--rapid 6000] [--smax N] [--laser-watts W] [--bed X,Y] [--width-px 900] [--config FILE] [--profile NAME]
 phoenix-laser align PICTURE.pgm|png --size W,H --px-per-mm S [--origin X,Y] [--arm-mm 5] [--margin-mm 0] [--centre-cross|--no-centre-cross] [--threshold 128] [--max-shift-mm 20] [--max-angle-deg 5]
               [--config FILE] [--profile NAME] | --simulate OUT.pgm --size W,H --px-per-mm S [--shift DX,DY] [--turn DEG] [--picture-px W,H]
@@ -192,7 +193,7 @@ phoenix-laser [gui] [FILE]                       the window (a build with --feat
 
 ## ⚙️ Configuración
 
-El grabado de una imagen se ajusta con argumentos de la línea de comandos (véase Interfaces) y cada valor por defecto está escrito en la ayuda de la orden (`phoenix-laser help`). El corte y el grabado de un dibujo se ajustan con un fichero de ajustes (`--config FILE`, o «Cargar ajustes» en la ventana): los límites de los lectores, cómo se lee un fichero, el orden de los cortes, la máquina y, para cada capa o color, el modo (cortar, grabar u omitir), la potencia, la velocidad, las pasadas, el avance del foco, el ancho del haz y su lado, los puentes y el rayado. Cada clave, su valor por defecto y su rango están en [docs/vector-settings.md](docs/vector-settings.md) y hay un ejemplo en `examples/plate.cfg`; una clave desconocida o un valor fuera de rango es un error que nombra su línea. Los límites fijos del lector de imágenes están en el código como constantes con nombre y las pruebas los cubren.
+El grabado de una imagen se ajusta con argumentos de la línea de comandos (véase Interfaces) y cada valor por defecto está escrito en la ayuda de la orden (`phoenix-laser help`). El corte y el grabado de un dibujo se ajustan con un fichero de ajustes (`--config FILE`, o «Cargar ajustes» en la ventana): los límites de los lectores, cómo se lee un fichero, el orden de los cortes, la máquina y, para cada capa o color, el modo (cortar, grabar u omitir), la potencia, la velocidad, las pasadas, el avance del foco, el ancho del haz y su lado, los puentes y el rayado. Cada clave, su valor por defecto y su rango están en [docs/vector-settings.md](docs/vector-settings.md) y hay un ejemplo en `examples/plate.cfg`; una clave desconocida o un valor fuera de rango es un error que nombra su línea. Los límites fijos del lector de imágenes están en el código como constantes con nombre y las pruebas los cubren. `phoenix-laser settings` lista cada ajuste (sección, clave, tipo de valor, valor por defecto y si es un ajuste de seguridad) como texto, o como JSON con `--json`, para que otro programa lo lea.
 
 ## 🚀 Inicio rápido
 

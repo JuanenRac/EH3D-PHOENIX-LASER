@@ -121,10 +121,20 @@ fn the_report_is_written_in_the_language_asked_for_and_ends_with_the_exit_code_o
     let program = s.write("job.nc", PROGRAM);
     let (code, out, err) = run(&["report", &program, "--lang", "es"]);
     assert_eq!(code, Some(0), "{err}");
-    assert!(out.contains("Informe previo del trabajo") && out.contains("Programa: job.nc"), "{out}");
-    assert!(out.contains("SHA-256 del fichero:") && out.contains("VEREDICTO: el programa pasa"), "{out}");
+    assert!(
+        out.contains("Informe previo del trabajo") && out.contains("Programa: job.nc"),
+        "{out}"
+    );
+    assert!(
+        out.contains("SHA-256 del fichero:") && out.contains("VEREDICTO: el programa pasa"),
+        "{out}"
+    );
     for (lang, title, verdict) in [
-        ("en", "Report before the job", "the program passes the check"),
+        (
+            "en",
+            "Report before the job",
+            "the program passes the check",
+        ),
         ("de", "Bericht vor dem Auftrag", "hat die Prüfung bestanden"),
         ("fr", "Rapport avant le travail", "le programme réussit"),
         ("it", "Rapporto prima del lavoro", "supera il controllo"),
@@ -134,18 +144,30 @@ fn the_report_is_written_in_the_language_asked_for_and_ends_with_the_exit_code_o
     ] {
         let (code, out, _) = run(&["report", &program, "--lang", lang]);
         assert_eq!(code, Some(0), "{lang}");
-        assert!(out.contains(title) && out.contains(verdict), "{lang}: {out}");
+        assert!(
+            out.contains(title) && out.contains(verdict),
+            "{lang}: {out}"
+        );
     }
     // a program that fails is reported just the same, with the exit code of the check
-    let zones = s.write("zones.cfg", "[zone gate]\nx_mm = 10\ny_mm = -2\nwidth_mm = 5\nheight_mm = 4\nkind = no_burn\n");
+    let zones = s.write(
+        "zones.cfg",
+        "[zone gate]\nx_mm = 10\ny_mm = -2\nwidth_mm = 5\nheight_mm = 4\nkind = no_burn\n",
+    );
     let (code, out, _) = run(&["report", &program, "--config", &zones, "--lang", "pt"]);
     assert_eq!(code, Some(1));
-    assert!(out.contains("NÃO passa a verificação") && out.contains("forbidden zone gate"), "{out}");
+    assert!(
+        out.contains("NÃO passa a verificação") && out.contains("forbidden zone gate"),
+        "{out}"
+    );
     assert!(out.contains("Zonas proibidas verificadas: 1"), "{out}");
     // a wrong language, a missing file and a word too many
     let (code, _, err) = run(&["report", &program, "--lang", "xx"]);
     assert_eq!(code, Some(1));
-    assert!(err.contains("not one of en, es, de, fr, it, ja, zh or pt"), "{err}");
+    assert!(
+        err.contains("not one of en, es, de, fr, it, ja, zh or pt"),
+        "{err}"
+    );
     assert_eq!(run(&["report", &s.path("none.nc")]).0, Some(1));
     assert_eq!(run(&["report", &program, "extra"]).0, Some(1));
     assert_eq!(run(&["report"]).0, Some(1));
@@ -159,13 +181,63 @@ fn the_report_names_the_material_and_whether_it_was_verified() {
         "lib.cfg",
         "[material start]\nverified = off\npower = 20\n[material mine]\nverified = on\npower = 20\n",
     );
-    let (_, out, err) = run(&["report", &program, "--lang", "en", "--materials", &lib, "--material", "start"]);
+    let (_, out, err) = run(&[
+        "report",
+        &program,
+        "--lang",
+        "en",
+        "--materials",
+        &lib,
+        "--material",
+        "start",
+    ]);
     assert!(out.contains("Material start: NOT VERIFIED"), "{out}");
     assert!(err.contains("not verified"), "{err}");
-    let (_, out, _) = run(&["report", &program, "--lang", "en", "--materials", &lib, "--material", "mine"]);
+    let (_, out, _) = run(&[
+        "report",
+        &program,
+        "--lang",
+        "en",
+        "--materials",
+        &lib,
+        "--material",
+        "mine",
+    ]);
     assert!(out.contains("Material mine: verified"), "{out}");
     let (_, out, _) = run(&["report", &program, "--lang", "en"]);
     assert!(out.contains("Material: none was chosen"), "{out}");
+}
+
+#[test]
+fn settings_lists_every_setting_as_text_or_json_and_takes_nothing_else() {
+    let (code, text, _) = run(&["settings"]);
+    assert_eq!(code, Some(0));
+    assert!(
+        text.contains("send.max_power_percent  number  40  (safety)"),
+        "{text}"
+    );
+    assert!(
+        text.contains("interlocks.estop  word  released  (safety)"),
+        "{text}"
+    );
+    assert!(text.lines().last().unwrap().contains("settings,"), "{text}");
+    let (code, json, _) = run(&["settings", "--json"]);
+    assert_eq!(code, Some(0));
+    assert!(
+        json.starts_with("{\n  \"program\": \"phoenix-laser\""),
+        "{json}"
+    );
+    // as many objects as lines of the text, bar its last line
+    assert_eq!(
+        json.matches("\"section\":").count(),
+        text.lines().count() - 1
+    );
+    let (code, _, err) = run(&["settings", "--yaml"]);
+    assert_eq!(code, Some(1));
+    assert!(err.contains("unknown option"), "{err}");
+    let (code, _, err) = run(&["settings", "machine"]);
+    assert_eq!(code, Some(1));
+    assert!(err.contains("unexpected argument"), "{err}");
 }
 
 #[test]

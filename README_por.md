@@ -178,6 +178,7 @@ phoenix-laser frame OUT.nc --size W,H | --gcode PROGRAM.nc [--origin X,Y] [--mar
               [--pilot P --confirm-laser-on] [--max-power P] [--max-speed MM/MIN] [--config FILE] [--profile NAME]
 phoenix-laser verify PROGRAM.nc [--config FILE] [--profile NAME] [--smax N] [--max-power P] [--max-speed MM/MIN] [--bed X,Y] [--overscan-mm MM] [--accel 1000] [--expect-sha256 HASH] [--json]
 phoenix-laser report PROGRAM.nc [--config FILE] [--profile NAME] [--lang CODE] [--material NAME --materials FILE]
+phoenix-laser settings [--json]
 phoenix-laser preview PROGRAM.nc [OUT.svg] [--accel 1000] [--rapid 6000] [--smax N] [--laser-watts W] [--bed X,Y] [--width-px 900] [--config FILE] [--profile NAME]
 phoenix-laser align PICTURE.pgm|png --size W,H --px-per-mm S [--origin X,Y] [--arm-mm 5] [--margin-mm 0] [--centre-cross|--no-centre-cross] [--threshold 128] [--max-shift-mm 20] [--max-angle-deg 5]
               [--config FILE] [--profile NAME] | --simulate OUT.pgm --size W,H --px-per-mm S [--shift DX,DY] [--turn DEG] [--picture-px W,H]
@@ -192,7 +193,7 @@ phoenix-laser [gui] [FILE]                       the window (a build with --feat
 
 ## ⚙️ Configuração
 
-A gravação de uma imagem define-se com argumentos da linha de comandos (ver Interfaces) e cada valor por omissão está escrito na ajuda do comando (`phoenix-laser help`). O corte e a gravação de um desenho definem-se com um ficheiro de definições (`--config FILE`, ou «Carregar definições» na janela): os limites dos leitores, como se lê um ficheiro, a ordem dos cortes, a máquina e, para cada camada ou cor, o modo (cortar, gravar ou ignorar), a potência, a velocidade, as passagens, o avanço do foco, a largura do feixe e o seu lado, as pontes e a hachura. Cada chave, o seu valor por omissão e o seu intervalo estão em [docs/vector-settings.md](docs/vector-settings.md) e há um exemplo em `examples/plate.cfg`; uma chave desconhecida ou um valor fora do intervalo é um erro que nomeia a sua linha. Os limites fixos do leitor de imagens estão no código como constantes com nome e são cobertos por testes.
+A gravação de uma imagem define-se com argumentos da linha de comandos (ver Interfaces) e cada valor por omissão está escrito na ajuda do comando (`phoenix-laser help`). O corte e a gravação de um desenho definem-se com um ficheiro de definições (`--config FILE`, ou «Carregar definições» na janela): os limites dos leitores, como se lê um ficheiro, a ordem dos cortes, a máquina e, para cada camada ou cor, o modo (cortar, gravar ou ignorar), a potência, a velocidade, as passagens, o avanço do foco, a largura do feixe e o seu lado, as pontes e a hachura. Cada chave, o seu valor por omissão e o seu intervalo estão em [docs/vector-settings.md](docs/vector-settings.md) e há um exemplo em `examples/plate.cfg`; uma chave desconhecida ou um valor fora do intervalo é um erro que nomeia a sua linha. Os limites fixos do leitor de imagens estão no código como constantes com nome e são cobertos por testes. `phoenix-laser settings` lista cada definição (secção, chave, tipo de valor, valor por omissão e se é uma definição de segurança) como texto, ou como JSON com `--json`, para que outro programa a possa ler.
 
 ## 🚀 Início rápido
 

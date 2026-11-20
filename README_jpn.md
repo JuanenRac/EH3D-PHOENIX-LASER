@@ -178,6 +178,7 @@ phoenix-laser frame OUT.nc --size W,H | --gcode PROGRAM.nc [--origin X,Y] [--mar
               [--pilot P --confirm-laser-on] [--max-power P] [--max-speed MM/MIN] [--config FILE] [--profile NAME]
 phoenix-laser verify PROGRAM.nc [--config FILE] [--profile NAME] [--smax N] [--max-power P] [--max-speed MM/MIN] [--bed X,Y] [--overscan-mm MM] [--accel 1000] [--expect-sha256 HASH] [--json]
 phoenix-laser report PROGRAM.nc [--config FILE] [--profile NAME] [--lang CODE] [--material NAME --materials FILE]
+phoenix-laser settings [--json]
 phoenix-laser preview PROGRAM.nc [OUT.svg] [--accel 1000] [--rapid 6000] [--smax N] [--laser-watts W] [--bed X,Y] [--width-px 900] [--config FILE] [--profile NAME]
 phoenix-laser align PICTURE.pgm|png --size W,H --px-per-mm S [--origin X,Y] [--arm-mm 5] [--margin-mm 0] [--centre-cross|--no-centre-cross] [--threshold 128] [--max-shift-mm 20] [--max-angle-deg 5]
               [--config FILE] [--profile NAME] | --simulate OUT.pgm --size W,H --px-per-mm S [--shift DX,DY] [--turn DEG] [--picture-px W,H]
@@ -192,7 +193,7 @@ phoenix-laser [gui] [FILE]                       the window (a build with --feat
 
 ## ⚙️ 設定
 
-画像の彫刻はコマンドラインの引数で設定し（「インターフェース」を参照）、各既定値はコマンドのヘルプ（`phoenix-laser help`）に書かれています。図面の切断と彫刻は設定ファイル（`--config FILE`、またはウィンドウの「設定を読み込む」）で設定します。リーダーの上限、ファイルの読み方、切断の順序、機械、そして各レイヤーまたは色ごとのモード（切断・彫刻・除外）、出力、速度、パス数、焦点の移動量、ビーム幅とその側、タブ、ハッチです。すべてのキー、既定値、範囲は [docs/vector-settings.md](docs/vector-settings.md) にあり、例は `examples/plate.cfg` にあります。未知のキーや範囲外の値は、その行を示すエラーになります。画像リーダーの固定の上限は名前つき定数としてコードにあり、テストで確認されています。
+画像の彫刻はコマンドラインの引数で設定し（「インターフェース」を参照）、各既定値はコマンドのヘルプ（`phoenix-laser help`）に書かれています。図面の切断と彫刻は設定ファイル（`--config FILE`、またはウィンドウの「設定を読み込む」）で設定します。リーダーの上限、ファイルの読み方、切断の順序、機械、そして各レイヤーまたは色ごとのモード（切断・彫刻・除外）、出力、速度、パス数、焦点の移動量、ビーム幅とその側、タブ、ハッチです。すべてのキー、既定値、範囲は [docs/vector-settings.md](docs/vector-settings.md) にあり、例は `examples/plate.cfg` にあります。未知のキーや範囲外の値は、その行を示すエラーになります。画像リーダーの固定の上限は名前つき定数としてコードにあり、テストで確認されています。`phoenix-laser settings` はすべての設定（セクション、キー、値の種類、既定値、安全設定かどうか）をテキストで、または `--json` で JSON として一覧表示し、他のプログラムが読めるようにします。
 
 ## 🚀 クイックスタート
 
