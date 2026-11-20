@@ -3,6 +3,7 @@
 
 use crate::browse::{self, Browser};
 use crate::lang::{fill, Lang, Msg};
+use crate::materials;
 use crate::shot::{ShotRequest, ShotTheme, PATIENCE_FRAMES};
 use crate::vconfig::{KerfSide, LayerMode, QrEcc, TextAlign};
 use crate::window::{fire, Job, Key, Kind, LayerField, Mode, Section, Window, MAX_SEGMENTS};
@@ -400,30 +401,95 @@ impl App {
                 if ui.button(Msg::OpenMaterials.tr(lang)).clicked() {
                     self.ask(Job::OpenMaterials);
                 }
+                if ui.button(Msg::MaterialNewFile.tr(lang)).clicked() {
+                    self.ask(Job::NewMaterials);
+                }
                 let names = self.win.material_names();
-                if names.is_empty() {
-                    return;
-                }
-                let shown = self
-                    .win
-                    .material
-                    .clone()
-                    .unwrap_or_else(|| Msg::NoMaterial.tr(lang).to_string());
-                let mut chosen: Option<String> = None;
-                egui::ComboBox::from_id_salt("material")
-                    .selected_text(shown)
-                    .show_ui(ui, |ui| {
-                        for n in &names {
-                            let current = self.win.material.as_deref() == Some(n.as_str());
-                            if ui.selectable_label(current, n.as_str()).clicked() {
-                                chosen = Some(n.clone());
+                if !names.is_empty() {
+                    let shown = self
+                        .win
+                        .material
+                        .clone()
+                        .unwrap_or_else(|| Msg::NoMaterial.tr(lang).to_string());
+                    let mut chosen: Option<String> = None;
+                    egui::ComboBox::from_id_salt("material")
+                        .selected_text(shown)
+                        .show_ui(ui, |ui| {
+                            for n in &names {
+                                let current = self.win.material.as_deref() == Some(n.as_str());
+                                if ui.selectable_label(current, n.as_str()).clicked() {
+                                    chosen = Some(n.clone());
+                                }
                             }
-                        }
-                    });
-                if let Some(n) = chosen {
-                    self.win.apply_material(&n);
+                        });
+                    if let Some(n) = chosen {
+                        self.win.apply_material(&n);
+                    }
+                    // what is done with the material that is picked: edit it, copy it or delete it from the file (the second press confirms)
+                    if let Some(current) = self.win.material.clone() {
+                        ui.horizontal(|ui| {
+                            if ui.button(Msg::MaterialEdit.tr(lang)).clicked() {
+                                self.win.material_edit(&current);
+                            }
+                            if ui.button(Msg::MaterialCopy.tr(lang)).clicked() {
+                                self.win.material_copy(&current);
+                            }
+                            if ui.button(Msg::MaterialDelete.tr(lang)).clicked() {
+                                self.win.material_delete(&current);
+                            }
+                        });
+                    }
                 }
+                if ui.button(Msg::MaterialNewFromBoxes.tr(lang)).clicked() {
+                    self.win.material_new_from_boxes();
+                }
+                self.material_editor(ui);
             });
+    }
+
+    /// The material that is being edited: its name, its note and one box for each value (the keys of the file; an empty box leaves the value out), and the buttons that save it in the file
+    /// or let it go.
+    fn material_editor(&mut self, ui: &mut egui::Ui) {
+        let lang = self.win.lang;
+        let Some(draft) = self.win.material_draft.clone() else {
+            return;
+        };
+        ui.separator();
+        ui.label(egui::RichText::new(Msg::MaterialEditor.tr(lang)).strong());
+        ui.label(Msg::MaterialName.tr(lang));
+        let mut name = draft.name.clone();
+        if ui
+            .add(egui::TextEdit::singleline(&mut name).desired_width(f32::INFINITY))
+            .changed()
+        {
+            self.win.set_draft_name(name);
+        }
+        ui.label(Msg::MaterialNote.tr(lang));
+        let mut note = draft.note.clone();
+        if ui
+            .add(egui::TextEdit::singleline(&mut note).desired_width(f32::INFINITY))
+            .changed()
+        {
+            self.win.set_draft_note(note);
+        }
+        for (i, key) in materials::KEYS.iter().enumerate() {
+            ui.label(*key);
+            let mut text = draft.values.get(i).cloned().unwrap_or_default();
+            if ui
+                .add(egui::TextEdit::singleline(&mut text).desired_width(f32::INFINITY))
+                .changed()
+            {
+                self.win.set_draft_value(i, text);
+            }
+        }
+        ui.horizontal(|ui| {
+            if ui.button(Msg::MaterialSave.tr(lang)).clicked() {
+                self.win.material_save();
+            }
+            if ui.button(Msg::Cancel.tr(lang)).clicked() {
+                self.win.material_cancel();
+            }
+        });
     }
 
     /// The outline of the picture: the width of the work, how the ink is told from the paper, how much the line is simplified and whether the shapes are cut or filled with lines.
@@ -1143,7 +1209,7 @@ impl App {
                             }
                         }
                         Job::OpenGcode => self.fit_pending = true,
-                        Job::OpenMaterials | Job::ExportGcode => {}
+                        Job::OpenMaterials | Job::NewMaterials | Job::ExportGcode => {}
                     }
                 } else {
                     // the window stays open so that another file or name can be tried

@@ -48,11 +48,13 @@ pub enum Job {
     OpenMaterials,
     /// A G-code program (this program's or another's) to see, count and check.
     OpenGcode,
+    /// A new, empty library of materials (the name is typed; a file that is there is never written over).
+    NewMaterials,
 }
 
 impl Job {
     pub fn is_export(self) -> bool {
-        self == Job::ExportGcode
+        matches!(self, Job::ExportGcode | Job::NewMaterials)
     }
 
     /// The extensions the list of files shows.
@@ -63,6 +65,7 @@ impl Job {
             Job::ExportGcode => &["nc", "ngc", "gcode", "gc", "tap", "txt"],
             Job::OpenMaterials => &["cfg"],
             Job::OpenGcode => &["nc", "ngc", "gcode", "gc", "tap", "txt"],
+            Job::NewMaterials => &["cfg"],
         }
     }
 
@@ -73,6 +76,7 @@ impl Job {
             Job::ExportGcode => Msg::TitleExport,
             Job::OpenMaterials => Msg::TitleOpenMaterials,
             Job::OpenGcode => Msg::TitleOpenGcode,
+            Job::NewMaterials => Msg::TitleNewMaterials,
         }
     }
 }
@@ -126,6 +130,16 @@ impl Kind {
             "bayer" | "ordered" => Some(Kind::Bayer),
             "threshold" => Some(Kind::Threshold),
             _ => None,
+        }
+    }
+
+    /// The word a library of materials writes for it.
+    pub fn word(self) -> &'static str {
+        match self {
+            Kind::FloydSteinberg => "fs",
+            Kind::Atkinson => "atkinson",
+            Kind::Bayer => "bayer",
+            Kind::Threshold => "threshold",
         }
     }
 
@@ -935,6 +949,12 @@ pub enum Status {
     MaterialsLoaded(String, usize),
     /// A material was applied to the boxes of the window.
     MaterialApplied(String),
+    /// A material was written in the file of the library: its name and the name of the file.
+    MaterialSaved(String, String),
+    /// A material was removed from the file of the library: its name and the name of the file.
+    MaterialDeleted(String, String),
+    /// The person asked to delete a material and must say it again to confirm.
+    MaterialDeleteAsk(String),
     /// A machine profile was chosen: its name, its full-power value and its limits of power and speed.
     ProfileApplied {
         name: String,
@@ -1143,6 +1163,11 @@ impl Status {
                 fill(Msg::MaterialsLoaded.tr(lang), &[name, &n.to_string()])
             }
             Status::MaterialApplied(name) => fill(Msg::MaterialApplied.tr(lang), &[name]),
+            Status::MaterialSaved(name, file) => fill(Msg::MaterialSaved.tr(lang), &[name, file]),
+            Status::MaterialDeleted(name, file) => {
+                fill(Msg::MaterialDeleted.tr(lang), &[name, file])
+            }
+            Status::MaterialDeleteAsk(name) => fill(Msg::MaterialDeleteAsk.tr(lang), &[name]),
             Status::ProfileApplied {
                 name,
                 s_max,
@@ -1160,6 +1185,17 @@ impl Status {
             Status::Failed(e) => fill(Msg::Failed.tr(lang), &[e]),
         }
     }
+}
+
+/// A material that is being edited: the boxes hold text, and nothing is written until it is saved (and then only if every value is in its range).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MaterialDraft {
+    /// The name the material has in the file, `None` for one that is not in the file yet.
+    pub original: Option<String>,
+    pub name: String,
+    pub note: String,
+    /// The text of each key, in the order of `materials::KEYS`; an empty box means the material leaves that value as it is.
+    pub values: Vec<String>,
 }
 
 /// The state of the whole window.
@@ -1233,6 +1269,10 @@ pub struct Window {
     /// The data that the barcode mode burns, and whether it is burnt as a mirror image.
     pub barcode_data: String,
     pub barcode_mirror: bool,
+    /// The material that is being edited, when there is one.
+    pub material_draft: Option<MaterialDraft>,
+    /// The material that the person asked to delete once and has to ask for again.
+    material_delete_armed: Option<String>,
 }
 
 impl Window {
@@ -1280,6 +1320,8 @@ impl Window {
             marks_cross: MarksSettings::default().centre_cross,
             barcode_data: String::new(),
             barcode_mirror: BarcodeSettings::default().mirror,
+            material_draft: None,
+            material_delete_armed: None,
         }
     }
 
@@ -1605,6 +1647,9 @@ impl Window {
 
     /// The name offered for the G-code to write.
     pub fn suggested_output_for(&self, job: Job) -> Option<PathBuf> {
+        if job == Job::NewMaterials {
+            return Some(PathBuf::from("materials.cfg"));
+        }
         if job != Job::ExportGcode || self.mode == Mode::Preview {
             return None;
         }
@@ -1957,6 +2002,8 @@ impl Window {
                 self.materials = Some(lib);
                 self.materials_path = Some(path.to_path_buf());
                 self.material = None;
+                self.material_draft = None;
+                self.material_delete_armed = None;
                 true
             }
             Err(e) => {
@@ -2077,6 +2124,265 @@ impl Window {
                 .unwrap_or_else(|_| self.settings.params_for(&key));
             m.apply_to_layer(&mut p);
             self.rows[i] = LayerRow::new(&key, shapes, &p);
+        }
+    }
+
+    /// The draft of a material of the library, with the text of each of its values.
+    fn draft_of(m: &Material, original: Option<String>) -> MaterialDraft {
+        MaterialDraft {
+            original,
+            name: m.name.clone(),
+            note: m.note.clone(),
+            values: materials::KEYS
+                .iter()
+                .map(|k| materials::value_of(m, k).unwrap_or_default())
+                .collect(),
+        }
+    }
+
+    /// Starts editing a material of the library. The file is not touched until the material is saved.
+    pub fn material_edit(&mut self, name: &str) -> bool {
+        self.material_delete_armed = None;
+        let Some(m) = self.materials.as_ref().and_then(|l| l.find(name)).cloned() else {
+            self.status = Status::Failed(format!("there is no material '{}'", name.trim()));
+            return false;
+        };
+        self.material_draft = Some(Self::draft_of(&m, Some(m.name.clone())));
+        true
+    }
+
+    /// Starts a new material that has the values of one of the library, under a name that the library does not have yet (saving it adds it to the file).
+    pub fn material_copy(&mut self, name: &str) -> bool {
+        self.material_delete_armed = None;
+        let Some(m) = self.materials.as_ref().and_then(|l| l.find(name)).cloned() else {
+            self.status = Status::Failed(format!("there is no material '{}'", name.trim()));
+            return false;
+        };
+        let base: String = m
+            .name
+            .chars()
+            .take(materials::MAX_NAME_CHARS - 10)
+            .collect();
+        let taken = |n: &str| self.materials.as_ref().is_some_and(|l| l.find(n).is_some());
+        let mut copy = format!("{base} copy");
+        let mut k = 2;
+        while taken(&copy) {
+            copy = format!("{base} copy {k}");
+            k += 1;
+        }
+        let mut d = Self::draft_of(&m, None);
+        d.name = copy;
+        self.material_draft = Some(d);
+        true
+    }
+
+    /// Starts a new material with what the boxes of the window say now (the power, the speed, the dot, the overscan, the dithering and the tone curve), to be named and saved.
+    pub fn material_new_from_boxes(&mut self) {
+        self.material_delete_armed = None;
+        let text = |key: Key| self.field(key).text.trim().to_string();
+        let on = |b: bool| if b { "on" } else { "off" }.to_string();
+        let mut values = vec![String::new(); materials::KEYS.len()];
+        let mut put = |key: &str, v: String| {
+            if let Some(i) = materials::KEYS.iter().position(|k| *k == key) {
+                values[i] = v;
+            }
+        };
+        put("power", text(Key::Power));
+        put("speed", text(Key::Feed));
+        put("dot", text(Key::DotMm));
+        if !self.overscan_auto {
+            put("overscan", text(Key::Overscan));
+        }
+        put("dither", self.kind.word().to_string());
+        if self.kind == Kind::Threshold {
+            put("threshold", text(Key::Threshold));
+        }
+        put("gamma", text(Key::Gamma));
+        put("contrast", text(Key::Contrast));
+        put("brightness", text(Key::Brightness));
+        put("invert", on(self.tone_invert));
+        put("auto_level", on(self.tone_auto_level));
+        self.material_draft = Some(MaterialDraft {
+            original: None,
+            name: String::new(),
+            note: String::new(),
+            values,
+        });
+    }
+
+    pub fn set_draft_name(&mut self, text: String) {
+        self.material_delete_armed = None;
+        if let Some(d) = self.material_draft.as_mut() {
+            d.name = text;
+        }
+    }
+
+    pub fn set_draft_note(&mut self, text: String) {
+        self.material_delete_armed = None;
+        if let Some(d) = self.material_draft.as_mut() {
+            d.note = text;
+        }
+    }
+
+    pub fn set_draft_value(&mut self, i: usize, text: String) {
+        self.material_delete_armed = None;
+        if let Some(v) = self
+            .material_draft
+            .as_mut()
+            .and_then(|d| d.values.get_mut(i))
+        {
+            *v = text;
+        }
+    }
+
+    /// Stops editing; nothing was written.
+    pub fn material_cancel(&mut self) {
+        self.material_draft = None;
+    }
+
+    /// The material the draft says, with every value checked against the range of the file: a value out of its range, a name that cannot be written or a note that is too long is an error that
+    /// names the key, and nothing is cut down.
+    pub fn draft_material(&self) -> Result<Material, String> {
+        let d = self
+            .material_draft
+            .as_ref()
+            .ok_or_else(|| "there is no material being edited".to_string())?;
+        let mut m = Material {
+            name: d.name.trim().to_string(),
+            ..Material::default()
+        };
+        materials::check_name(&m.name)?;
+        materials::set_value(&mut m, "note", &d.note).map_err(|e| format!("note: {e}"))?;
+        for (key, text) in materials::KEYS.iter().zip(&d.values) {
+            if !text.trim().is_empty() {
+                materials::set_value(&mut m, key, text).map_err(|e| format!("{key}: {e}"))?;
+            }
+        }
+        Ok(m)
+    }
+
+    /// The file of the library and what it says, read as text: a file that is not UTF-8 text or is too big is not rewritten.
+    fn materials_text(&self) -> Result<(PathBuf, String), String> {
+        let path = self.materials_path.clone().ok_or_else(|| {
+            "there is no library of materials: open one or create one first, it is the file the material is saved in".to_string()
+        })?;
+        let bytes = read_file_up_to(&path, materials::MAX_FILE_BYTES)?;
+        let text = String::from_utf8(bytes).map_err(|_| {
+            format!(
+                "{}: the library is not UTF-8 text, so it is not rewritten",
+                path.display()
+            )
+        })?;
+        Ok((path, text))
+    }
+
+    /// Writes the library and reads it again, so that the list of materials is what the file says.
+    fn materials_written(&mut self, path: &Path, text: &str) -> Result<(), String> {
+        write_atomic(path, text)?;
+        let lib = materials::parse(text.strip_prefix('\u{feff}').unwrap_or(text))
+            .map_err(|e| format!("{}: {e}", path.display()))?;
+        if self
+            .material
+            .as_deref()
+            .is_some_and(|m| lib.find(m).is_none())
+        {
+            self.material = None;
+        }
+        self.materials = Some(lib);
+        Ok(())
+    }
+
+    fn try_material_save(&mut self) -> Result<(String, String), String> {
+        let original = self
+            .material_draft
+            .as_ref()
+            .ok_or_else(|| "there is no material being edited".to_string())?
+            .original
+            .clone();
+        let m = self.draft_material()?;
+        let (path, text) = self.materials_text()?;
+        let new = materials::upsert_text(&text, original.as_deref(), &m)?;
+        self.materials_written(&path, &new)?;
+        if let Some(d) = self.material_draft.as_mut() {
+            d.original = Some(m.name.clone());
+            d.name = m.name.clone();
+        }
+        Ok((m.name, name_of(&path)))
+    }
+
+    /// Writes the material being edited in the file of the library: its section is rewritten in its place (or added at the end when it is new) and nothing else in the file changes. Every value is
+    /// checked first; one that is out of its range, a name that another material has or a file that cannot be read as a library refuses the save and leaves the file as it was.
+    pub fn material_save(&mut self) -> bool {
+        self.material_delete_armed = None;
+        match self.try_material_save() {
+            Ok((name, file)) => {
+                self.status = Status::MaterialSaved(name, file);
+                true
+            }
+            Err(e) => {
+                self.status = Status::Failed(e);
+                false
+            }
+        }
+    }
+
+    fn try_material_delete(&mut self, name: &str) -> Result<String, String> {
+        let (path, text) = self.materials_text()?;
+        let new = materials::remove_text(&text, name)?;
+        self.materials_written(&path, &new)?;
+        if self
+            .material_draft
+            .as_ref()
+            .and_then(|d| d.original.as_deref())
+            .is_some_and(|o| o.trim().eq_ignore_ascii_case(name.trim()))
+        {
+            self.material_draft = None;
+        }
+        Ok(name_of(&path))
+    }
+
+    /// Removes a material from the file of the library. The first call only asks (the status line says to press Delete again) and returns false; the next call for the same material, with nothing
+    /// else done in between, removes its section and nothing else in the file.
+    pub fn material_delete(&mut self, name: &str) -> bool {
+        let armed = self.material_delete_armed.take();
+        let Some(m) = self.materials.as_ref().and_then(|l| l.find(name)).cloned() else {
+            self.status = Status::Failed(format!("there is no material '{}'", name.trim()));
+            return false;
+        };
+        if armed.as_deref() != Some(m.name.as_str()) {
+            self.material_delete_armed = Some(m.name.clone());
+            self.status = Status::MaterialDeleteAsk(m.name);
+            return false;
+        }
+        match self.try_material_delete(&m.name) {
+            Ok(file) => {
+                self.status = Status::MaterialDeleted(m.name, file);
+                true
+            }
+            Err(e) => {
+                self.status = Status::Failed(e);
+                false
+            }
+        }
+    }
+
+    /// Makes a new, empty library of materials in a file that is not there yet (a file that is there is never written over) and loads it.
+    pub fn create_materials(&mut self, path: &Path) -> bool {
+        use std::io::Write;
+        let made = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(path)
+            .and_then(|mut f| {
+                f.write_all(b"# A library of materials: one [material NAME] section for each material and way of working.\n")
+            })
+            .map_err(|e| format!("{}: {e}", path.display()));
+        match made {
+            Ok(()) => self.load_materials(path),
+            Err(e) => {
+                self.status = Status::Failed(e);
+                false
+            }
         }
     }
 
@@ -2925,6 +3231,7 @@ impl Window {
             Job::OpenMaterials => self.load_materials(path),
             Job::OpenGcode => self.open_gcode(path),
             Job::ExportGcode => self.export(path),
+            Job::NewMaterials => self.create_materials(path),
         }
     }
 
@@ -5314,6 +5621,267 @@ hatch_cross = on
                 assert!(!m.tr(l).is_empty());
             }
             assert!(w.status.text(l).contains("12.0"), "{}", w.status.text(l));
+        }
+    }
+
+    const EDIT_LIBRARY: &str = "# my materials\n\n[material Birch cut]\nnote = two passes\npower = 90\nspeed = 300\n\n; the photo one\n[material Birch photo]\npower = 30\nspeed = 3000\ndither = atkinson\n";
+
+    fn draft_index(key: &str) -> usize {
+        materials::KEYS.iter().position(|k| *k == key).unwrap()
+    }
+
+    #[test]
+    fn a_material_is_edited_and_saved_in_its_place_and_the_rest_of_the_file_stays() {
+        let s = Scratch::new("mat-edit");
+        let lib = s.write("m.cfg", EDIT_LIBRARY);
+        let mut w = Window::new(Lang::En);
+        assert!(w.load_materials(&lib));
+        assert!(w.material_edit("birch PHOTO"));
+        let d = w.material_draft.clone().unwrap();
+        assert_eq!(d.original.as_deref(), Some("Birch photo"));
+        assert_eq!(d.values[draft_index("power")], "30");
+        assert_eq!(d.values[draft_index("dither")], "atkinson");
+        assert_eq!(d.values[draft_index("kerf")], "");
+        // nothing is written until it is saved
+        assert_eq!(fs::read_to_string(&lib).unwrap(), EDIT_LIBRARY);
+        w.set_draft_value(draft_index("power"), "35.5".to_string());
+        w.set_draft_value(draft_index("passes"), "2".to_string());
+        w.set_draft_note("for the photos".to_string());
+        assert!(w.material_save());
+        assert_eq!(
+            w.status.text(Lang::En),
+            "Material Birch photo saved in m.cfg"
+        );
+        assert_eq!(
+            fs::read_to_string(&lib).unwrap(),
+            "# my materials\n\n[material Birch cut]\nnote = two passes\npower = 90\nspeed = 300\n\n; the photo one\n[material Birch photo]\nnote = for the photos\npower = 35.5\nspeed = 3000\npasses = 2\ndither = atkinson\n"
+        );
+        // the list is what the file says now
+        let m = w.materials.as_ref().unwrap().find("Birch photo").unwrap();
+        assert_eq!((m.power, m.passes), (Some(35.5), Some(2)));
+        assert_eq!(w.materials.as_ref().unwrap().materials.len(), 2);
+        // a new name takes its place and a second save replaces it again
+        w.set_draft_name("Birch photo 2".to_string());
+        assert!(w.material_save());
+        assert!(w.material_save());
+        assert_eq!(
+            w.materials.as_ref().unwrap().names(),
+            vec!["Birch cut", "Birch photo 2"]
+        );
+        let text = fs::read_to_string(&lib).unwrap();
+        assert!(text.starts_with("# my materials\n\n[material Birch cut]\nnote = two passes\n"));
+        assert!(text.contains("; the photo one\n[material Birch photo 2]\n"));
+        assert_eq!(text.matches("[material").count(), 2);
+        assert_eq!(
+            w.status.text(Lang::Pt),
+            "Material Birch photo 2 guardado em m.cfg"
+        );
+    }
+
+    #[test]
+    fn a_material_that_is_out_of_range_or_cannot_be_written_is_refused_and_the_file_stays() {
+        let s = Scratch::new("mat-refuse");
+        let lib = s.write("m.cfg", EDIT_LIBRARY);
+        let mut w = Window::new(Lang::En);
+        assert!(w.load_materials(&lib));
+        assert!(w.material_edit("Birch cut"));
+        for (key, text) in [
+            ("power", "150"),
+            ("power", "0"),
+            ("speed", "0.5"),
+            ("speed", "fast"),
+            ("passes", "2.5"),
+            ("passes", "1001"),
+            ("dither", "dots"),
+            ("threshold", "300"),
+            ("hatch_cross", "maybe"),
+            ("gamma", "0"),
+            ("dot", "6"),
+        ] {
+            let before = w.material_draft.clone();
+            w.set_draft_value(draft_index(key), text.to_string());
+            assert!(!w.material_save(), "{key} {text}");
+            assert!(
+                matches!(&w.status, Status::Failed(e) if e.starts_with(key)),
+                "{key} {text}: {:?}",
+                w.status
+            );
+            assert_eq!(
+                fs::read_to_string(&lib).unwrap(),
+                EDIT_LIBRARY,
+                "{key} {text}"
+            );
+            w.material_draft = before;
+        }
+        // a name that is empty, has spaces around it, is another material's or is too long
+        for name in ["", "  ", "Birch photo", "birch PHOTO", &"x".repeat(81)] {
+            let before = w.material_draft.clone();
+            w.set_draft_name(name.to_string());
+            assert!(!w.material_save(), "{name:?}");
+            assert!(matches!(&w.status, Status::Failed(_)), "{name:?}");
+            assert_eq!(fs::read_to_string(&lib).unwrap(), EDIT_LIBRARY, "{name:?}");
+            w.material_draft = before;
+        }
+        // a note that is too long
+        w.set_draft_note("n".repeat(301));
+        assert!(!w.material_save());
+        assert!(matches!(&w.status, Status::Failed(e) if e.starts_with("note")));
+        w.set_draft_note(String::new());
+        // nothing is being edited, there is no library or the library is not text
+        w.material_cancel();
+        assert!(!w.material_save());
+        let mut fresh = Window::new(Lang::En);
+        fresh.material_new_from_boxes();
+        fresh.set_draft_name("x".to_string());
+        assert!(!fresh.material_save());
+        assert!(matches!(&fresh.status, Status::Failed(e) if e.contains("no library")));
+        let binary = s.0.join("b.cfg");
+        let bytes = b"# caf\xe9\n[material A]\npower = 10\n".to_vec();
+        fs::write(&binary, &bytes).unwrap();
+        assert!(w.load_materials(&binary));
+        assert!(w.material_edit("A"));
+        w.set_draft_value(draft_index("power"), "20".to_string());
+        assert!(!w.material_save());
+        assert!(matches!(&w.status, Status::Failed(e) if e.contains("not UTF-8")));
+        assert_eq!(fs::read(&binary).unwrap(), bytes);
+    }
+
+    #[test]
+    fn a_material_is_copied_made_from_the_boxes_and_deleted_after_a_second_press() {
+        let s = Scratch::new("mat-copy");
+        let lib = s.write("m.cfg", EDIT_LIBRARY);
+        let mut w = Window::new(Lang::En);
+        assert!(w.load_materials(&lib));
+        // a copy has another name and is added at the end
+        assert!(w.material_copy("Birch cut"));
+        assert_eq!(w.material_draft.as_ref().unwrap().name, "Birch cut copy");
+        assert!(w.material_draft.as_ref().unwrap().original.is_none());
+        assert!(w.material_save());
+        assert!(w.material_copy("Birch cut"));
+        assert_eq!(w.material_draft.as_ref().unwrap().name, "Birch cut copy 2");
+        assert!(!w.material_copy("nothing"));
+        let text = fs::read_to_string(&lib).unwrap();
+        assert!(text.starts_with(EDIT_LIBRARY.trim_end()), "{text}");
+        assert!(
+            text.ends_with(
+                "\n\n[material Birch cut copy]\nnote = two passes\npower = 90\nspeed = 300\n"
+            ),
+            "{text}"
+        );
+        // a material made from the boxes takes their values
+        set(&mut w, Key::Power, "33");
+        set(&mut w, Key::Feed, "777");
+        set(&mut w, Key::DotMm, "0.2");
+        w.set_kind(Kind::Threshold);
+        set(&mut w, Key::Threshold, "100");
+        w.set_tone_invert(true);
+        w.material_new_from_boxes();
+        w.set_draft_name("Mine".to_string());
+        assert!(w.material_save());
+        let m = w.materials.as_ref().unwrap().find("mine").unwrap();
+        assert_eq!(
+            (m.power, m.speed, m.dot),
+            (Some(33.0), Some(777.0), Some(0.2))
+        );
+        assert_eq!(
+            (m.dither.as_deref(), m.threshold, m.invert, m.auto_level),
+            (Some("threshold"), Some(100), Some(true), Some(false))
+        );
+        assert_eq!(m.passes, None);
+        // the material is applied from the file like any other
+        assert!(w.apply_material("Mine"));
+        assert_eq!(text_of(&w, Key::Power), "33");
+        // delete: the first press asks, the second removes, and anything done in between asks again
+        let before = fs::read_to_string(&lib).unwrap();
+        assert!(!w.material_delete("Birch photo"));
+        assert_eq!(
+            w.status,
+            Status::MaterialDeleteAsk("Birch photo".to_string())
+        );
+        assert!(!w.status.is_problem());
+        assert_eq!(fs::read_to_string(&lib).unwrap(), before);
+        assert!(w.material_edit("Birch cut"));
+        assert!(!w.material_delete("Birch photo"));
+        assert_eq!(fs::read_to_string(&lib).unwrap(), before);
+        assert!(w.material_delete("Birch photo"));
+        assert_eq!(
+            w.status.text(Lang::En),
+            "Material Birch photo deleted from m.cfg"
+        );
+        assert_eq!(
+            fs::read_to_string(&lib).unwrap(),
+            materials::remove_text(&before, "Birch photo").unwrap()
+        );
+        assert!(w.materials.as_ref().unwrap().find("Birch photo").is_none());
+        assert!(fs::read_to_string(&lib)
+            .unwrap()
+            .starts_with("# my materials\n\n[material Birch cut]\n"));
+        // one that is not there is refused, and the one that was applied and goes away is not applied any more
+        assert!(!w.material_delete("Birch photo"));
+        assert!(matches!(&w.status, Status::Failed(e) if e.contains("no material")));
+        assert_eq!(w.material.as_deref(), Some("Mine"));
+        assert!(!w.material_delete("Mine"));
+        assert!(w.material_delete("Mine"));
+        assert_eq!(w.material, None);
+        // the material being edited goes with its deletion
+        assert!(w.material_edit("Birch cut"));
+        assert!(!w.material_delete("Birch cut"));
+        assert!(w.material_delete("Birch cut"));
+        assert!(w.material_draft.is_none());
+    }
+
+    #[test]
+    fn a_new_library_is_made_in_a_file_that_is_not_there_and_never_over_one_that_is() {
+        let s = Scratch::new("mat-new");
+        let path = s.0.join("new.cfg");
+        let mut w = Window::new(Lang::En);
+        assert!(Job::NewMaterials.is_export());
+        assert_eq!(Job::NewMaterials.extensions(), &["cfg"]);
+        assert_eq!(
+            w.suggested_output_for(Job::NewMaterials),
+            Some(PathBuf::from("materials.cfg"))
+        );
+        assert!(w.run_job(Job::NewMaterials, &path));
+        assert_eq!(w.materials.as_ref().unwrap().materials.len(), 0);
+        assert_eq!(w.materials_path.as_deref(), Some(path.as_path()));
+        // a first material goes in
+        w.material_new_from_boxes();
+        w.set_draft_name("First".to_string());
+        assert!(w.material_save());
+        let text = fs::read_to_string(&path).unwrap();
+        assert!(text.starts_with("# A library of materials"));
+        assert!(
+            text.contains("\n\n[material First]\npower = 50\nspeed = 3000\n"),
+            "{text}"
+        );
+        // the file is not written over
+        assert!(!w.create_materials(&path));
+        assert!(matches!(&w.status, Status::Failed(_)));
+        assert_eq!(fs::read_to_string(&path).unwrap(), text);
+        for l in Lang::ALL {
+            assert!(!Job::NewMaterials.title().tr(l).is_empty());
+            for m in [
+                Msg::MaterialNewFile,
+                Msg::MaterialNewFromBoxes,
+                Msg::MaterialEdit,
+                Msg::MaterialCopy,
+                Msg::MaterialDelete,
+                Msg::MaterialSave,
+                Msg::MaterialName,
+                Msg::MaterialNote,
+                Msg::MaterialEditor,
+            ] {
+                assert!(!m.tr(l).is_empty());
+            }
+            assert!(Status::MaterialSaved("a".into(), "b.cfg".into())
+                .text(l)
+                .contains("b.cfg"));
+            assert!(Status::MaterialDeleted("a".into(), "b.cfg".into())
+                .text(l)
+                .contains("b.cfg"));
+            assert!(Status::MaterialDeleteAsk("birch".into())
+                .text(l)
+                .contains("birch"));
         }
     }
 
