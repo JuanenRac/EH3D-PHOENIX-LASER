@@ -468,27 +468,30 @@ pub fn render(i: &Input, lang: Lang) -> String {
     } else {
         fill(t(Key::Zones), &[&i.zones.to_string()])
     });
-    out.push(if i.interlocks.is_active() || i.interlocks.enclosure != Enclosure::Unknown
-        || i.interlocks.air_assist != AirAssist::Unknown
-    {
-        let estop = match i.interlocks.estop {
-            Estop::Released => Key::EstopReleased,
-            Estop::Pressed => Key::EstopPressed,
-        };
-        let enclosure = match i.interlocks.enclosure {
-            Enclosure::Closed => Key::EnclosureClosed,
-            Enclosure::Open => Key::EnclosureOpen,
-            Enclosure::Unknown => Key::EnclosureUnknown,
-        };
-        let air = match i.interlocks.air_assist {
-            AirAssist::On => Key::AirOn,
-            AirAssist::Off => Key::AirOff,
-            AirAssist::Unknown => Key::AirUnknown,
-        };
-        fill(t(Key::Interlocks), &[t(estop), t(enclosure), t(air)])
-    } else {
-        t(Key::InterlocksOff).to_string()
-    });
+    out.push(
+        if i.interlocks.is_active()
+            || i.interlocks.enclosure != Enclosure::Unknown
+            || i.interlocks.air_assist != AirAssist::Unknown
+        {
+            let estop = match i.interlocks.estop {
+                Estop::Released => Key::EstopReleased,
+                Estop::Pressed => Key::EstopPressed,
+            };
+            let enclosure = match i.interlocks.enclosure {
+                Enclosure::Closed => Key::EnclosureClosed,
+                Enclosure::Open => Key::EnclosureOpen,
+                Enclosure::Unknown => Key::EnclosureUnknown,
+            };
+            let air = match i.interlocks.air_assist {
+                AirAssist::On => Key::AirOn,
+                AirAssist::Off => Key::AirOff,
+                AirAssist::Unknown => Key::AirUnknown,
+            };
+            fill(t(Key::Interlocks), &[t(estop), t(enclosure), t(air)])
+        } else {
+            t(Key::InterlocksOff).to_string()
+        },
+    );
     if !v.problems.is_empty() {
         out.push(t(Key::Problems).to_string());
         out.extend(v.problems.iter().map(|p| format!("  - {p}")));
@@ -521,12 +524,7 @@ mod tests {
     const PROGRAM: &str =
         "G21\nG90\nM4 S0\nF600\nG0 X5 Y5\nG1 X45 Y5 S250\nG1 X45 Y25 S250\nS0\nM5\nM2\n";
 
-    fn input_of<'a>(
-        v: &'a Verdict,
-        l: &'a Limits,
-        a: &'a Report,
-        i: &'a Interlocks,
-    ) -> Input<'a> {
+    fn input_of<'a>(v: &'a Verdict, l: &'a Limits, a: &'a Report, i: &'a Interlocks) -> Input<'a> {
         Input {
             program: "p.nc",
             verdict: v,
@@ -599,7 +597,11 @@ mod tests {
             }
         }
         // Portuguese of Portugal: the words of the screen and the file are the ones of Portugal
-        let all_pt: String = Key::ALL.iter().map(|k| k.text(Lang::Pt)).collect::<Vec<_>>().join(" ");
+        let all_pt: String = Key::ALL
+            .iter()
+            .map(|k| k.text(Lang::Pt))
+            .collect::<Vec<_>>()
+            .join(" ");
         assert!(all_pt.contains("ficheiro"), "{all_pt}");
         for brazilian in ["arquivo", "tela", "celular", "você"] {
             assert!(!all_pt.contains(brazilian), "{brazilian}");
@@ -615,11 +617,17 @@ mod tests {
             let text = render(&input_of(&v, &l, &a, &none), lang);
             assert!(text.contains(&v.sha256), "{lang:?}");
             assert!(text.contains("p.nc"), "{lang:?}");
-            assert!(text.contains("S250") && text.contains("25.0"), "{lang:?}: {text}");
+            assert!(
+                text.contains("S250") && text.contains("25.0"),
+                "{lang:?}: {text}"
+            );
             assert!(text.contains("45 x 25"), "{lang:?}: {text}");
             assert!(text.contains(Key::Pass.text(lang)), "{lang:?}");
             assert!(!text.contains(Key::Fail.text(lang)), "{lang:?}");
-            assert!(!text.contains("{0}") && !text.contains("{1}") && !text.contains("{2}"), "{lang:?}: {text}");
+            assert!(
+                !text.contains("{0}") && !text.contains("{1}") && !text.contains("{2}"),
+                "{lang:?}: {text}"
+            );
             assert!(text.contains(Key::Reminder.text(lang)));
         }
     }
@@ -654,9 +662,15 @@ mod tests {
         };
         let input = input_of(&v, &l, &a, &set);
         let en = render(&input, Lang::En);
-        assert!(en.contains("emergency stop PRESSED, enclosure OPEN, air assist OFF"), "{en}");
+        assert!(
+            en.contains("emergency stop PRESSED, enclosure OPEN, air assist OFF"),
+            "{en}"
+        );
         let ja = render(&input, Lang::Ja);
-        assert!(ja.contains("非常停止 押下中、筐体 開、エアアシスト オフ"), "{ja}");
+        assert!(
+            ja.contains("非常停止 押下中、筐体 開、エアアシスト オフ"),
+            "{ja}"
+        );
     }
 
     #[test]
@@ -683,7 +697,10 @@ mod tests {
             let text = render(&input, lang);
             assert!(text.contains(Key::Fail.text(lang)), "{lang:?}");
             assert!(text.contains(Key::Problems.text(lang)), "{lang:?}");
-            assert!(text.contains("more than the limit of power"), "{lang:?}: {text}");
+            assert!(
+                text.contains("more than the limit of power"),
+                "{lang:?}: {text}"
+            );
             assert!(!text.contains(Key::Pass.text(lang)), "{lang:?}");
         }
     }

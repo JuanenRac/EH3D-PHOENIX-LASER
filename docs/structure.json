@@ -43,14 +43,14 @@
         {
           "name": "main.rs",
           "desc": {
-            "en": "the command line: engrave, calibrate, info, cut, vector, trace, verify and layers",
-            "es": "la línea de comandos: engrave, calibrate, info, cut, vector, trace, verify y layers",
-            "de": "die Befehlszeile: engrave, calibrate, info, cut, vector, trace, verify und layers",
-            "fr": "la ligne de commande : engrave, calibrate, info, cut, vector, trace, verify et layers",
-            "it": "la riga di comando: engrave, calibrate, info, cut, vector, trace, verify e layers",
-            "ja": "コマンドライン：engrave、calibrate、info、cut、vector、trace、verify、layers",
-            "zh": "命令行：engrave、calibrate、info、cut、vector、trace、verify 和 layers",
-            "pt": "a linha de comandos: engrave, calibrate, info, cut, vector, trace, verify e layers"
+            "en": "the command line: engrave, calibrate, cut, vector, verify, report, convert, settings and more",
+            "es": "la línea de comandos: engrave, calibrate, cut, vector, verify, report, convert, settings y más",
+            "de": "die Befehlszeile: engrave, calibrate, cut, vector, verify, report, convert, settings und mehr",
+            "fr": "la ligne de commande : engrave, calibrate, cut, vector, verify, report, convert, settings et plus",
+            "it": "la riga di comando: engrave, calibrate, cut, vector, verify, report, convert, settings e altro",
+            "ja": "コマンドライン：engrave、calibrate、cut、vector、verify、report、convert、settings ほか",
+            "zh": "命令行：engrave、calibrate、cut、vector、verify、report、convert、settings 等",
+            "pt": "a linha de comandos: engrave, calibrate, cut, vector, verify, report, convert, settings e mais"
           }
         },
         {
@@ -223,6 +223,19 @@
           }
         },
         {
+          "name": "guard.rs",
+          "desc": {
+            "en": "the forbidden zones of the bed and the interlocks: what a program may not reach",
+            "es": "las zonas prohibidas de la cama y los enclavamientos: lo que un programa no puede alcanzar",
+            "de": "die Sperrzonen des Betts und die Verriegelungen: was ein Programm nicht erreichen darf",
+            "fr": "les zones interdites du plateau et les verrouillages : ce qu'un programme ne doit pas atteindre",
+            "it": "le zone vietate del piano e gli interblocchi: ciò che un programma non può raggiungere",
+            "ja": "ベッドの禁止ゾーンとインターロック：プログラムが到達してはならない場所",
+            "zh": "工作台的禁区与联锁：程序不得到达的地方",
+            "pt": "as zonas proibidas da cama e os bloqueios: o que um programa não pode alcançar"
+          }
+        },
+        {
           "name": "server.rs",
           "desc": {
             "en": "the way to the EH3D server: check, send, follow, hold, emergency stop",
@@ -288,6 +301,19 @@
           }
         },
         {
+          "name": "report.rs",
+          "desc": {
+            "en": "the report read before a job, in the eight languages",
+            "es": "el informe que se lee antes de un trabajo, en los ocho idiomas",
+            "de": "der Bericht, der vor einem Auftrag gelesen wird, in den acht Sprachen",
+            "fr": "le rapport lu avant un travail, dans les huit langues",
+            "it": "il rapporto che si legge prima di un lavoro, nelle otto lingue",
+            "ja": "ジョブの前に読むレポート（8 言語）",
+            "zh": "作业前阅读的报告（八种语言）",
+            "pt": "o relatório lido antes de um trabalho, nas oito línguas"
+          }
+        },
+        {
           "name": "flatten.rs",
           "desc": {
             "en": "curves cut into straight pieces within a tolerance (Bezier, arcs)",
@@ -342,14 +368,27 @@
         {
           "name": "dxf.rs",
           "desc": {
-            "en": "the DXF reader: lines, polylines, arcs, circles and splines, with units",
-            "es": "el lector de DXF: líneas, polilíneas, arcos, círculos y splines, con unidades",
-            "de": "der DXF-Leser: Linien, Polylinien, Bögen, Kreise und Splines, mit Einheiten",
-            "fr": "le lecteur DXF : lignes, polylignes, arcs, cercles et splines, avec unités",
-            "it": "il lettore DXF: linee, polilinee, archi, cerchi e spline, con unità",
-            "ja": "DXF リーダー：線、ポリライン、円弧、円、スプライン（単位つき）",
-            "zh": "DXF 读取器：直线、多段线、圆弧、圆和样条，含单位",
-            "pt": "o leitor de DXF: linhas, polilinhas, arcos, círculos e splines, com unidades"
+            "en": "the DXF reader: lines, polylines, arcs, circles, ellipses, splines and blocks, with units",
+            "es": "el lector de DXF: líneas, polilíneas, arcos, círculos, elipses, splines y bloques, con unidades",
+            "de": "der DXF-Leser: Linien, Polylinien, Bögen, Kreise, Ellipsen, Splines und Blöcke, mit Einheiten",
+            "fr": "le lecteur DXF : lignes, polylignes, arcs, cercles, ellipses, splines et blocs, avec unités",
+            "it": "il lettore DXF: linee, polilinee, archi, cerchi, ellissi, spline e blocchi, con unità",
+            "ja": "DXF リーダー：線、ポリライン、円弧、円、楕円、スプライン、ブロック、単位に対応",
+            "zh": "DXF 读取器：直线、多段线、圆弧、圆、椭圆、样条和块，含单位",
+            "pt": "o leitor de DXF: linhas, polilinhas, arcos, círculos, elipses, splines e blocos, com unidades"
+          }
+        },
+        {
+          "name": "export.rs",
+          "desc": {
+            "en": "a drawing written again as a plain SVG or DXF",
+            "es": "un dibujo escrito de nuevo como SVG o DXF sencillo",
+            "de": "eine Zeichnung, erneut als schlichte SVG- oder DXF-Datei geschrieben",
+            "fr": "un dessin réécrit en SVG ou DXF simple",
+            "it": "un disegno riscritto come SVG o DXF semplice",
+            "ja": "図面をプレーンな SVG または DXF として書き直したもの",
+            "zh": "把图纸重新写成普通的 SVG 或 DXF",
+            "pt": "um desenho escrito de novo como SVG ou DXF simples"
           }
         },
         {
@@ -415,6 +454,19 @@
             "ja": "ベクター作業の設定ファイル：上限、機械、各レイヤー",
             "zh": "矢量作业的设置文件：限制、机器和各图层",
             "pt": "o ficheiro de definições do trabalho vetorial: limites, máquina e cada camada"
+          }
+        },
+        {
+          "name": "contract.rs",
+          "desc": {
+            "en": "every setting as a list: section, key, kind, default and whether it is for safety",
+            "es": "cada ajuste como lista: sección, clave, tipo, valor por defecto y si es de seguridad",
+            "de": "jede Einstellung als Liste: Abschnitt, Schlüssel, Art, Standardwert und ob sie der Sicherheit dient",
+            "fr": "chaque réglage en liste : section, clé, type, valeur par défaut et s'il est de sécurité",
+            "it": "ogni impostazione come elenco: sezione, chiave, tipo, valore predefinito e se è di sicurezza",
+            "ja": "すべての設定の一覧：セクション、キー、種類、既定値、安全設定かどうか",
+            "zh": "每项设置的清单：节、键、类型、默认值以及是否为安全设置",
+            "pt": "cada definição em lista: secção, chave, tipo, valor por omissão e se é de segurança"
           }
         },
         {
@@ -581,6 +633,19 @@
           }
         },
         {
+          "name": "guard.rs",
+          "desc": {
+            "en": "tests of the zones, interlocks, material ceilings, the report and the settings list",
+            "es": "pruebas de las zonas, los enclavamientos, los techos de material, el informe y la lista de ajustes",
+            "de": "Tests der Zonen, Verriegelungen, Materialgrenzen, des Berichts und der Einstellungsliste",
+            "fr": "tests des zones, des verrouillages, des plafonds de matériau, du rapport et de la liste des réglages",
+            "it": "test delle zone, degli interblocchi, dei tetti dei materiali, del rapporto e dell'elenco delle impostazioni",
+            "ja": "禁止ゾーン、インターロック、材料の上限、レポート、設定一覧のテスト",
+            "zh": "对禁区、联锁、材料上限、报告和设置清单的测试",
+            "pt": "testes das zonas, dos bloqueios, dos tetos de material, do relatório e da lista de definições"
+          }
+        },
+        {
           "name": "server_cli.rs",
           "desc": {
             "en": "the server command against a stand-in of the laser plugin",
@@ -676,6 +741,32 @@
             "ja": "素材ライブラリ：白樺とスレート、切断、彫刻、写真",
             "zh": "材料库：桦木和板岩，切割、雕刻和照片",
             "pt": "uma biblioteca de materiais: vidoeiro e ardósia, corte, gravação e fotografias"
+          }
+        },
+        {
+          "name": "safety.cfg",
+          "desc": {
+            "en": "forbidden zones and interlocks to try with verify",
+            "es": "zonas prohibidas y enclavamientos para probar con verify",
+            "de": "Sperrzonen und Verriegelungen zum Ausprobieren mit verify",
+            "fr": "zones interdites et verrouillages à essayer avec verify",
+            "it": "zone vietate e interblocchi da provare con verify",
+            "ja": "verify で試せる禁止ゾーンとインターロック",
+            "zh": "可配合 verify 试用的禁区与联锁",
+            "pt": "zonas proibidas e bloqueios para experimentar com verify"
+          }
+        },
+        {
+          "name": "materials-starter.cfg",
+          "desc": {
+            "en": "a starter library of materials, every one marked as not verified",
+            "es": "una biblioteca inicial de materiales, todos marcados como no verificados",
+            "de": "eine Start-Bibliothek von Materialien, alle als ungeprüft markiert",
+            "fr": "une bibliothèque de départ de matériaux, tous marqués comme non vérifiés",
+            "it": "una libreria iniziale di materiali, tutti segnati come non verificati",
+            "ja": "出発点となる材料ライブラリ（すべて未検証と明記）",
+            "zh": "起步用材料库，每一项都标明为未验证",
+            "pt": "uma biblioteca inicial de materiais, todos marcados como não verificados"
           }
         }
       ]

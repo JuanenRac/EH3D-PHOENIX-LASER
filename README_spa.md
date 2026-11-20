@@ -17,7 +17,7 @@
 
 ---
 
-**Comprobación de honestidad - lo que funciona hoy:** una biblioteca Rust y un programa de línea de comandos (`phoenix-laser`) con 690 pruebas que se ejecutan en un ordenador: convierte una imagen en puntos por tramado y escribe el G-code de un láser que quema línea a línea con potencia dinámica y sobrerrecorrido, lee dibujos SVG y DXF y escribe el G-code que corta sus contornos (los de dentro primero, con el ancho del haz, puentes y varias pasadas) y graba sus formas con líneas, con los ajustes de cada capa en un fichero, y una rejilla de prueba de potencia contra avance. Tiene una ventana (se compila con `--features gui`) que abre una imagen o un dibujo, muestra el recorrido del láser, permite cambiar los ajustes y exporta el G-code, pero todavía no se ha visto en una pantalla; no se ha probado en una máquina y no se ha comprobado con una colección de ficheros reales. También puede enviar un programa al plugin láser del servidor de EH3D y seguir, detener o parar el trabajo (`phoenix-laser server`), probado solo contra un doble del servidor.
+**Comprobación de honestidad - lo que funciona hoy:** una biblioteca Rust y un programa de línea de comandos (`phoenix-laser`) con 778 pruebas que se ejecutan en un ordenador: convierte una imagen en puntos por tramado y escribe el G-code de un láser que quema línea a línea con potencia dinámica y sobrerrecorrido, lee dibujos SVG y DXF y escribe el G-code que corta sus contornos (los de dentro primero, con el ancho del haz, puentes y varias pasadas) y graba sus formas con líneas, con los ajustes de cada capa en un fichero, y una rejilla de prueba de potencia contra avance. Tiene una ventana (se compila con `--features gui`) que abre una imagen o un dibujo, muestra el recorrido del láser, permite cambiar los ajustes y exporta el G-code, pero todavía no se ha visto en una pantalla; no se ha probado en una máquina y no se ha comprobado con una colección de ficheros reales. También puede enviar un programa al plugin láser del servidor de EH3D y seguir, detener o parar el trabajo (`phoenix-laser server`), probado solo contra un doble del servidor.
 
 ---
 
@@ -30,7 +30,7 @@
 |---|---|
 | Versión | `0.1.4` |
 | Madurez | Funcional |
-| Pruebas | 690 |
+| Pruebas | 778 |
 | Pila tecnológica | Rust |
 | En hardware real | No probado: nada de esto se ha ejecutado en una máquina |
 
@@ -46,7 +46,7 @@ Cada línea es una parte de este repositorio y la luz dice hasta dónde llega ho
 |---|---|---|
 | Núcleo | 🟡 | convierte una imagen en puntos por tramado y escribe el G-code de un láser que quema línea a línea con potencia dinámica y sobrerrecorrido, lee dibujos SVG y DXF y los corta o graba por capas (contornos ordenados, ancho del haz, puentes, pasadas, rayado) y una rejilla de prueba de potencia contra avance; probado en un ordenador con entradas normales y dañadas, no con una colección de ficheros reales. |
 | Línea de comandos | 🟡 | `phoenix-laser` (`engrave`, `calibrate`, `info`, `cut`, `vector`, `layers`) ejecuta las mismas funciones que la biblioteca e imprime el resultado; cada error vuelve como mensaje y un código de salida distinto de cero. |
-| Pruebas | 🟡 | 690 pruebas pasan (`cargo test`), con casos normales, casos límite y entradas dañadas. |
+| Pruebas | 🟡 | 778 pruebas pasan (`cargo test`), con casos normales, casos límite y entradas dañadas. |
 | Seguridad | 🟡 | Rust seguro y simple (`forbid(unsafe_code)`): nada entra en pánico con los ficheros recibidos y un valor malo es un error con su motivo; sin revisión independiente. |
 | Ventana | 🟠 | Escrita (egui, `--features gui`): abrir o soltar una imagen o un dibujo SVG o DXF, ver el recorrido del láser (el corte en un color, el desplazamiento atenuado), editar la tabla de capas, una rejilla de calibración, zoom y desplazamiento, estimar el tiempo, exportar; su lógica está probada, pero todavía no se ha compilado ni visto en una pantalla. |
 | Hardware real | 🔴 | No probado: nada de esto se ha ejecutado en una máquina. |
@@ -59,7 +59,7 @@ Cada línea es una parte de este repositorio y la luz dice hasta dónde llega ho
 * **El láser** (`src/raster.rs`, `src/calibrate.rs`): una línea tras otra, de izquierda a derecha y luego de derecha a izquierda, `M4` con `S0` mientras viaja y la potencia elegida donde quema, un sobrerrecorrido fijo o calculado con la aceleración (v al cuadrado entre 2a) y una rejilla de cuadrados con una potencia por columna y un avance por fila para hallar lo que conviene a un material.
 * **La cabecera y los números de todo fichero de G-code** (`src/gcode_out.rs`): el fichero empieza con líneas de comentario que dicen el generador y su versión, las unidades (mm, G21), la imagen de la que se hizo con su SHA-256 y las herramientas (el láser y su potencia); una rejilla de calibración dice que no tiene origen. Un número se escribe de una sola manera (como mucho tres decimales, sin `-0`) y un valor que no es finito se rechaza en vez de escribirse como `NaN` o `inf`.
 * **`--dry-run`:** `engrave` calcula el resultado y lo cuenta (puntos, líneas, tramos, longitud quemada, tiempo) sin escribir el fichero de salida, que entonces puede omitirse.
-* **Los dibujos** (`src/svg.rs`, `src/dxf.rs`, `src/flatten.rs`, `src/vector.rs`): un subconjunto seguro de SVG (trazados con todas sus órdenes, formas, transformaciones, grupos, unidades y un `use` de un elemento del mismo fichero) y las entidades de un DXF (líneas, polilíneas con arcos, arcos, círculos, splines, unidades) se convierten en formas en milímetros; los scripts, las imágenes, un `use` de otro fichero, las entidades declaradas y todo lo desconocido se omiten o se rechazan, el tamaño, la profundidad y el número de elementos (cuenta lo que trae un `use`) y de puntos están limitados por los ajustes, un `use` que vuelve a sí mismo es un error, y las curvas se convierten en tramos rectos dentro de una tolerancia.
+* **Los dibujos** (`src/svg.rs`, `src/dxf.rs`, `src/flatten.rs`, `src/vector.rs`): un subconjunto seguro de SVG (trazados con todas sus órdenes, formas, transformaciones, grupos, unidades y un `use` de un elemento del mismo fichero) y las entidades de un DXF (líneas, polilíneas con arcos, arcos, círculos, elipses, splines, bloques con sus inserciones, unidades) se convierten en formas en milímetros; los scripts, las imágenes, un `use` de otro fichero, las entidades declaradas y todo lo desconocido se omiten o se rechazan, el tamaño, la profundidad y el número de elementos (cuenta lo que trae un `use`) y de puntos están limitados por los ajustes, un `use` que vuelve a sí mismo es un error, y las curvas se convierten en tramos rectos dentro de una tolerancia.
 * **Corte y grabado** (`src/order.rs`, `src/offset.rs`, `src/cut.rs`): las formas se agrupan por capa (DXF) o color (SVG); cada grupo se corta (líneas sueltas unidas, los contornos que están dentro de otro primero, el menor desplazamiento, el ancho del haz descontado del lado correcto, puentes sin cortar, varias pasadas con el foco avanzando) o se graba (formas cerradas rellenas de líneas con un ángulo, por la regla par-impar) con sus propios ajustes. `phoenix-laser layers DRAWING --accel A` da además el tiempo de cada capa con el cabezal frenando y acelerando en cada esquina a `A` mm/s2 (y cuánto quema el láser), contado con la vista previa del programa.
 * **El fichero de ajustes** (`src/vconfig.rs`, `docs/vector-settings.md`): todo valor que se afina (los límites de los lectores, la máquina, los ajustes de cada capa) está en un fichero de texto simple que se comprueba línea a línea; nada de eso está en el código.
 * **La prueba de enfoque** (`src/calibrate.rs`, `[focus]` en el fichero de ajustes): `phoenix-laser focus` quema una escalera de líneas cortas, cada una con el cabezal a otra altura, y la línea más nítida muestra dónde está enfocado el haz; el paso de altura no tiene valor por defecto (qué es abajo depende de la máquina), la potencia obedece el límite de potencia y el cabezal vuelve a su primera altura. Con `--powers 10,20,30` (hasta 10 potencias) graba en cambio una rejilla de enfoque: las mismas líneas una vez por cada potencia, una columna al lado de otra, para leer qué potencia graba la línea más fina a la altura del enfoque; el cabezal va una sola vez a cada altura y graba todas las columnas de esa fila, y cada potencia obedece el límite de potencia.
@@ -90,6 +90,7 @@ Cada línea es una parte de este repositorio y la luz dice hasta dónde llega ho
 * **La comprobación del programa en la ventana** (`src/window.rs`, `[verify]` en el fichero de ajustes): un programa de G-code que se abre para verlo lo comprueba también `phoenix-laser verify` con los límites de la ventana y la cama del fichero de ajustes, y el panel lateral dice si pasa (con el comienzo de su SHA-256) o qué está mal; una caja guarda el sobrerrecorrido que se permite fuera de la cama con el láser apagado (0 por defecto, hasta 100 mm), y un programa que quema fuera de la cama falla diga lo que diga la caja.
 * **La comprobación de un programa** (`src/verify.rs`): `phoenix-laser verify PROGRAMA.nc` lee un programa G-code (de este programa o de otro) como texto, no lo ejecuta nunca, y da el SHA-256 del fichero exacto, lo que hace y un veredicto: solo pasa bajo el límite de potencia y de velocidad de la máquina, dentro de la cama (el trabajo fuera falla; `--overscan-mm` o `overscan_mm` en `[verify]` deja que el cabezal se pase de la cama esa distancia con el láser apagado, como el sobrebarrido de otro programa, y quemar fuera de la cama falla siempre), con el láser apagado en cada movimiento rápido y avance en cada movimiento que quema. `--json` da el informe para que otro programa lo guarde junto a una autorización ligada a ese hash, con el perfil de máquina, el SHA-256 del fichero de ajustes de donde vienen los límites y los nombres de las comprobaciones hechas, y el código de salida es 1 cuando falla. `report` escribe esa comprobación como algo que leer antes de un trabajo, en el idioma de `--lang` (inglés, español, alemán, francés, italiano, japonés, chino o portugués de Portugal): el SHA-256, los movimientos y el tiempo, la potencia y la velocidad máximas frente a los límites, la energía, si el material estaba verificado, las zonas prohibidas y los enclavamientos, y un veredicto.
 * **Una comprobación atada al programa que se autorizó** (`src/verify.rs`): `phoenix-laser verify PROGRAMA.nc --expect-sha256 HASH` hace fallar el programa cuando su SHA-256 no son los 64 dígitos hexadecimales dados, y dice cuál tiene, de modo que un programa cambiado después de mirarlo no se ejecuta por error; el fallo está también en el informe JSON.
+* **Zonas prohibidas, enclavamientos, el informe y la lista de ajustes** (`src/guard.rs`, `src/report.rs`, `src/contract.rs`): los rectángulos de la cama que un programa debe evitar (`[zone NOMBRE]`) y el estado de la parada de emergencia, el cerramiento y la asistencia de aire según lo dice el fichero de ajustes (`[interlocks]`) hacen fallar la comprobación e impiden enviar un programa, un trabajo vectorial y un disparo de prueba; lo que se envía al servidor se limita al 40 % de la potencia salvo que `[send]` diga otro límite; `phoenix-laser report` escribe la comprobación para leerla antes de un trabajo, en ocho idiomas; `phoenix-laser settings` lista cada ajuste para que otro programa lo lea. No se ha probado ningún sensor ni una parada de emergencia real.
 * **Envío al servidor de EH3D** (`src/server.rs`, `[server]` en el fichero de ajustes): `phoenix-laser server send PROGRAMA.nc` envía un programa G-code como trabajo del plugin `laser` de EH3D-SERVER, con el cliente compartido de la suite (`eh3d-serverclient` de EH3D-COMMON: las claves `server_address`, `server_token`, `server_machine`, `server_timeout_s`, `server_retries` y `server_mdns`, reintentos con pausas crecientes, una petición que crea algo nunca se envía dos veces y las negativas del servidor se cuentan por su código en el idioma del sistema). Antes de salir, el programa se comprueba contra los límites de la máquina de los ajustes (el límite de potencia y de velocidad, la cama) y uno que falla no se envía; `--follow` espera hasta que el trabajo termina; `status`, `job`, `pause` y `resume` preguntan por la máquina y el trabajo y lo detienen o lo dejan seguir; `stop` es la PARADA DE EMERGENCIA de la máquina láser: el trabajo termina al instante y la máquina queda bloqueada, de modo que no admite ningún programa, ni se le envía ninguno, hasta que un administrador ejecuta `release`. El token nunca se imprime (puede estar en la variable `PHOENIX_LASER_SERVER_TOKEN`) y viaja en claro por HTTP simple. Los comandos locales no se tocan. Probado contra un doble del plugin láser, en memoria y en un socket de este ordenador; el plugin del servidor es a su vez un simulador, y nada de esto se ha ejecutado con un láser real. `phoenix-laser server vector DRAWING.svg|dxf` envía un dibujo como trabajo vectorial (los trazados y una operación por capa, comprobados antes contra los límites de los ajustes) y `phoenix-laser server test-fire --power-percent P --confirm-fire` dispara el láser un instante para encontrar el foco (el servidor lo rechaza mientras corre un trabajo, mientras una parada de emergencia retiene la máquina, con el recinto abierto o la asistencia de aire apagada, y por encima de su propio límite). La sección del servidor de la ventana muestra el panel de la suite (dirección, token, máquina, enlace e inicio de sesión con nombre y contraseña), envía un programa abierto para verlo cuando pasa la comprobación y la persona lo confirma, y el modo de marcas puede tomar su tamaño del trabajo.
 * **Envío al servidor desde la ventana** (`src/window.rs`, `src/linkpane.rs`, `[server]` en el fichero de ajustes): la sección de la ventana para el servidor muestra el panel de la suite (la dirección, el token, la máquina, los límites del enlace, el estado del enlace y un inicio de sesión con nombre y contraseña) y su botón envía el programa calculado como trabajo de la máquina láser, muestra cuánto lleva y permite retenerlo, dejarlo seguir o pararlo con un botón de PARADA DE EMERGENCIA (el trabajo termina al instante y la máquina queda bloqueada hasta que un administrador la libera); no se envían un encuadre que enciende el láser y no se confirmó ni un programa que no pasa la comprobación de los límites, y un programa abierto solo para verlo se envía tal cual únicamente cuando pasa la comprobación y la persona marca la casilla que lo dice. Cerrar la ventana deja el trabajo donde está en el servidor.
 * **Tramado ordenado** (`src/dither.rs`): `--dither bayer` (también en la ventana) decide cada punto por su lugar y su gris con una matriz de Bayer de 8 x 8, así que el patrón es regular y el mismo gris quema siempre los mismos puntos; las pruebas comprueban que cada nivel de la matriz aparece una vez y que se conserva la oscuridad de un gris.
@@ -212,7 +213,7 @@ Para sacar una captura de la ventana sin abrirla a mano, ejecútelo con `--shot 
 
 ## 🧪 Pruebas
 
-El conjunto tiene 690 pruebas (`cargo test`, ejecutadas en Windows y Linux en el CI). Comprueban los casos normales, los casos límite y las entradas dañadas: ficheros vacíos, basura y ficheros cortados nunca provocan un pánico. El CI ejecuta además `cargo fmt --check`, `cargo clippy` con las advertencias como errores y `python -I tools/ci_validate.py`.
+El conjunto tiene 778 pruebas (`cargo test`, ejecutadas en Windows y Linux en el CI). Comprueban los casos normales, los casos límite y las entradas dañadas: ficheros vacíos, basura y ficheros cortados nunca provocan un pánico. El CI ejecuta además `cargo fmt --check`, `cargo clippy` con las advertencias como errores y `python -I tools/ci_validate.py`.
 
 ## 🏗️ Compilación y publicación
 
@@ -235,7 +236,7 @@ La versión está en `Cargo.toml` y en `eh3d.project.json`; cada versión tiene 
 EH3D-PHOENIX-LASER/
 ├── src/
 │   ├── lib.rs                                   la biblioteca: lo que usa cada orden
-│   ├── main.rs                                  la línea de comandos: engrave, calibrate, info, cut, vector, trace, verify y layers
+│   ├── main.rs                                  la línea de comandos: engrave, calibrate, cut, vector, verify, report, convert, settings y más
 │   ├── calibrate.rs                             una parte de la lógica
 │   ├── cli_args.rs                              los argumentos de la línea de comandos, el mismo fichero en cada utilidad pequeña
 │   ├── dither.rs                                una parte de la lógica
@@ -249,21 +250,25 @@ EH3D-PHOENIX-LASER/
 │   ├── gcode_out.rs                             la única forma de escribir un número de G-code y la cabecera estándar
 │   ├── raster.rs                                una parte de la lógica
 │   ├── safety.rs                                el límite de potencia y las reglas que mantienen el láser apagado al mostrar el trabajo
+│   ├── guard.rs                                 las zonas prohibidas de la cama y los enclavamientos: lo que un programa no puede alcanzar
 │   ├── server.rs                                el camino al servidor de EH3D: comprobar, enviar, seguir, parada de emergencia
 │   ├── linkpane.rs                              el panel del servidor en la ventana: las casillas, el enlace y el inicio de sesión
 │   ├── shot.rs                                  el modo de captura de la ventana (--shot): sus argumentos, leídos y comprobados sin pantalla
 │   ├── vector.rs                                un dibujo ya leído: formas en mm, capas, límites y la geometría básica
 │   ├── verify.rs                                la comprobación de un programa: su SHA-256, lo que hace y un veredicto frente a los límites de la máquina
+│   ├── report.rs                                el informe que se lee antes de un trabajo, en los ocho idiomas
 │   ├── flatten.rs                               curvas en tramos rectos dentro de una tolerancia (Bézier, arcos)
 │   ├── frame.rs                                 el marco del trabajo (el rectángulo recorrido con el láser apagado) y las marcas de sus esquinas
 │   ├── register.rs                              dónde está el trabajo: las marcas halladas en una imagen y la cámara simulada
 │   ├── svg.rs                                   el lector de SVG: un subconjunto seguro, sin scripts, imágenes ni entidades
-│   ├── dxf.rs                                   el lector de DXF: líneas, polilíneas, arcos, círculos y splines, con unidades
+│   ├── dxf.rs                                   el lector de DXF: líneas, polilíneas, arcos, círculos, elipses, splines y bloques, con unidades
+│   ├── export.rs                                un dibujo escrito de nuevo como SVG o DXF sencillo
 │   ├── energy.rs                                la energía de una pasada por milímetro o milímetro cuadrado, desde la potencia óptica
 │   ├── offset.rs                                desplazar un contorno de lado el ancho del haz, comprobado arista a arista
 │   ├── order.rs                                 el orden de los cortes: líneas sueltas unidas, lo de dentro primero, poco desplazamiento
 │   ├── cut.rs                                   del dibujo al G-code: corte, puentes, rayado, pasadas y la comprobación de seguridad
 │   ├── vconfig.rs                               el fichero de ajustes del trabajo vectorial: límites, máquina y cada capa
+│   ├── contract.rs                              cada ajuste como lista: sección, clave, tipo, valor por defecto y si es de seguridad
 │   ├── browse.rs                                la lista de ficheros de la ventana que abre un fichero
 │   ├── gui.rs                                   la ventana (egui, con la característica gui): dibuja el estado y transmite lo que hace la persona
 │   ├── lang.rs                                  las palabras de la ventana en los ocho idiomas
@@ -277,6 +282,7 @@ EH3D-PHOENIX-LASER/
 │   ├── readme.rs                                pruebas que ejecutan lo que prometen el README y los scripts run
 │   ├── strict.rs                                pruebas de la línea de comandos: opciones y palabras que no conoce
 │   ├── vector.rs                                pruebas de corte desde dibujos: órdenes, ejemplos, ficheros hostiles y la comprobación del G-code
+│   ├── guard.rs                                 pruebas de las zonas, los enclavamientos, los techos de material, el informe y la lista de ajustes
 │   ├── server_cli.rs                            el comando server contra un doble del plugin láser
 │   └── window_cli.rs                            pruebas de que una compilación sin la característica gui sigue siendo solo línea de comandos
 ├── examples/
@@ -284,7 +290,9 @@ EH3D-PHOENIX-LASER/
 │   ├── plate.svg                                una placa con un agujero y un panel para grabar (SVG)
 │   ├── plate.dxf                                la misma placa como DXF
 │   ├── plate.cfg                                los ajustes de sus capas: potencia, velocidad, pasadas, ancho del haz, puentes y rayado
-│   └── materials.cfg                            una biblioteca de materiales: abedul y pizarra, corte, grabado y fotografías
+│   ├── materials.cfg                            una biblioteca de materiales: abedul y pizarra, corte, grabado y fotografías
+│   ├── safety.cfg                               zonas prohibidas y enclavamientos para probar con verify
+│   └── materials-starter.cfg                    una biblioteca inicial de materiales, todos marcados como no verificados
 ├── docs/
 │   ├── architecture.json                        datos de la imagen de Arquitectura
 │   ├── structure.json                           datos de la imagen de Estructura
@@ -309,7 +317,7 @@ EH3D-PHOENIX-LASER/
 
 * La ventana todavía no se ha visto en una pantalla.
 * No se ha probado en una máquina ni con una colección de ficheros reales y no ha tenido revisión independiente.
-* Un dibujo se lee en un subconjunto seguro (sin `use` de otro fichero, texto, degradados ni estilos con selectores; sin elipses, rayados ni bloques en un DXF); un contorno más estrecho que el haz no se corta y el programa lo dice; el láser es el de un controlador GRBL con `M4` y nada se ha probado en un láser ni un material reales.
+* Un dibujo se lee en un subconjunto seguro (sin `use` de otro fichero, texto, degradados ni estilos con selectores; sin rayados, texto ni cotas en un DXF); un contorno más estrecho que el haz no se corta y el programa lo dice; el láser es el de un controlador GRBL con `M4` y nada se ha probado en un láser ni un material reales.
 
 **Siguiente**
 
