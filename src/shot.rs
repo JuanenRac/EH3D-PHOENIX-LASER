@@ -3,6 +3,7 @@
 //! nothing of the person's changed.
 
 use crate::lang::Lang;
+use crate::window::Mode;
 use std::path::PathBuf;
 
 /// The smallest side of the window of a picture, in pixels.
@@ -49,6 +50,72 @@ impl ShotTheme {
     }
 }
 
+/// What the picture shows of the window: one of its modes, or the section for the server.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ShotWindow {
+    /// The window with this mode chosen.
+    Mode(Mode),
+    /// The window with the section for the server open.
+    Server,
+}
+
+impl ShotWindow {
+    /// The words that name a window on the command line, in the order of the window: its modes and `server`.
+    pub const NAMES: [&'static str; 12] = [
+        "engrave",
+        "calibrate",
+        "cut",
+        "focus",
+        "frame",
+        "preview",
+        "trace",
+        "text",
+        "qr",
+        "marks",
+        "barcode",
+        "server",
+    ];
+
+    /// The word that names the window on the command line.
+    pub fn name(self) -> &'static str {
+        match self {
+            ShotWindow::Mode(Mode::Engrave) => "engrave",
+            ShotWindow::Mode(Mode::Calibrate) => "calibrate",
+            ShotWindow::Mode(Mode::Cut) => "cut",
+            ShotWindow::Mode(Mode::Focus) => "focus",
+            ShotWindow::Mode(Mode::Frame) => "frame",
+            ShotWindow::Mode(Mode::Preview) => "preview",
+            ShotWindow::Mode(Mode::Trace) => "trace",
+            ShotWindow::Mode(Mode::Text) => "text",
+            ShotWindow::Mode(Mode::Qr) => "qr",
+            ShotWindow::Mode(Mode::Marks) => "marks",
+            ShotWindow::Mode(Mode::Barcode) => "barcode",
+            ShotWindow::Server => "server",
+        }
+    }
+
+    /// The window a word names, in any case.
+    pub fn parse(text: &str) -> Option<ShotWindow> {
+        let word = text.trim().to_ascii_lowercase();
+        let mode = match word.as_str() {
+            "engrave" => Mode::Engrave,
+            "calibrate" => Mode::Calibrate,
+            "cut" => Mode::Cut,
+            "focus" => Mode::Focus,
+            "frame" => Mode::Frame,
+            "preview" => Mode::Preview,
+            "trace" => Mode::Trace,
+            "text" => Mode::Text,
+            "qr" => Mode::Qr,
+            "marks" => Mode::Marks,
+            "barcode" => Mode::Barcode,
+            "server" => return Some(ShotWindow::Server),
+            _ => return None,
+        };
+        Some(ShotWindow::Mode(mode))
+    }
+}
+
 /// What the picture mode was asked for.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ShotRequest {
@@ -62,6 +129,8 @@ pub struct ShotRequest {
     pub theme: ShotTheme,
     /// The frames drawn before the picture is taken.
     pub wait: u32,
+    /// Which window of the program is shown (`--window`); none leaves the window as it starts.
+    pub window: Option<ShotWindow>,
 }
 
 /// What the window was asked for on the command line.
@@ -96,9 +165,10 @@ struct PictureOptions {
     theme: Option<ShotTheme>,
     wait: Option<u32>,
     replace: bool,
+    window: Option<ShotWindow>,
 }
 
-/// Reads the arguments of the window (after an optional leading `gui`): `--shot FILE.png`, `--size WxH`, `--theme`, `--wait N`, `--replace`, `--lang CODE`, `--open FILE` and bare
+/// Reads the arguments of the window (after an optional leading `gui`): `--shot FILE.png`, `--size WxH`, `--theme`, `--wait N`, `--window NAME`, `--replace`, `--lang CODE`, `--open FILE` and bare
 /// file names, of which at most `max_files` are accepted. The answer for a mistake is the reason.
 pub fn parse_window_args(args: &[String], max_files: usize) -> Result<WindowArgs, String> {
     let args = if args.first().is_some_and(|a| a == "gui") {
@@ -139,6 +209,12 @@ pub fn parse_window_args(args: &[String], max_files: usize) -> Result<WindowArgs
                         .ok_or("--wait is a number of frames from 0 to 3600")?,
                 );
             }
+            "--window" => {
+                let text = iter.next().ok_or("--window needs the name of a window")?;
+                picture.window = Some(ShotWindow::parse(text).ok_or(
+                    "--window is engrave, calibrate, cut, focus, frame, preview, trace, text, qr, marks, barcode or server",
+                )?);
+            }
             "--lang" => {
                 let tag = iter.next().ok_or("--lang needs a language code")?;
                 parsed.lang = Some(Lang::from_code(tag).ok_or("unknown language code")?);
@@ -159,14 +235,18 @@ pub fn parse_window_args(args: &[String], max_files: usize) -> Result<WindowArgs
             size: picture.size.unwrap_or(DEFAULT_SIZE),
             theme: picture.theme.unwrap_or_default(),
             wait: picture.wait.unwrap_or(DEFAULT_WAIT),
+            window: picture.window,
         }),
         None => {
             if picture.size.is_some()
                 || picture.theme.is_some()
                 || picture.wait.is_some()
+                || picture.window.is_some()
                 || picture.replace
             {
-                return Err("--size, --theme, --wait and --replace need --shot".to_owned());
+                return Err(
+                    "--size, --theme, --wait, --window and --replace need --shot".to_owned(),
+                );
             }
             None
         }
@@ -260,6 +340,7 @@ mod tests {
                 size: DEFAULT_SIZE,
                 theme: ShotTheme::Forge,
                 wait: DEFAULT_WAIT,
+                window: None,
             })
         );
         let upper = parse_window_args(&args(&["--shot", "B.PNG", "x.pgm"]), 1).unwrap();
@@ -297,8 +378,68 @@ mod tests {
                 size: (1280, 720),
                 theme: ShotTheme::Light,
                 wait: 12,
+                window: None,
             })
         );
+    }
+
+    #[test]
+    fn a_window_is_read_in_any_case_and_every_name_reads_back() {
+        for name in ShotWindow::NAMES {
+            let window = ShotWindow::parse(name).unwrap();
+            assert_eq!(window.name(), name);
+            assert_eq!(ShotWindow::parse(&name.to_ascii_uppercase()), Some(window));
+        }
+        assert_eq!(
+            ShotWindow::parse(" Barcode "),
+            Some(ShotWindow::Mode(Mode::Barcode))
+        );
+        assert_eq!(ShotWindow::parse("server"), Some(ShotWindow::Server));
+        assert_eq!(ShotWindow::parse("settings"), None);
+        assert_eq!(ShotWindow::parse(""), None);
+    }
+
+    #[test]
+    fn every_mode_of_the_window_has_a_name_for_the_picture() {
+        let modes = [
+            Mode::Engrave,
+            Mode::Calibrate,
+            Mode::Cut,
+            Mode::Focus,
+            Mode::Frame,
+            Mode::Preview,
+            Mode::Trace,
+            Mode::Text,
+            Mode::Qr,
+            Mode::Marks,
+            Mode::Barcode,
+        ];
+        // the list of names is the modes plus the server section, with no name twice
+        assert_eq!(ShotWindow::NAMES.len(), modes.len() + 1);
+        for mode in modes {
+            let name = ShotWindow::Mode(mode).name();
+            assert!(ShotWindow::NAMES.contains(&name), "{name}");
+            assert_eq!(ShotWindow::parse(name), Some(ShotWindow::Mode(mode)));
+        }
+        let mut names = ShotWindow::NAMES.to_vec();
+        names.sort_unstable();
+        names.dedup();
+        assert_eq!(names.len(), ShotWindow::NAMES.len());
+    }
+
+    #[test]
+    fn the_window_of_the_picture_is_asked_for_with_window() {
+        let parsed =
+            parse_window_args(&args(&["--shot", "a.png", "--window", "Server"]), 1).unwrap();
+        assert_eq!(parsed.shot.unwrap().window, Some(ShotWindow::Server));
+        let parsed =
+            parse_window_args(&args(&["x.pgm", "--window", "qr", "--shot", "a.png"]), 1).unwrap();
+        assert_eq!(
+            parsed.shot.unwrap().window,
+            Some(ShotWindow::Mode(Mode::Qr))
+        );
+        let parsed = parse_window_args(&args(&["--shot", "a.png"]), 1).unwrap();
+        assert_eq!(parsed.shot.unwrap().window, None);
     }
 
     #[test]
@@ -327,6 +468,15 @@ mod tests {
             (vec!["--shot", "a.png", "--wait", "3601"], "from 0 to 3600"),
             (vec!["--size", "800x600"], "need --shot"),
             (vec!["--replace"], "need --shot"),
+            (vec!["--window", "server"], "need --shot"),
+            (
+                vec!["--shot", "a.png", "--window"],
+                "needs the name of a window",
+            ),
+            (
+                vec!["--shot", "a.png", "--window", "mars"],
+                "engrave, calibrate",
+            ),
             (vec!["--lang"], "needs a language code"),
             (vec!["--lang", "xx"], "unknown language code"),
             (vec!["--open"], "needs a file"),

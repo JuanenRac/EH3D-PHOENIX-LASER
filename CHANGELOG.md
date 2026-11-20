@@ -4,6 +4,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+- **A picture of any window of the program:** `--window NAME` with `--shot` shows one window of the program in the picture: one of its modes (`engrave`, `calibrate`, `cut`, `focus`, `frame`, `preview`, `trace`, `text`, `qr`, `marks`, `barcode`) is chosen, or `server` holds the section for the server open, which is how the panel of the server of the window is photographed for the README. The name is read in any case, a name the window does not have is refused with the list of names, and `--window` without `--shot` is refused like the other options of the picture; the picture still keeps no settings. The reading of the name is tested without a screen.
+
 - **The pictures of the window are taken again with the newest build:** the two pictures of `images/screens/` come from the Windows 64 bits program of the latest release.
 
 ## [0.1.4] - Server panel in the window, test fire and vector jobs, alignment from a camera picture, labels of the material editor and layer times with acceleration

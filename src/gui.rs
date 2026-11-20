@@ -4,7 +4,7 @@
 use crate::browse::{self, Browser};
 use crate::lang::{fill, Lang, Msg};
 use crate::materials;
-use crate::shot::{ShotRequest, ShotTheme, PATIENCE_FRAMES};
+use crate::shot::{ShotRequest, ShotTheme, ShotWindow, PATIENCE_FRAMES};
 use crate::vconfig::{KerfSide, LayerMode, QrEcc, TextAlign};
 use crate::window::{fire, Job, Key, Kind, LayerField, Mode, Section, Window, MAX_SEGMENTS};
 use eframe::egui::{
@@ -54,6 +54,8 @@ struct App {
     cursor: Option<(f64, f64)>,
     /// The panel of the settings of the server (the boxes, the state of the link, the login), made the first time the section is drawn.
     server_pane: Option<crate::linkpane::ServerPane>,
+    /// The section for the server is held open (the picture of that window, which keeps no settings).
+    server_open: bool,
 }
 
 impl App {
@@ -82,6 +84,7 @@ impl App {
             fit_pending,
             cursor: None,
             server_pane: None,
+            server_open: false,
         }
     }
 
@@ -661,55 +664,58 @@ impl App {
         pane.refresh();
         let view_lang =
             eh3d_view::texts::Lang::from_code(lang.code()).unwrap_or(eh3d_view::texts::Lang::En);
-        egui::CollapsingHeader::new(self.heading(Msg::SectionServer))
-            .default_open(self.win.server_configured() || !lines.is_empty())
-            .show(ui, |ui| {
-                if let Some(action) = eh3d_view::server_gui::show(ui, &mut pane.panel, view_lang) {
-                    pane.handle(action, &mut self.win.settings.server);
-                }
-                ui.separator();
-                let busy = self.win.server_active();
-                // a program that was opened to be seen is sent as it is only when the person says so (and only after it passes the check)
-                if self.win.mode == Mode::Preview {
-                    ui.checkbox(
-                        &mut self.win.send_opened_confirmed,
-                        Msg::ServerConfirmOpened.tr(lang),
-                    );
-                }
-                if ui
-                    .add_enabled(
-                        self.win.can_send() && !busy,
-                        egui::Button::new(Msg::ServerSend.tr(lang)),
-                    )
-                    .clicked()
-                {
-                    self.win.send_to_server();
-                }
-                for line in &lines {
-                    ui.label(egui::RichText::new(line.as_str()));
-                }
-                if busy {
-                    ui.horizontal(|ui| {
-                        let held = self.win.server_held();
-                        let label = if held {
-                            Msg::ServerResume
+        let mut header = egui::CollapsingHeader::new(self.heading(Msg::SectionServer))
+            .default_open(self.win.server_configured() || !lines.is_empty());
+        if self.server_open {
+            header = header.open(Some(true));
+        }
+        header.show(ui, |ui| {
+            if let Some(action) = eh3d_view::server_gui::show(ui, &mut pane.panel, view_lang) {
+                pane.handle(action, &mut self.win.settings.server);
+            }
+            ui.separator();
+            let busy = self.win.server_active();
+            // a program that was opened to be seen is sent as it is only when the person says so (and only after it passes the check)
+            if self.win.mode == Mode::Preview {
+                ui.checkbox(
+                    &mut self.win.send_opened_confirmed,
+                    Msg::ServerConfirmOpened.tr(lang),
+                );
+            }
+            if ui
+                .add_enabled(
+                    self.win.can_send() && !busy,
+                    egui::Button::new(Msg::ServerSend.tr(lang)),
+                )
+                .clicked()
+            {
+                self.win.send_to_server();
+            }
+            for line in &lines {
+                ui.label(egui::RichText::new(line.as_str()));
+            }
+            if busy {
+                ui.horizontal(|ui| {
+                    let held = self.win.server_held();
+                    let label = if held {
+                        Msg::ServerResume
+                    } else {
+                        Msg::ServerPause
+                    };
+                    if ui.button(label.tr(lang)).clicked() {
+                        if held {
+                            self.win.server_resume();
                         } else {
-                            Msg::ServerPause
-                        };
-                        if ui.button(label.tr(lang)).clicked() {
-                            if held {
-                                self.win.server_resume();
-                            } else {
-                                self.win.server_pause();
-                            }
+                            self.win.server_pause();
                         }
-                        let stop = egui::RichText::new(Msg::ServerStop.tr(lang)).color(DANGER);
-                        if ui.button(stop).clicked() {
-                            self.win.server_stop();
-                        }
-                    });
-                }
-            });
+                    }
+                    let stop = egui::RichText::new(Msg::ServerStop.tr(lang)).color(DANGER);
+                    if ui.button(stop).clicked() {
+                        self.win.server_stop();
+                    }
+                });
+            }
+        });
         self.server_pane = Some(pane);
         // the job is asked after again a moment later, so that the window shows how it goes without a click
         if self.win.server_active() {
@@ -1650,6 +1656,7 @@ pub fn run_shot(files: Vec<PathBuf>, lang: Lang, request: ShotRequest) -> Result
     let outcome: ShotOutcome = Arc::new(Mutex::new(None));
     let outcome_for_app = outcome.clone();
     let theme = request.theme;
+    let window = request.window;
     let initial = files.into_iter().next();
     eframe::run_native(
         "EH3D-PHOENIX-LASER",
@@ -1658,6 +1665,11 @@ pub fn run_shot(files: Vec<PathBuf>, lang: Lang, request: ShotRequest) -> Result
             install_fonts(&cc.egui_ctx);
             apply_theme(&cc.egui_ctx, theme);
             let mut app = App::build(lang, initial, false);
+            match window {
+                Some(ShotWindow::Mode(mode)) => app.win.set_mode(mode),
+                Some(ShotWindow::Server) => app.server_open = true,
+                None => {}
+            }
             app.shot = Some(ShotState {
                 request,
                 frame: 0,
