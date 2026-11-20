@@ -200,6 +200,7 @@ impl App {
                         }
                     }
                     self.preview_group(ui);
+                    self.server_group(ui);
                     self.layers_group(ui);
                     self.notes_group(ui);
                 });
@@ -643,6 +644,58 @@ impl App {
                     });
                 }
             });
+    }
+
+    /// The EH3D server: send the program of the window as a job, follow it, hold it and stop it with the emergency stop. It shows only when the settings give a server or a job is followed.
+    fn server_group(&mut self, ui: &mut egui::Ui) {
+        let lang = self.win.lang;
+        let lines = self.win.server_lines();
+        if !self.win.server_configured() && lines.is_empty() {
+            return;
+        }
+        egui::CollapsingHeader::new(self.heading(Msg::SectionServer))
+            .default_open(true)
+            .show(ui, |ui| {
+                let busy = self.win.server_active();
+                if ui
+                    .add_enabled(
+                        self.win.can_export() && !busy,
+                        egui::Button::new(Msg::ServerSend.tr(lang)),
+                    )
+                    .clicked()
+                {
+                    self.win.send_to_server();
+                }
+                for line in &lines {
+                    ui.label(egui::RichText::new(line.as_str()));
+                }
+                if busy {
+                    ui.horizontal(|ui| {
+                        let held = self.win.server_held();
+                        let label = if held {
+                            Msg::ServerResume
+                        } else {
+                            Msg::ServerPause
+                        };
+                        if ui.button(label.tr(lang)).clicked() {
+                            if held {
+                                self.win.server_resume();
+                            } else {
+                                self.win.server_pause();
+                            }
+                        }
+                        let stop = egui::RichText::new(Msg::ServerStop.tr(lang)).color(DANGER);
+                        if ui.button(stop).clicked() {
+                            self.win.server_stop();
+                        }
+                    });
+                }
+            });
+        // the job is asked after again a moment later, so that the window shows how it goes without a click
+        if self.win.server_active() {
+            ui.ctx()
+                .request_repaint_after(std::time::Duration::from_millis(300));
+        }
     }
 
     /// The question before the laser is turned on: the work is not made, and nothing is written, until the answer is yes.

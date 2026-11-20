@@ -16,6 +16,7 @@ use crate::preview;
 use crate::qr;
 use crate::raster::{engrave, overscan_for, Params};
 use crate::safety;
+use crate::server;
 use crate::svg::read_svg;
 use crate::text;
 use crate::tone::Tone;
@@ -949,6 +950,8 @@ pub enum Status {
     MaterialsLoaded(String, usize),
     /// A material was applied to the boxes of the window.
     MaterialApplied(String),
+    /// The program was sent to the server under this name and is being followed.
+    ServerSent(String),
     /// A material was written in the file of the library: its name and the name of the file.
     MaterialSaved(String, String),
     /// A material was removed from the file of the library: its name and the name of the file.
@@ -1163,6 +1166,7 @@ impl Status {
                 fill(Msg::MaterialsLoaded.tr(lang), &[name, &n.to_string()])
             }
             Status::MaterialApplied(name) => fill(Msg::MaterialApplied.tr(lang), &[name]),
+            Status::ServerSent(name) => fill(Msg::ServerSent.tr(lang), &[name]),
             Status::MaterialSaved(name, file) => fill(Msg::MaterialSaved.tr(lang), &[name, file]),
             Status::MaterialDeleted(name, file) => {
                 fill(Msg::MaterialDeleted.tr(lang), &[name, file])
@@ -1196,6 +1200,15 @@ pub struct MaterialDraft {
     pub note: String,
     /// The text of each key, in the order of `materials::KEYS`; an empty box means the material leaves that value as it is.
     pub values: Vec<String>,
+}
+
+/// The job that was sent to the server and is followed by a thread of its own; closing the window does not stop it on the server.
+pub struct ServerJob(pub server::Follow);
+
+impl std::fmt::Debug for ServerJob {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("ServerJob")
+    }
 }
 
 /// The state of the whole window.
@@ -1273,6 +1286,8 @@ pub struct Window {
     pub material_draft: Option<MaterialDraft>,
     /// The material that the person asked to delete once and has to ask for again.
     material_delete_armed: Option<String>,
+    /// The job on the server that is followed, when a program was sent.
+    pub server_job: Option<ServerJob>,
 }
 
 impl Window {
@@ -1322,6 +1337,7 @@ impl Window {
             barcode_mirror: BarcodeSettings::default().mirror,
             material_draft: None,
             material_delete_armed: None,
+            server_job: None,
         }
     }
 
@@ -2364,6 +2380,157 @@ impl Window {
                 false
             }
         }
+    }
+
+    /// Whether the settings say where the server is (`[server]` of the settings file).
+    pub fn server_configured(&self) -> bool {
+        self.settings.server.is_configured()
+    }
+
+    /// The program that is sent to the server: the one the window works out (or has worked out and not changed since), under the name it would be written with, with the header of the command
+    /// line, after the same guards as the export (nothing is sent from a frame that lights the laser and was not confirmed) and the check against the limits of the window and the machine of the settings.
+    fn server_program(&mut self) -> Result<(String, String), Status> {
+        if self.mode == Mode::Preview {
+            return Err(Status::NothingToWrite);
+        }
+        if (self.done.is_none() || self.stale) && !self.compute() {
+            return Err(self.status.clone());
+        }
+        if self.needs_confirmation() {
+            return Err(Status::NeedConfirm);
+        }
+        let done = self.done.as_ref().ok_or(Status::NeedImage)?;
+        let head = header(&Header {
+            generator: "phoenix-laser",
+            version: env!("CARGO_PKG_VERSION"),
+            source: done.source.as_ref().map(|(n, h)| (n.as_str(), h.clone())),
+            tools: &done.tools,
+        });
+        let text = format!("{head}{}", done.gcode);
+        let mut s = self.settings.clone();
+        s.machine.s_max = done.s_max;
+        (s.machine.max_power_percent, s.machine.max_speed_mm_min) = self.limits()?;
+        server::check_before_send(&text, &s).map_err(Status::Failed)?;
+        let name = self
+            .suggested_output_for(Job::ExportGcode)
+            .map(|p| name_of(&p))
+            .unwrap_or_else(|| "program.nc".to_string());
+        Ok((name, text))
+    }
+
+    /// Sends the program of the window to the server of the settings and follows the job. The server, the token and the machine come from `[server]` of the settings file (or the variable of the
+    /// token); a program that fails the check against the limits, or a machine that an emergency stop holds, is not sent.
+    pub fn send_to_server(&mut self) -> bool {
+        let lang = self.lang;
+        let s = self.settings.server.clone();
+        let Some(client) = server::Client::from_settings(&s, lang) else {
+            self.status = Status::Failed(
+                "server_address and server_machine are needed: give them in [server] of the settings file".to_string(),
+            );
+            return false;
+        };
+        if !client.has_token() {
+            self.status = Status::Failed(format!(
+                "server_token is empty: give it in [server] of the settings file or in the variable {}",
+                server::TOKEN_ENV
+            ));
+            return false;
+        }
+        self.send_with(|name, gcode| server::Follow::start(&client, name, gcode))
+    }
+
+    /// As `send_to_server`, with the follower made by the caller (a server in memory for the tests).
+    pub fn send_with(&mut self, start: impl FnOnce(&str, &str) -> server::Follow) -> bool {
+        if self.server_active() {
+            self.status = Status::Failed(
+                "a job is being followed already: stop it or wait for it".to_string(),
+            );
+            return false;
+        }
+        match self.server_program() {
+            Ok((name, text)) => {
+                self.server_job = Some(ServerJob(start(&name, &text)));
+                self.status = Status::ServerSent(name);
+                true
+            }
+            Err(s) => {
+                self.status = s;
+                false
+            }
+        }
+    }
+
+    /// A job on the server is followed and has not ended.
+    pub fn server_active(&self) -> bool {
+        self.server_job.as_ref().is_some_and(|j| {
+            let s = j.0.snapshot();
+            !s.over && s.error.is_none()
+        })
+    }
+
+    /// The followed job is held.
+    pub fn server_held(&self) -> bool {
+        self.server_job
+            .as_ref()
+            .and_then(|j| j.0.snapshot().info)
+            .is_some_and(|i| i.held())
+    }
+
+    pub fn server_pause(&self) {
+        if let Some(j) = &self.server_job {
+            j.0.pause();
+        }
+    }
+
+    pub fn server_resume(&self) {
+        if let Some(j) = &self.server_job {
+            j.0.resume();
+        }
+    }
+
+    /// The emergency stop of the job on the server: it ends at once and the machine is latched until an administrator releases it.
+    pub fn server_stop(&self) {
+        if let Some(j) = &self.server_job {
+            j.0.stop();
+        }
+    }
+
+    /// What the server says of the job that is followed, in the language of the window: its state and how far it is, why the following ended when it did not end with the job, and the latch of the
+    /// machine after an emergency stop.
+    pub fn server_lines(&self) -> Vec<String> {
+        let Some(job) = &self.server_job else {
+            return Vec::new();
+        };
+        let snap = job.0.snapshot();
+        let mut lines = Vec::new();
+        match &snap.info {
+            Some(i) => lines.push(fill(
+                Msg::ServerJob.tr(self.lang),
+                &[
+                    &i.id,
+                    &i.state,
+                    &i.percent().to_string(),
+                    &i.done.to_string(),
+                    &i.total.to_string(),
+                ],
+            )),
+            None if snap.error.is_none() => {
+                lines.push(Msg::ServerSending.tr(self.lang).to_string());
+            }
+            None => {}
+        }
+        if let Some(e) = &snap.error {
+            lines.push(fill(Msg::ServerError.tr(self.lang), &[e]));
+        }
+        if snap.latched == Some(true) {
+            lines.push(Msg::ServerLatched.tr(self.lang).to_string());
+        }
+        lines
+    }
+
+    /// Stops following the job (it stays where it is on the server).
+    pub fn server_forget(&mut self) {
+        self.server_job = None;
     }
 
     /// Makes a new, empty library of materials in a file that is not there yet (a file that is there is never written over) and loads it.
@@ -5882,6 +6049,168 @@ hatch_cross = on
             assert!(Status::MaterialDeleteAsk("birch".into())
                 .text(l)
                 .contains("birch"));
+        }
+    }
+
+    fn sim_follower(sim: &server::sim::LaserSim) -> impl FnOnce(&str, &str) -> server::Follow {
+        let sim = sim.clone();
+        move |name, gcode| {
+            let mut link = eh3d_serverclient::Settings::default();
+            link.set("server_address", "10.0.0.2:18200").unwrap();
+            link.set("server_token", "op").unwrap();
+            link.set("server_machine", "laser-1").unwrap();
+            link.set("server_retries", "0").unwrap();
+            let conn = server::Conn::over(
+                eh3d_serverclient::Client::new(link, Box::new(sim)),
+                "laser-1",
+                eh3d_serverclient::Lang::En,
+            );
+            server::Follow::start_over(conn, name.to_string(), gcode.to_string())
+        }
+    }
+
+    fn wait_for(w: &Window, what: impl Fn(&Window) -> bool) {
+        for _ in 0..400 {
+            if what(w) {
+                return;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(15));
+        }
+        panic!("the server job did not get there: {:?}", w.server_lines());
+    }
+
+    #[test]
+    fn the_program_of_the_window_is_sent_to_the_server_followed_and_stopped_with_the_emergency_stop(
+    ) {
+        let sim = server::sim::LaserSim::new("op", "adm");
+        let mut w = Window::new(Lang::En);
+        w.set_mode(Mode::Text);
+        w.set_words("OK".to_string());
+        assert!(!w.server_configured());
+        assert!(w.server_lines().is_empty());
+        // the program is worked out and checked, and goes under the name it would be written with
+        assert!(w.send_with(sim_follower(&sim)));
+        assert_eq!(w.status, Status::ServerSent("text.nc".to_string()));
+        assert_eq!(w.status.text(Lang::En), "Sent to the server as text.nc");
+        assert_eq!(w.status.text(Lang::Es), "Enviado al servidor como text.nc");
+        // a second program is not sent while the first is followed
+        assert!(!w.send_with(sim_follower(&sim)));
+        assert!(matches!(&w.status, Status::Failed(e) if e.contains("followed already")));
+        wait_for(&w, |w| !w.server_active());
+        let lines = w.server_lines();
+        assert!(lines[0].starts_with("Job w-1: done, 100 %"), "{lines:?}");
+        w.lang = Lang::Es;
+        assert!(w.server_lines()[0].starts_with("Trabajo w-1: done, 100 %"));
+        w.lang = Lang::En;
+        let bodies = sim.bodies();
+        let made = bodies
+            .iter()
+            .find(|b| b.contains("\"kind\":\"gcode\""))
+            .unwrap();
+        assert!(
+            made.contains("\"app\":\"laser\"") && made.contains("M2"),
+            "{made}"
+        );
+        assert!(!sim.latched());
+        // a new program goes, is held and then stopped with the emergency stop: the machine is latched and the window says so
+        w.server_forget();
+        let long = "AB CD EF GH IJ KL MN OP QR ST UV WX YZ 01 23 45 67 89";
+        w.set_words(long.to_string());
+        set(&mut w, Key::TextMaxMinutes, "1000");
+        assert!(w.send_with(sim_follower(&sim)));
+        w.server_pause();
+        wait_for(&w, Window::server_held);
+        w.server_stop();
+        wait_for(&w, |w| !w.server_active());
+        let lines = w.server_lines();
+        assert!(lines.iter().any(|l| l.contains("cancelled")), "{lines:?}");
+        assert!(
+            lines
+                .iter()
+                .any(|l| l.contains("latched by the emergency stop")),
+            "{lines:?}"
+        );
+        assert!(sim.latched());
+        // the machine is latched, so the next program is refused by the follower with the reason
+        w.server_forget();
+        assert!(w.send_with(sim_follower(&sim)));
+        wait_for(&w, |w| !w.server_active());
+        let lines = w.server_lines();
+        assert!(
+            lines
+                .iter()
+                .any(|l| l.starts_with("Server: ") && l.contains("emergency stop")),
+            "{lines:?}"
+        );
+    }
+
+    #[test]
+    fn a_program_that_fails_the_check_or_waits_for_a_confirmation_is_not_sent() {
+        let sim = server::sim::LaserSim::new("op", "adm");
+        let called = std::cell::Cell::new(0);
+        let start = |_: &str, _: &str| -> server::Follow {
+            called.set(called.get() + 1);
+            unreachable!("nothing is sent")
+        };
+        let mut w = Window::new(Lang::En);
+        // a program that was opened to be seen is not sent
+        let s = Scratch::new("server-preview");
+        let nc = s.write("a.nc", "G21\nG90\nM4 S0\nG1 X5 S100 F500\nM5\nM2\n");
+        assert!(w.open_gcode(&nc));
+        assert!(!w.send_with(start));
+        assert_eq!(w.status, Status::NothingToWrite);
+        // a frame that lights the laser is not sent until the person has confirmed it
+        w.set_mode(Mode::Text);
+        w.set_words("A".to_string());
+        assert!(w.compute());
+        w.mode = Mode::Frame;
+        set(&mut w, Key::FramePilot, "3");
+        assert!(!w.send_with(start));
+        assert_ne!(w.status, Status::ServerSent(String::new()));
+        // a program that fails the check (the full power is over) is refused with the reason, and the server sees nothing
+        w.mode = Mode::Text;
+        w.set_words("B".to_string());
+        assert!(w.compute());
+        w.done.as_mut().unwrap().gcode = "G21\nG90\nM4 S0\nG1 X5 S5000 F500\nM5\nM2\n".to_string();
+        w.stale = false;
+        assert!(!w.send_with(start));
+        assert!(
+            matches!(&w.status, Status::Failed(e) if e.contains("not sent")),
+            "{:?}",
+            w.status
+        );
+        assert_eq!(called.get(), 0);
+        assert!(sim.seen().is_empty());
+        // the settings have no server, no token or a machine that cannot go in a request
+        let mut w = Window::new(Lang::En);
+        w.set_mode(Mode::Text);
+        w.set_words("A".to_string());
+        assert!(!w.send_to_server());
+        assert!(matches!(&w.status, Status::Failed(e) if e.contains("server_address")));
+        w.settings.server.server_address = "10.0.0.2:18200".to_string();
+        w.settings.server.server_machine = "laser-1".to_string();
+        if std::env::var(server::TOKEN_ENV).is_err() {
+            assert!(!w.send_to_server());
+            assert!(
+                matches!(&w.status, Status::Failed(e) if e.contains("server_token")),
+                "{:?}",
+                w.status
+            );
+        }
+        assert!(w.server_configured());
+        for l in Lang::ALL {
+            for m in [
+                Msg::SectionServer,
+                Msg::ServerSend,
+                Msg::ServerPause,
+                Msg::ServerResume,
+                Msg::ServerStop,
+                Msg::ServerSending,
+                Msg::ServerLatched,
+            ] {
+                assert!(!m.tr(l).is_empty());
+            }
+            assert!(Status::ServerSent("x.nc".into()).text(l).contains("x.nc"));
         }
     }
 
