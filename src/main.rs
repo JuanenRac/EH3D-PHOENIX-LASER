@@ -2128,7 +2128,7 @@ fn run(mut args: Vec<String>) -> Result<(), String> {
                 ));
             }
             let bytes = fs::read(input).map_err(|e| format!("{input}: {e}"))?;
-            let mut v = verify::verify(&bytes, &l)?;
+            let mut v = verify::verify_with(&bytes, &l, &verify::guard_of(&settings))?;
             if let Some(want) = expected.filter(|w| *w != v.sha256) {
                 v.problems.push(format!(
                     "the program is not the one that was authorised: its SHA-256 is {}, not {want}",

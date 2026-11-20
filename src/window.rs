@@ -2954,7 +2954,7 @@ impl Window {
             overscan_mm: self.verify_overscan().ok()?,
             arc_tolerance_mm: self.settings.verify.arc_tolerance_mm,
         };
-        verify::verify(gcode.as_bytes(), &l).ok()
+        verify::verify_with(gcode.as_bytes(), &l, &verify::guard_of(&self.settings)).ok()
     }
 
     /// The lines of the check of the program: whether it passes (with the start of its SHA-256) and, when it fails, what is wrong.

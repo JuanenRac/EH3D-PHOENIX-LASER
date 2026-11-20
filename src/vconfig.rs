@@ -5,6 +5,7 @@
 //! The file is a list of `key = value` lines in sections (`[limits]`, `[read]`, `[order]`, `[offset]`, `[hatch]`, `[machine]`, `[defaults]` and one `[layer NAME]` for each layer or
 //! colour); a line that starts with `#` or `;` is a note. A key that is not known is an error that names its line: a typing mistake never changes nothing silently.
 
+use crate::guard::{Interlocks, Zone, ZoneKind, MAX_ZONES};
 use crate::tone::Tone;
 use crate::vector::{GroupBy, Limits, Pt, ReadOptions};
 use std::path::Path;
@@ -1103,6 +1104,10 @@ pub struct Settings {
     pub marks: MarksSettings,
     /// The EH3D server the programs can be sent to (`phoenix-laser server`).
     pub server: ServerSettings,
+    /// The rectangles of the bed a program must keep out of (`[zone NAME]`).
+    pub zones: Vec<Zone>,
+    /// The emergency stop, the enclosure and the air assist as the file says them (`[interlocks]`).
+    pub interlocks: Interlocks,
     /// The tone curve of a picture before it becomes dots (`phoenix-laser engrave` and the window).
     pub tone: Tone,
     pub defaults: LayerParams,
@@ -1139,6 +1144,8 @@ impl Default for Settings {
             barcode: BarcodeSettings::default(),
             marks: MarksSettings::default(),
             server: ServerSettings::default(),
+            zones: Vec::new(),
+            interlocks: Interlocks::default(),
             tone: Tone::default(),
             defaults: LayerParams::default(),
             layers: Vec::new(),
@@ -1243,6 +1250,12 @@ impl Settings {
         self.barcode.validate()?;
         self.marks.validate()?;
         self.server.validate()?;
+        if self.zones.len() > MAX_ZONES {
+            return Err(format!("the settings describe more than {MAX_ZONES} zones"));
+        }
+        for z in &self.zones {
+            z.validate()?;
+        }
         self.tone.validate()?;
         self.defaults.validate(m.max_passes)?;
         if self.defaults.mode != LayerMode::Skip {
@@ -1397,6 +1410,20 @@ fn set_global(s: &mut Settings, section: &str, key: &str, value: &str) -> Result
         ("tone", "brightness") => s.tone.brightness = number(value)?,
         ("tone", "invert") => s.tone.invert = switch(value)?,
         ("tone", "auto_level") => s.tone.auto_level = switch(value)?,
+        ("interlocks", "estop") => {
+            s.interlocks.estop = Interlocks::estop_from_word(value)
+                .ok_or_else(|| format!("'{}' is not released or pressed", value.trim()))?
+        }
+        ("interlocks", "enclosure") => {
+            s.interlocks.enclosure = Interlocks::enclosure_from_word(value)
+                .ok_or_else(|| format!("'{}' is not closed, open or unknown", value.trim()))?
+        }
+        ("interlocks", "air_assist") => {
+            s.interlocks.air_assist = Interlocks::air_assist_from_word(value)
+                .ok_or_else(|| format!("'{}' is not on, off or unknown", value.trim()))?
+        }
+        ("interlocks", "require_enclosure") => s.interlocks.require_enclosure = switch(value)?,
+        ("interlocks", "require_air_assist") => s.interlocks.require_air_assist = switch(value)?,
         ("verify", "overscan_mm") => s.verify.overscan_mm = number(value)?,
         ("verify", "arc_tolerance_mm") => s.verify.arc_tolerance_mm = number(value)?,
         ("calibrate", "steps") => {
@@ -1529,6 +1556,21 @@ fn set_global(s: &mut Settings, section: &str, key: &str, value: &str) -> Result
     Ok(())
 }
 
+fn set_zone(z: &mut Zone, key: &str, value: &str) -> Result<(), String> {
+    match key {
+        "x_mm" => z.x_mm = number(value)?,
+        "y_mm" => z.y_mm = number(value)?,
+        "width_mm" => z.width_mm = number(value)?,
+        "height_mm" => z.height_mm = number(value)?,
+        "kind" => {
+            z.kind = ZoneKind::from_word(value)
+                .ok_or_else(|| format!("'{}' is not no_burn or no_go", value.trim()))?
+        }
+        _ => return Err(format!("'{key}' is not a setting of a zone")),
+    }
+    Ok(())
+}
+
 fn set_profile(p: &mut Profile, key: &str, value: &str) -> Result<(), String> {
     match key {
         "travel_x_mm" => p.travel_x_mm = Some(number(value)?),
@@ -1556,6 +1598,7 @@ pub fn parse(text: &str) -> Result<Settings, String> {
     let mut entries: Vec<Entry> = Vec::new();
     let mut named: Vec<String> = Vec::new();
     let mut named_profiles: Vec<String> = Vec::new();
+    let mut named_zones: Vec<String> = Vec::new();
     let mut section = String::new();
     for (n, raw) in text.lines().enumerate() {
         let line = n + 1;
@@ -1571,7 +1614,7 @@ pub fn parse(text: &str) -> Result<Settings, String> {
             let (word, rest) = head.split_once(char::is_whitespace).unwrap_or((head, ""));
             let word = word.to_ascii_lowercase();
             section = match word.as_str() {
-                "limits" | "read" | "order" | "offset" | "hatch" | "machine" | "frame" | "focus" | "trace" | "tone" | "verify" | "calibrate" | "text" | "qr" | "barcode" | "marks" | "server" | "defaults" if rest.trim().is_empty() => word,
+                "limits" | "read" | "order" | "offset" | "hatch" | "machine" | "frame" | "focus" | "trace" | "tone" | "verify" | "calibrate" | "text" | "qr" | "barcode" | "marks" | "server" | "interlocks" | "defaults" if rest.trim().is_empty() => word,
                 "layer" if !rest.trim().is_empty() => {
                     named.push(rest.trim().to_lowercase());
                     format!("layer {}", rest.trim().to_lowercase())
@@ -1580,7 +1623,11 @@ pub fn parse(text: &str) -> Result<Settings, String> {
                     named_profiles.push(rest.trim().to_lowercase());
                     format!("profile {}", rest.trim().to_lowercase())
                 }
-                _ => return Err(format!("line {line}: '[{head}]' is not a section (limits, read, order, offset, hatch, machine, frame, focus, trace, tone, verify, calibrate, text, qr, barcode, marks, server, defaults, layer NAME or profile NAME)")),
+                "zone" if !rest.trim().is_empty() => {
+                    named_zones.push(rest.trim().to_lowercase());
+                    format!("zone {}", rest.trim().to_lowercase())
+                }
+                _ => return Err(format!("line {line}: '[{head}]' is not a section (limits, read, order, offset, hatch, machine, frame, focus, trace, tone, verify, calibrate, text, qr, barcode, marks, server, interlocks, defaults, layer NAME, profile NAME or zone NAME)")),
             };
             continue;
         }
@@ -1626,6 +1673,22 @@ pub fn parse(text: &str) -> Result<Settings, String> {
             };
             set_profile(&mut s.profiles[at], e.key, e.value)
                 .map_err(|m| format!("line {}: {m}", e.line))?;
+        } else if let Some(name) = e.section.strip_prefix("zone ") {
+            let at = match s.zones.iter().position(|z| z.name == name) {
+                Some(i) => i,
+                None => {
+                    if s.zones.len() >= MAX_ZONES {
+                        return Err(format!("line {}: more than {MAX_ZONES} zones", e.line));
+                    }
+                    s.zones.push(Zone {
+                        name: name.to_string(),
+                        ..Zone::default()
+                    });
+                    s.zones.len() - 1
+                }
+            };
+            set_zone(&mut s.zones[at], e.key, e.value)
+                .map_err(|m| format!("line {}: {m}", e.line))?;
         } else if let Some(name) = e.section.strip_prefix("layer ") {
             let at = match s.layers.iter().position(|(n, _)| n == name) {
                 Some(i) => i,
@@ -1653,6 +1716,18 @@ pub fn parse(text: &str) -> Result<Settings, String> {
             s.profiles.push(Profile {
                 name,
                 ..Profile::default()
+            });
+        }
+    }
+    // a zone section with no key still names the zone (and is refused: it has no size)
+    for name in named_zones {
+        if !s.zones.iter().any(|z| z.name == name) {
+            if s.zones.len() >= MAX_ZONES {
+                return Err(format!("more than {MAX_ZONES} zones"));
+            }
+            s.zones.push(Zone {
+                name,
+                ..Zone::default()
             });
         }
     }
@@ -1707,6 +1782,103 @@ mod tests {
                 e.contains("arc_tolerance_mm") || e.contains("number"),
                 "{bad}: {e}"
             );
+        }
+    }
+
+    #[test]
+    fn a_zone_section_names_a_rectangle_and_what_it_forbids() {
+        let s = parse(
+            "[zone Clamp]\nx_mm = 10\ny_mm = 20\nwidth_mm = 30\nheight_mm = 5\nkind = no_burn\n[zone Camera]\nx_mm = 100\nwidth_mm = 10\nheight_mm = 10\n",
+        )
+        .unwrap();
+        assert_eq!(s.zones.len(), 2);
+        assert_eq!(s.zones[0].name, "clamp");
+        assert_eq!(
+            (
+                s.zones[0].x_mm,
+                s.zones[0].y_mm,
+                s.zones[0].width_mm,
+                s.zones[0].height_mm
+            ),
+            (10.0, 20.0, 30.0, 5.0)
+        );
+        assert_eq!(s.zones[0].kind, ZoneKind::NoBurn);
+        // a zone with no kind said is the strongest one
+        assert_eq!(s.zones[1].kind, ZoneKind::NoGo);
+        assert_eq!(s.zones[1].y_mm, 0.0);
+        // the same zone twice is one zone
+        let t = parse("[zone a]\nwidth_mm = 1\n[zone A]\nheight_mm = 1\n").unwrap();
+        assert_eq!(t.zones.len(), 1);
+        assert!(Settings::default().zones.is_empty());
+    }
+
+    #[test]
+    fn a_zone_that_forbids_nothing_or_is_written_wrong_is_refused() {
+        for (text, reason) in [
+            ("[zone a]\n", "width_mm"),
+            ("[zone a]\nwidth_mm = 5\n", "height_mm"),
+            ("[zone a]\nwidth_mm = 0\nheight_mm = 5\n", "width_mm"),
+            (
+                "[zone a]\nwidth_mm = 5\nheight_mm = 5\nkind = off\n",
+                "no_burn or no_go",
+            ),
+            (
+                "[zone a]\nwidth_mm = 5\nheight_mm = 5\ncolour = red\n",
+                "not a setting of a zone",
+            ),
+            ("[zone a]\nwidth_mm = x\n", "not a number"),
+            ("[zone]\nwidth_mm = 5\n", "not a section"),
+        ] {
+            let e = parse(text).unwrap_err();
+            assert!(e.contains(reason), "{text:?}: {e}");
+        }
+        let many: String = (0..=crate::guard::MAX_ZONES)
+            .map(|i| format!("[zone z{i}]\nwidth_mm = 1\nheight_mm = 1\n"))
+            .collect();
+        assert!(parse(&many).unwrap_err().contains("more than"));
+    }
+
+    #[test]
+    fn the_example_of_the_zones_and_the_interlocks_is_a_valid_file() {
+        let text = std::fs::read_to_string(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/safety.cfg"),
+        )
+        .unwrap();
+        let s = parse(&text).unwrap();
+        assert_eq!(s.zones.len(), 2);
+        assert_eq!(s.zones[0].kind, ZoneKind::NoBurn);
+        assert_eq!(s.zones[1].kind, ZoneKind::NoGo);
+        assert!(s.interlocks.problems().is_empty());
+        assert!(s.interlocks.is_active());
+    }
+
+    #[test]
+    fn the_interlocks_are_read_and_default_to_requiring_nothing() {
+        let d = Settings::default().interlocks;
+        assert!(!d.is_active());
+        let s = parse(
+            "[interlocks]\nestop = Pressed\nenclosure = closed\nair_assist = off\nrequire_enclosure = on\nrequire_air_assist = yes\n",
+        )
+        .unwrap();
+        assert_eq!(s.interlocks.estop, crate::guard::Estop::Pressed);
+        assert_eq!(s.interlocks.enclosure, crate::guard::Enclosure::Closed);
+        assert_eq!(s.interlocks.air_assist, crate::guard::AirAssist::Off);
+        assert!(s.interlocks.require_enclosure && s.interlocks.require_air_assist);
+        for (text, reason) in [
+            ("[interlocks]\nestop = maybe\n", "released or pressed"),
+            (
+                "[interlocks]\nenclosure = shut\n",
+                "closed, open or unknown",
+            ),
+            ("[interlocks]\nair_assist = auto\n", "on, off or unknown"),
+            ("[interlocks]\nrequire_enclosure = perhaps\n", "on or off"),
+            (
+                "[interlocks]\nlid = closed\n",
+                "not a setting of [interlocks]",
+            ),
+        ] {
+            let e = parse(text).unwrap_err();
+            assert!(e.contains(reason), "{text:?}: {e}");
         }
     }
 

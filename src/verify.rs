@@ -48,6 +48,23 @@ impl Default for Limits {
     }
 }
 
+/// The checks that depend on the settings file and not on the machine alone: the forbidden zones of the bed and the interlocks.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct Guard<'a> {
+    /// The rectangles the program must keep out of.
+    pub zones: &'a [crate::guard::Zone],
+    /// The interlocks, when they are to be checked.
+    pub interlocks: Option<&'a crate::guard::Interlocks>,
+}
+
+/// The zones and the interlocks of a settings file.
+pub fn guard_of(s: &crate::vconfig::Settings) -> Guard<'_> {
+    Guard {
+        zones: &s.zones,
+        interlocks: Some(&s.interlocks),
+    }
+}
+
 /// The most the head may be allowed to go past the bed (mm).
 pub const MAX_OVERSCAN_MM: f64 = 100.0;
 
@@ -68,6 +85,8 @@ pub struct Verdict {
     pub max_power_percent: f64,
     /// The highest feed of a move that is not rapid, mm/min.
     pub max_feed: f64,
+    /// The names of the checks of the settings file that were made besides the usual ones (`forbidden_zones`, `interlocks`).
+    pub guards: Vec<&'static str>,
     /// What makes the program fail.
     pub problems: Vec<String>,
     /// What is worth knowing and does not make it fail.
@@ -95,6 +114,12 @@ fn is_problem(note: &str) -> bool {
 
 /// Checks a program. `bytes` are the bytes of the file (their hash is the one that is reported).
 pub fn verify(bytes: &[u8], l: &Limits) -> Result<Verdict, String> {
+    verify_with(bytes, l, &Guard::default())
+}
+
+/// Checks a program like [`verify`], and also against the forbidden zones and the interlocks of the settings file: a program that burns in a `no_burn` zone or enters a `no_go` zone fails, and so does
+/// any program while the emergency stop is pressed or a required interlock is not in its safe state.
+pub fn verify_with(bytes: &[u8], l: &Limits, guard: &Guard) -> Result<Verdict, String> {
     crate::safety::validate_max(l.max_power_percent)?;
     crate::safety::validate_max_speed(l.max_speed_mm_min)?;
     if l.s_max == 0 || l.s_max > 100_000 {
@@ -185,6 +210,15 @@ pub fn verify(bytes: &[u8], l: &Limits) -> Result<Verdict, String> {
             l.max_speed_mm_min
         ));
     }
+    let mut guards: Vec<&'static str> = Vec::new();
+    if !guard.zones.is_empty() {
+        guards.push("forbidden_zones");
+        problems.extend(crate::guard::program_problems(&program, guard.zones));
+    }
+    if let Some(i) = guard.interlocks.filter(|i| i.is_active()) {
+        guards.push("interlocks");
+        problems.extend(i.problems());
+    }
     Ok(Verdict {
         sha256: sha256_hex(bytes),
         bytes: bytes.len(),
@@ -196,6 +230,7 @@ pub fn verify(bytes: &[u8], l: &Limits) -> Result<Verdict, String> {
         max_s: max_burn_s,
         max_power_percent: max_burn_s / f64::from(l.s_max) * 100.0,
         max_feed,
+        guards,
         problems,
         notes,
     })
@@ -285,7 +320,12 @@ impl Verdict {
             l.overscan_mm,
             profile,
             config,
-            json_list(&validations(l)),
+            json_list(
+                &validations(l)
+                    .into_iter()
+                    .chain(self.guards.iter().map(|g| g.to_string()))
+                    .collect::<Vec<String>>()
+            ),
             json_list(&self.problems),
             json_list(&self.notes),
         )
@@ -346,6 +386,122 @@ mod tests {
             verify(more.as_bytes(), &Limits::default()).unwrap().sha256,
             v.sha256
         );
+    }
+
+    #[test]
+    fn a_program_that_burns_in_a_forbidden_zone_fails_and_the_report_names_the_check() {
+        use crate::guard::{Zone, ZoneKind};
+        // GOOD burns from 0, 0 to 10, 0 and on to 10, 10
+        let zones = [Zone {
+            name: "clamp".to_string(),
+            x_mm: 8.0,
+            y_mm: 4.0,
+            width_mm: 5.0,
+            height_mm: 2.0,
+            kind: ZoneKind::NoBurn,
+        }];
+        let guard = Guard {
+            zones: &zones,
+            interlocks: None,
+        };
+        let v = verify_with(GOOD.as_bytes(), &Limits::default(), &guard).unwrap();
+        assert!(!v.passes());
+        assert!(
+            v.problems
+                .iter()
+                .any(|p| p.contains("forbidden zone clamp")),
+            "{:?}",
+            v.problems
+        );
+        assert_eq!(v.guards, ["forbidden_zones"]);
+        let j = v.json(&Limits::default());
+        assert!(j.contains("\"forbidden_zones\""), "{j}");
+        // the same program with a zone it does not reach passes, and says it was checked
+        let away = [Zone {
+            y_mm: 50.0,
+            ..zones[0].clone()
+        }];
+        let ok = verify_with(
+            GOOD.as_bytes(),
+            &Limits::default(),
+            &Guard {
+                zones: &away,
+                interlocks: None,
+            },
+        )
+        .unwrap();
+        assert!(ok.passes(), "{:?}", ok.problems);
+        assert_eq!(ok.guards, ["forbidden_zones"]);
+        // without a guard nothing changes: the checks are the usual six and the hash is the one of the bytes
+        let plain = verify(GOOD.as_bytes(), &Limits::default()).unwrap();
+        assert!(plain.guards.is_empty());
+        assert_eq!(plain.sha256, ok.sha256);
+        assert!(!plain.json(&Limits::default()).contains("forbidden_zones"));
+    }
+
+    #[test]
+    fn a_pressed_emergency_stop_fails_every_program_and_a_released_one_adds_nothing() {
+        use crate::guard::{Estop, Interlocks};
+        let pressed = Interlocks {
+            estop: Estop::Pressed,
+            ..Interlocks::default()
+        };
+        let v = verify_with(
+            GOOD.as_bytes(),
+            &Limits::default(),
+            &Guard {
+                zones: &[],
+                interlocks: Some(&pressed),
+            },
+        )
+        .unwrap();
+        assert!(!v.passes());
+        assert!(v.problems[0].contains("emergency stop is pressed"));
+        assert_eq!(v.guards, ["interlocks"]);
+        // the defaults require nothing: the report has no interlocks check
+        let idle = Interlocks::default();
+        let ok = verify_with(
+            GOOD.as_bytes(),
+            &Limits::default(),
+            &Guard {
+                zones: &[],
+                interlocks: Some(&idle),
+            },
+        )
+        .unwrap();
+        assert!(ok.passes() && ok.guards.is_empty());
+        // a required enclosure whose state is not known stops the program
+        let lid = Interlocks {
+            require_enclosure: true,
+            ..Interlocks::default()
+        };
+        let stopped = verify_with(
+            GOOD.as_bytes(),
+            &Limits::default(),
+            &Guard {
+                zones: &[],
+                interlocks: Some(&lid),
+            },
+        )
+        .unwrap();
+        assert!(stopped
+            .problems
+            .iter()
+            .any(|p| p.contains("enclosure must be closed")));
+    }
+
+    #[test]
+    fn the_guard_of_the_settings_holds_their_zones_and_interlocks() {
+        let s = crate::vconfig::parse(
+            "[zone a]\nwidth_mm = 5\nheight_mm = 5\n[interlocks]\nestop = pressed\n",
+        )
+        .unwrap();
+        let g = guard_of(&s);
+        assert_eq!(g.zones.len(), 1);
+        assert!(g.interlocks.is_some_and(|i| i.is_active()));
+        let plain = crate::vconfig::Settings::default();
+        let none = guard_of(&plain);
+        assert!(none.zones.is_empty());
     }
 
     #[test]

@@ -360,6 +360,13 @@ pub fn check_vector_before_send(job: &VectorJob, s: &Settings) -> Result<(), Str
     if job.points() > MAX_VECTOR_POINTS {
         problems.push(format!("more than {MAX_VECTOR_POINTS} points"));
     }
+    problems.extend(crate::guard::path_problems(
+        job.paths
+            .iter()
+            .map(|p| (p.layer.as_str(), p.points.as_slice(), p.closed)),
+        &s.zones,
+    ));
+    problems.extend(s.interlocks.problems());
     if problems.is_empty() {
         Ok(())
     } else {
@@ -434,6 +441,10 @@ pub fn check_test_fire(power_pct: f64, seconds: f64, s: &Settings) -> Result<(),
         return Err(format!(
             "the time of a test fire is a number from {TEST_FIRE_MIN_S} to {TEST_FIRE_MAX_S} seconds"
         ));
+    }
+    let stopped = s.interlocks.problems();
+    if !stopped.is_empty() {
+        return Err(format!("nothing is fired: {}", stopped.join("; ")));
     }
     Ok(())
 }
@@ -548,7 +559,7 @@ pub fn check_before_send(gcode: &str, s: &Settings) -> Result<(), String> {
         overscan_mm: s.verify.overscan_mm,
         arc_tolerance_mm: s.verify.arc_tolerance_mm,
     };
-    let verdict = verify::verify(gcode.as_bytes(), &limits)?;
+    let verdict = verify::verify_with(gcode.as_bytes(), &limits, &verify::guard_of(s))?;
     if verdict.passes() {
         Ok(())
     } else {
@@ -1365,6 +1376,66 @@ mod tests {
         assert!(check_before_send(&long, &s).unwrap_err().contains("lines"));
         let big = "#".repeat(MAX_SEND_BYTES + 1);
         assert!(check_before_send(&big, &s).unwrap_err().contains("larger"));
+    }
+
+    #[test]
+    fn a_program_that_reaches_a_forbidden_zone_or_meets_a_pressed_stop_is_not_sent() {
+        use crate::guard::{Estop, Zone, ZoneKind};
+        // PROGRAM burns from 0, 0 to 10, 0
+        let mut zoned = Settings::default();
+        zoned.zones.push(Zone {
+            name: "clamp".to_string(),
+            x_mm: 4.0,
+            y_mm: -1.0,
+            width_mm: 2.0,
+            height_mm: 2.0,
+            kind: ZoneKind::NoBurn,
+        });
+        let e = check_before_send(PROGRAM, &zoned).unwrap_err();
+        assert!(
+            e.contains("not sent") && e.contains("forbidden zone clamp"),
+            "{e}"
+        );
+        zoned.zones[0].y_mm = 5.0;
+        assert!(check_before_send(PROGRAM, &zoned).is_ok());
+        let mut stopped = Settings::default();
+        stopped.interlocks.estop = Estop::Pressed;
+        let e = check_before_send(PROGRAM, &stopped).unwrap_err();
+        assert!(e.contains("emergency stop is pressed"), "{e}");
+        // a required enclosure whose state is not known stops it as well
+        let mut lid = Settings::default();
+        lid.interlocks.require_enclosure = true;
+        assert!(check_before_send(PROGRAM, &lid).is_err());
+        lid.interlocks.enclosure = crate::guard::Enclosure::Closed;
+        assert!(check_before_send(PROGRAM, &lid).is_ok());
+    }
+
+    #[test]
+    fn a_vector_job_and_a_test_fire_are_stopped_by_the_zones_and_the_interlocks_of_the_settings() {
+        use crate::guard::{Estop, Zone, ZoneKind};
+        let (job, _) = vector_job(&plate(), &plate_settings()).unwrap();
+        let mut zoned = plate_settings();
+        zoned.zones.push(Zone {
+            name: "fixture".to_string(),
+            x_mm: -1.0,
+            y_mm: -1.0,
+            width_mm: 500.0,
+            height_mm: 500.0,
+            kind: ZoneKind::NoGo,
+        });
+        let e = check_vector_before_send(&job, &zoned).unwrap_err();
+        assert!(e.contains("reaches the forbidden zone fixture"), "{e}");
+        let mut stopped = plate_settings();
+        stopped.interlocks.estop = Estop::Pressed;
+        let e = check_vector_before_send(&job, &stopped).unwrap_err();
+        assert!(e.contains("emergency stop is pressed"), "{e}");
+        // a test fire has no path: zones do not matter, the interlocks do
+        assert!(check_test_fire(1.0, 0.1, &zoned).is_ok());
+        let e = check_test_fire(1.0, 0.1, &stopped).unwrap_err();
+        assert!(
+            e.contains("nothing is fired") && e.contains("emergency stop"),
+            "{e}"
+        );
     }
 
     #[test]

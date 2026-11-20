@@ -17,7 +17,7 @@ key = value
 key = value
 ```
 
-Sections: `[limits]`, `[read]`, `[order]`, `[offset]`, `[hatch]`, `[machine]`, `[frame]`, `[focus]`, `[trace]`, `[tone]`, `[verify]`, `[calibrate]`, `[text]`, `[qr]`, `[defaults]`, one `[layer NAME]` for each layer or colour and one `[profile NAME]` for each machine. `[defaults]` is what a layer gets that the file
+Sections: `[limits]`, `[read]`, `[order]`, `[offset]`, `[hatch]`, `[machine]`, `[frame]`, `[focus]`, `[trace]`, `[tone]`, `[verify]`, `[calibrate]`, `[text]`, `[qr]`, `[interlocks]`, `[defaults]`, one `[layer NAME]` for each layer or colour, one `[profile NAME]` for each machine and one `[zone NAME]` for each forbidden zone of the bed. `[defaults]` is what a layer gets that the file
 does not name, and also what every `[layer NAME]` starts from (wherever in the file `[defaults]` is written). The switches are `on` and `off`.
 
 ## What a layer is
@@ -230,6 +230,30 @@ The check of a program (`phoenix-laser verify`). Work outside the bed is a failu
 | `arc_tolerance_mm` | 0.01 | how far (mm) the straight pieces that an arc (`G2`, `G3`) of the program is cut into may lie from the true arc, from 0.0005 to 1; a finer tolerance gives more pieces. The length, the time, the box and the check against the bed follow the curve |
 
 The keys of `[verify]` are `overscan_mm` and `arc_tolerance_mm`.
+
+### `[zone NAME]`: a forbidden zone of the bed
+
+A rectangle of the bed, in millimetres of the machine, that a program must keep out of. The name is read in any case and a zone written twice is one zone. A program that reaches a zone fails `phoenix-laser verify`, the check of the window and the check before a program is sent to the server (the zone, how many moves reach it and the line of the first are told), and a drawing sent as a vector job is refused when one of its paths reaches a zone of either kind. The edges of a zone count as inside, so a move along an edge is a hit, and the arcs of a program are followed along the curve. At most 64 zones.
+
+| Key | Default | Meaning |
+|---|---|---|
+| `x_mm`, `y_mm` | 0 | the lower left corner, from -100000 to 100000 |
+| `width_mm`, `height_mm` | none | the size, more than 0 and up to 100000; a zone with no size is refused |
+| `kind` | `no_go` | `no_burn`: the laser must be off inside it, the head may cross it (a clamp lower than the head); `no_go`: the head must not enter it at all (a fixture, a camera, the end of a rail) |
+
+`examples/safety.cfg` shows a zone of each kind and the interlocks.
+
+### `[interlocks]`
+
+The state of the emergency stop, of the enclosure and of the air assist as the file says it. This program reads no sensor: a simulator, a gateway or the person writes the state here, and nothing in it has been tried against a real sensor or a real emergency stop. A pressed emergency stop, and a required interlock that is not in its safe state, fail `verify` and stop a program, a vector job and a test fire from being sent; a state that is not known counts as unsafe. With the defaults nothing is required and nothing changes.
+
+| Key | Default | Meaning |
+|---|---|---|
+| `estop` | `released` | `released` or `pressed`; pressed stops everything |
+| `enclosure` | `unknown` | `closed`, `open` or `unknown` |
+| `air_assist` | `unknown` | `on`, `off` or `unknown` |
+| `require_enclosure` | off | nothing is sent or fired unless the enclosure is `closed` |
+| `require_air_assist` | off | nothing is sent or fired unless the air assist is `on` |
 
 ### `[calibrate]`
 
