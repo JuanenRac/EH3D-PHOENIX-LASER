@@ -227,8 +227,9 @@ The check of a program (`phoenix-laser verify`). Work outside the bed is a failu
 | Key | Default | Meaning |
 |---|---|---|
 | `overscan_mm` | 0 | how far (mm) the head may go past the bed with the laser off, from 0 to 100; 0 allows none. A move that burns outside the bed fails whatever this says |
+| `arc_tolerance_mm` | 0.01 | how far (mm) the straight pieces that an arc (`G2`, `G3`) of the program is cut into may lie from the true arc, from 0.0005 to 1; a finer tolerance gives more pieces. The length, the time, the box and the check against the bed follow the curve |
 
-The only key of `[verify]` is `overscan_mm`.
+The keys of `[verify]` are `overscan_mm` and `arc_tolerance_mm`.
 
 ### `[calibrate]`
 
