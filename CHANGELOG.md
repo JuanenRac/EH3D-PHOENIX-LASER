@@ -4,6 +4,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+- **The refusals of the laser plugin come from the shared catalog:** the six codes of the `laser` plugin of the server (`laser_estop_latched`, `laser_power_limit`, `laser_feed_limit`, `enclosure_open`, `air_assist_off` and `test_fire_refused`) are now told with the text of the catalog of the suite (`eh3d-serverclient` of EH3D-COMMON, in the eight languages) and the table this program kept for them is gone; the builds of the CI and of the binaries check out EH3D-COMMON at v0.2.6, which brings those codes, the panel of the settings of the server of the window and the headers of the client.
+
 ## [0.1.3] - Window modes for marks, barcodes and focus by power, editable materials and the server mode with emergency stop
 
 - **Send to the server from the window:** when the settings file gives a server (`[server]`), the window has a section with a button that sends the program it has worked out as a job of the laser machine of the server, shows how far the job is, and holds it, lets it go on or stops it with an EMERGENCY STOP button that ends it at once and latches the machine; the program goes after the same guards as the export (a program that was opened to be seen, or a frame that lights the laser and was not confirmed, is not sent) and the check against the limits of the window and the machine of the settings, and a machine that an emergency stop holds says so instead of taking a program. Closing the window leaves the job where it is on the server.

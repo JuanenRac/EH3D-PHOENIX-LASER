@@ -212,107 +212,9 @@ pub fn job_request(machine: &str, name: &str, gcode: &str) -> String {
     )
 }
 
-/// The refusals of the `laser` plugin of the server that the catalog of the client does not have yet, in the order of the languages of the client (English, Spanish, Italian, German, French,
-/// Portuguese of Portugal, Chinese and Japanese). A code the catalog knows is told with the text of the catalog.
-const LASER_CODES: [(&str, [&str; 8]); 6] = [
-    (
-        "laser_estop_latched",
-        [
-            "An emergency stop latched the laser machine: nothing is prepared or started on it until an administrator releases it.",
-            "Una parada de emergencia bloqueó la máquina láser: no se prepara ni se inicia nada en ella hasta que un administrador la libere.",
-            "Un arresto di emergenza ha bloccato la macchina laser: nulla viene preparato o avviato finché un amministratore non la sblocca.",
-            "Ein Not-Halt hat die Lasermaschine verriegelt: Es wird nichts vorbereitet oder gestartet, bis ein Administrator sie freigibt.",
-            "Un arrêt d'urgence a verrouillé la machine laser : rien n'est préparé ni démarré tant qu'un administrateur ne la déverrouille pas.",
-            "Uma paragem de emergência bloqueou a máquina laser: nada é preparado nem iniciado nela até um administrador a libertar.",
-            "紧急停止已锁定激光机：在管理员解除锁定之前，不会准备或启动任何作业。",
-            "非常停止によりレーザーマシンがラッチされました。管理者が解除するまで、何も準備・開始できません。",
-        ],
-    ),
-    (
-        "laser_power_limit",
-        [
-            "The job asks for more power than the limit of the laser machine, and the machine is set to reject it.",
-            "El trabajo pide más potencia que el límite de la máquina láser, y la máquina está configurada para rechazarlo.",
-            "Il lavoro chiede più potenza del limite della macchina laser, e la macchina è impostata per rifiutarlo.",
-            "Der Auftrag verlangt mehr Leistung als die Grenze der Lasermaschine, und die Maschine ist auf Ablehnen eingestellt.",
-            "Le travail demande plus de puissance que la limite de la machine laser, et la machine est réglée pour le refuser.",
-            "O trabalho pede mais potência do que o limite da máquina laser, e a máquina está configurada para o recusar.",
-            "作业要求的功率超过激光机的上限，且该机器设置为拒绝。",
-            "ジョブがレーザーマシンの上限を超える出力を要求しており、マシンは拒否する設定です。",
-        ],
-    ),
-    (
-        "laser_feed_limit",
-        [
-            "A line of the program asks for a cutting feed over the limit of the laser machine.",
-            "Una línea del programa pide un avance de corte por encima del límite de la máquina láser.",
-            "Una riga del programma chiede un avanzamento di taglio oltre il limite della macchina laser.",
-            "Eine Zeile des Programms verlangt einen Schnittvorschub über der Grenze der Lasermaschine.",
-            "Une ligne du programme demande une avance de coupe au-dessus de la limite de la machine laser.",
-            "Uma linha do programa pede um avanço de corte acima do limite da máquina laser.",
-            "程序中有一行要求的切割进给超过激光机的上限。",
-            "プログラムの 1 行がレーザーマシンの上限を超える切断送りを要求しています。",
-        ],
-    ),
-    (
-        "enclosure_open",
-        [
-            "The enclosure input of the laser machine says open and the machine requires it closed.",
-            "La entrada de la cabina de la máquina láser dice abierta y la máquina exige que esté cerrada.",
-            "L'ingresso della cabina della macchina laser indica aperta e la macchina la richiede chiusa.",
-            "Der Eingang der Einhausung der Lasermaschine meldet offen, die Maschine verlangt geschlossen.",
-            "L'entrée du capot de la machine laser indique ouvert et la machine l'exige fermé.",
-            "A entrada da cabine da máquina laser indica aberta e a máquina exige que esteja fechada.",
-            "激光机的外罩输入显示为打开，而机器要求关闭。",
-            "レーザーマシンの筐体入力が開を示していますが、マシンは閉を要求しています。",
-        ],
-    ),
-    (
-        "air_assist_off",
-        [
-            "The air assist input of the laser machine says off and the machine requires it on.",
-            "La entrada del soplado de aire de la máquina láser dice apagado y la máquina exige que esté encendido.",
-            "L'ingresso dell'aria compressa della macchina laser indica spento e la macchina lo richiede acceso.",
-            "Der Eingang der Luftunterstützung der Lasermaschine meldet aus, die Maschine verlangt ein.",
-            "L'entrée de l'assistance d'air de la machine laser indique éteint et la machine l'exige allumé.",
-            "A entrada do sopro de ar da máquina laser indica desligado e a máquina exige que esteja ligado.",
-            "激光机的吹气输入显示为关闭，而机器要求开启。",
-            "レーザーマシンのエアアシスト入力がオフを示していますが、マシンはオンを要求しています。",
-        ],
-    ),
-    (
-        "test_fire_refused",
-        [
-            "A test fire asks for more power than the limit of the laser machine for a test fire.",
-            "Un disparo de prueba pide más potencia que el límite de la máquina láser para un disparo de prueba.",
-            "Un colpo di prova chiede più potenza del limite della macchina laser per un colpo di prova.",
-            "Ein Testschuss verlangt mehr Leistung als die Grenze der Lasermaschine für einen Testschuss.",
-            "Un tir d'essai demande plus de puissance que la limite de la machine laser pour un tir d'essai.",
-            "Um disparo de teste pede mais potência do que o limite da máquina laser para um disparo de teste.",
-            "试射要求的功率超过激光机试射的上限。",
-            "テスト照射がレーザーマシンのテスト照射の上限を超える出力を要求しています。",
-        ],
-    ),
-];
-
-/// The text of a code of the laser plugin that this program tells itself, in the language of the client (`None` for a code the catalog of the client has, or nobody knows).
-fn laser_text(code: &str, lang: sc::Lang) -> Option<&'static str> {
-    if sc::lookup(code).is_some() {
-        return None;
-    }
-    LASER_CODES
-        .iter()
-        .find(|(c, _)| *c == code)
-        .map(|(_, texts)| texts[lang as usize])
-}
-
 /// What a refusal or a failure says to the person, in their language: the text of the code of the server, followed by the detail the server gave when the text does not already hold it.
 pub fn error_message(e: &sc::ClientError, lang: sc::Lang) -> String {
-    let own = match e {
-        sc::ClientError::Server { code: Some(c), .. } => laser_text(c, lang),
-        _ => None,
-    };
-    let text = own.map_or_else(|| e.text(lang), str::to_string);
+    let text = e.text(lang);
     match e {
         sc::ClientError::Server { detail, .. } if !detail.is_empty() && !text.contains(detail) => {
             format!("{text}: {detail}")
@@ -1330,8 +1232,16 @@ mod tests {
 
     #[test]
     fn the_refusals_of_the_laser_machine_are_told_in_each_of_the_eight_languages() {
-        // the codes of the laser plugin that the catalog of the client does not have yet are told by this program
-        for (code, _) in LASER_CODES {
+        // the codes of the laser plugin are in the catalog of the suite, told in each language with a text of their own
+        for code in [
+            "laser_estop_latched",
+            "laser_power_limit",
+            "laser_feed_limit",
+            "enclosure_open",
+            "air_assist_off",
+            "test_fire_refused",
+        ] {
+            assert!(sc::lookup(code).is_some(), "{code} is in the catalog");
             let mut texts: Vec<String> = ALL_LANGS
                 .iter()
                 .map(|l| error_message(&refused(code, ""), *l))
