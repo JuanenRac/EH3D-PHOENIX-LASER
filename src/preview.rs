@@ -179,6 +179,8 @@ pub fn read_with(text: &str, arc_tolerance_mm: f64) -> Program {
     };
     let mut p = Program::default();
     let (mut x, mut y) = (0.0f64, 0.0f64);
+    // what G92 added to the coordinates of the program to get the place of the head
+    let mut offset = (0.0f64, 0.0f64);
     let (mut absolute, mut inch) = (true, false);
     let mut motion: Option<u8> = None; // 0 rapid, 1 linear, 2 and 3 arcs
     let mut feed = 0.0f64;
@@ -209,6 +211,10 @@ pub fn read_with(text: &str, arc_tolerance_mm: f64) -> Program {
             (None, None, None);
         let mut new_feed: Option<f64> = None;
         let mut ended_here = false;
+        // G92 names the place where the head is; G92.1 and G92.2 take that name back
+        let (mut set_origin, mut clear_origin) = (false, false);
+        // G10 writes a table of the controller: its X and Y are not a move
+        let mut table_line = false;
         for &(letter, v) in &ws {
             let code = v.round() as i64;
             match letter {
@@ -226,6 +232,23 @@ pub fn read_with(text: &str, arc_tolerance_mm: f64) -> Program {
                     901 => centre_absolute = true,
                     910 => absolute = false,
                     911 => centre_absolute = false,
+                    920 => set_origin = true,
+                    921 | 922 => clear_origin = true,
+                    100 => {
+                        table_line = true;
+                        note(
+                            &mut p.notes,
+                            format!("line {line}: G10 sets coordinates in the controller: the places in this report are the ones the program writes"),
+                        );
+                    }
+                    280 | 300 | 530 => note(
+                        &mut p.notes,
+                        format!("line {line}: G28, G30 and G53 move in the coordinates of the machine: the places in this report are the ones the program writes"),
+                    ),
+                    540..=593 => note(
+                        &mut p.notes,
+                        format!("line {line}: G54 to G59 choose a work offset that the controller keeps: the places in this report are the ones the program writes"),
+                    ),
                     _ => {}
                 },
                 'M' => match code {
@@ -253,7 +276,27 @@ pub fn read_with(text: &str, arc_tolerance_mm: f64) -> Program {
         if let Some(f) = new_feed {
             feed = (f * unit).max(0.0);
         }
-        let is_arc = matches!(motion, Some(2 | 3));
+        if table_line {
+            (nx, ny) = (None, None);
+        }
+        if clear_origin {
+            // the program goes back to the coordinates of the head: the head has not moved
+            x += offset.0;
+            y += offset.1;
+            offset = (0.0, 0.0);
+        }
+        if set_origin {
+            // the head stays where it is, and the program calls the place X, Y: what is added to the coordinates of the program to get the place changes
+            if let Some(v) = nx.take() {
+                offset.0 += x - v * unit;
+                x = v * unit;
+            }
+            if let Some(v) = ny.take() {
+                offset.1 += y - v * unit;
+                y = v * unit;
+            }
+        }
+        let is_arc = matches!(motion, Some(2 | 3)) && !set_origin;
         let has_centre = ci.is_some() || cj.is_some() || radius.is_some();
         // an arc with its centre and no end is a full turn
         if nx.is_some() || ny.is_some() || (is_arc && has_centre) {
@@ -334,8 +377,8 @@ pub fn read_with(text: &str, arc_tolerance_mm: f64) -> Program {
                         );
                     }
                     p.moves.push(Move {
-                        from: (x, y),
-                        to,
+                        from: (x + offset.0, y + offset.1),
+                        to: (to.0 + offset.0, to.1 + offset.1),
                         rapid,
                         power: if burning { s } else { 0.0 },
                         feed,
@@ -907,6 +950,70 @@ mod tests {
     }
 
     #[test]
+    fn g92_moves_the_origin_so_the_places_are_the_ones_of_the_head() {
+        // the head is at 10, 10; the program calls the place 0, 0 and burns 5 mm to the right: the head goes from 10, 10 to 15, 10
+        let p = read_ok("G90\nG0 X10 Y10\nG92 X0 Y0\nM4 S100\nF600\nG1 X5\nM5\nM2\n");
+        assert_eq!(p.moves.len(), 2);
+        assert_eq!(p.moves[1].from, (10.0, 10.0));
+        assert_eq!(p.moves[1].to, (15.0, 10.0));
+        // an offset in one axis only
+        let q = read_ok("G90\nG0 X4 Y4\nG92 X0\nG0 X3\nM2\n");
+        assert_eq!(q.moves.last().unwrap().from, (4.0, 4.0));
+        assert_eq!(q.moves.last().unwrap().to, (7.0, 4.0));
+        // G92.1 takes the name back: the program is in the coordinates of the head again, and the head has not moved
+        let r = read_ok("G90\nG0 X10 Y10\nG92 X0 Y0\nG92.1\nG0 X20\nM2\n");
+        assert_eq!(r.moves.last().unwrap().from, (10.0, 10.0));
+        assert_eq!(r.moves.last().unwrap().to, (20.0, 10.0));
+        // a line with G92 is not a move
+        assert_eq!(read_ok("G0 X5\nG92 X0 Y0\n").moves.len(), 1);
+        // and neither is the X or Y of G10, which writes a table of the controller
+        assert_eq!(read_ok("G1 X5\nG10 L20 P1 X0 Y0\n").moves.len(), 1);
+    }
+
+    #[test]
+    fn a_burn_moved_by_g92_is_seen_where_the_head_really_goes() {
+        // the program says 0 to 10, but G92 put its zero at 195, so the head burns from 195 to 205
+        let program = "G21\nG90\nG0 X195 Y5\nG92 X0 Y0\nM4 S100\nF600\nG1 X10\nM5\nM2\n";
+        let p = read_ok(program);
+        let r = analyse(
+            &p,
+            &Options {
+                bed_mm: Some((200.0, 100.0)),
+                ..Options::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(r.burn_bounds, Some(((195.0, 5.0), (205.0, 5.0))));
+        assert!(
+            r.notes.iter().any(|n| n.contains("outside of the bed")),
+            "{:?}",
+            r.notes
+        );
+    }
+
+    #[test]
+    fn the_words_that_choose_other_coordinates_are_told() {
+        for (word, text) in [
+            ("G10 L20 P1 X0", "G10"),
+            ("G28", "G28"),
+            ("G30", "G28"),
+            ("G53 G0 X0", "G28"),
+            ("G54", "G54 to G59"),
+            ("G59.3", "G54 to G59"),
+        ] {
+            let p = read_ok(&format!("G90\n{word}\nM2\n"));
+            assert!(
+                p.notes.iter().any(|n| n.contains(text)),
+                "{word}: {:?}",
+                p.notes
+            );
+        }
+        // the usual words say nothing
+        let q = read_ok("G21\nG90\nG17\nG94\nG0 X1\nM2\n");
+        assert!(q.notes.is_empty(), "{:?}", q.notes);
+    }
+
+    #[test]
     fn rubbish_never_panics_and_gives_no_move() {
         for text in [
             "",
@@ -926,6 +1033,10 @@ mod tests {
             "G3 I0 J0",
             "G2 X1 Y1 R-0.0001",
             "G90.1 G91.1 G2 X5 I9999999999",
+            "G92",
+            "G92 X1e9 Y-1e9",
+            "G92.1 G92.2 G92.3",
+            "G10 G28 G30 G53 G54 G59.3",
         ] {
             let p = read(text);
             assert!(p
