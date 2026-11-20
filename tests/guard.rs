@@ -116,6 +116,59 @@ fn verify_fails_every_program_while_the_emergency_stop_is_pressed() {
 }
 
 #[test]
+fn the_report_is_written_in_the_language_asked_for_and_ends_with_the_exit_code_of_the_check() {
+    let s = Scratch::new("report");
+    let program = s.write("job.nc", PROGRAM);
+    let (code, out, err) = run(&["report", &program, "--lang", "es"]);
+    assert_eq!(code, Some(0), "{err}");
+    assert!(out.contains("Informe previo del trabajo") && out.contains("Programa: job.nc"), "{out}");
+    assert!(out.contains("SHA-256 del fichero:") && out.contains("VEREDICTO: el programa pasa"), "{out}");
+    for (lang, title, verdict) in [
+        ("en", "Report before the job", "the program passes the check"),
+        ("de", "Bericht vor dem Auftrag", "hat die Prüfung bestanden"),
+        ("fr", "Rapport avant le travail", "le programme réussit"),
+        ("it", "Rapporto prima del lavoro", "supera il controllo"),
+        ("ja", "ジョブ開始前のレポート", "検査に合格"),
+        ("zh", "作业前报告", "通过检查"),
+        ("pt", "Relatório prévio do trabalho", "passa a verificação"),
+    ] {
+        let (code, out, _) = run(&["report", &program, "--lang", lang]);
+        assert_eq!(code, Some(0), "{lang}");
+        assert!(out.contains(title) && out.contains(verdict), "{lang}: {out}");
+    }
+    // a program that fails is reported just the same, with the exit code of the check
+    let zones = s.write("zones.cfg", "[zone gate]\nx_mm = 10\ny_mm = -2\nwidth_mm = 5\nheight_mm = 4\nkind = no_burn\n");
+    let (code, out, _) = run(&["report", &program, "--config", &zones, "--lang", "pt"]);
+    assert_eq!(code, Some(1));
+    assert!(out.contains("NÃO passa a verificação") && out.contains("forbidden zone gate"), "{out}");
+    assert!(out.contains("Zonas proibidas verificadas: 1"), "{out}");
+    // a wrong language, a missing file and a word too many
+    let (code, _, err) = run(&["report", &program, "--lang", "xx"]);
+    assert_eq!(code, Some(1));
+    assert!(err.contains("not one of en, es, de, fr, it, ja, zh or pt"), "{err}");
+    assert_eq!(run(&["report", &s.path("none.nc")]).0, Some(1));
+    assert_eq!(run(&["report", &program, "extra"]).0, Some(1));
+    assert_eq!(run(&["report"]).0, Some(1));
+}
+
+#[test]
+fn the_report_names_the_material_and_whether_it_was_verified() {
+    let s = Scratch::new("report-material");
+    let program = s.write("job.nc", PROGRAM);
+    let lib = s.write(
+        "lib.cfg",
+        "[material start]\nverified = off\npower = 20\n[material mine]\nverified = on\npower = 20\n",
+    );
+    let (_, out, err) = run(&["report", &program, "--lang", "en", "--materials", &lib, "--material", "start"]);
+    assert!(out.contains("Material start: NOT VERIFIED"), "{out}");
+    assert!(err.contains("not verified"), "{err}");
+    let (_, out, _) = run(&["report", &program, "--lang", "en", "--materials", &lib, "--material", "mine"]);
+    assert!(out.contains("Material mine: verified"), "{out}");
+    let (_, out, _) = run(&["report", &program, "--lang", "en"]);
+    assert!(out.contains("Material: none was chosen"), "{out}");
+}
+
+#[test]
 fn a_file_with_a_zone_that_forbids_nothing_is_refused_with_its_reason() {
     let s = Scratch::new("badzone");
     let program = s.write("p.nc", PROGRAM);
