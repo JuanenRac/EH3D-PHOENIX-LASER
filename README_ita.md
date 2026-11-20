@@ -17,7 +17,7 @@
 
 ---
 
-**Verifica di onestà - cosa funziona oggi:** una libreria Rust e un programma a riga di comando (`phoenix-laser`) con 687 test che girano su un computer: trasforma un'immagine in punti con la retinatura e scrive il G-code di un laser che brucia riga per riga con potenza dinamica ed extracorsa, legge disegni SVG e DXF e scrive il G-code che ne taglia i contorni (prima quelli interni, con la larghezza del fascio, ponticelli e più passate) e ne incide le forme con linee, con le impostazioni di ogni livello in un file, e una griglia di prova potenza contro avanzamento. Ha una finestra (compilata con `--features gui`) che apre un'immagine o un disegno, mostra il percorso del laser, permette di cambiare le impostazioni ed esporta il G-code, ma la finestra non è ancora stata vista su uno schermo; non è stato provato su una macchina e non è stato verificato con una raccolta di file reali. Può anche inviare un programma al plugin laser del server EH3D e seguire, fermare o arrestare il lavoro (`phoenix-laser server`), provato solo contro un sostituto del server.
+**Verifica di onestà - cosa funziona oggi:** una libreria Rust e un programma a riga di comando (`phoenix-laser`) con 690 test che girano su un computer: trasforma un'immagine in punti con la retinatura e scrive il G-code di un laser che brucia riga per riga con potenza dinamica ed extracorsa, legge disegni SVG e DXF e scrive il G-code che ne taglia i contorni (prima quelli interni, con la larghezza del fascio, ponticelli e più passate) e ne incide le forme con linee, con le impostazioni di ogni livello in un file, e una griglia di prova potenza contro avanzamento. Ha una finestra (compilata con `--features gui`) che apre un'immagine o un disegno, mostra il percorso del laser, permette di cambiare le impostazioni ed esporta il G-code, ma la finestra non è ancora stata vista su uno schermo; non è stato provato su una macchina e non è stato verificato con una raccolta di file reali. Può anche inviare un programma al plugin laser del server EH3D e seguire, fermare o arrestare il lavoro (`phoenix-laser server`), provato solo contro un sostituto del server.
 
 ---
 
@@ -30,7 +30,7 @@
 |---|---|
 | Versione | `0.1.3` |
 | Maturità | Funzionale |
-| Test | 687 |
+| Test | 690 |
 | Stack tecnologico | Rust |
 | Su hardware reale | Non provato: nulla di questo ha girato su una macchina |
 
@@ -46,7 +46,7 @@ Ogni riga è una parte di questo repository e il semaforo dice a che punto è og
 |---|---|---|
 | Nucleo | 🟡 | trasforma un'immagine in punti con la retinatura e scrive il G-code di un laser che brucia riga per riga con potenza dinamica ed extracorsa, legge disegni SVG e DXF e li taglia o li incide per livello (contorni ordinati, larghezza del fascio, ponticelli, passate, tratteggio), e una griglia di prova potenza contro avanzamento; provato su un computer con input normali e danneggiati, non con una raccolta di file reali. |
 | Riga di comando | 🟡 | `phoenix-laser` (`engrave`, `calibrate`, `info`, `cut`, `vector`, `layers`) esegue le stesse funzioni della libreria e stampa il risultato; ogni errore torna come messaggio e codice di uscita diverso da zero. |
-| Test | 🟡 | 687 test passano (`cargo test`), con casi normali, casi limite e input danneggiati. |
+| Test | 🟡 | 690 test passano (`cargo test`), con casi normali, casi limite e input danneggiati. |
 | Sicurezza | 🟡 | Rust sicuro e semplice (`forbid(unsafe_code)`): nulla va in panico con i file ricevuti e un valore errato è un errore con il suo motivo; nessuna revisione indipendente. |
 | Finestra | 🟠 | Scritta (egui, `--features gui`): aprire o trascinare un'immagine o un disegno SVG o DXF, vedere il percorso del laser (il taglio in un colore, lo spostamento attenuato), modificare la tabella dei livelli, una griglia di calibrazione, zoom e spostamento, stimare il tempo, esportare; la sua logica è testata, ma non è ancora stata compilata né vista su uno schermo. |
 | Hardware reale | 🔴 | Non provato: nulla di questo è stato eseguito su una macchina. |
@@ -60,7 +60,7 @@ Ogni riga è una parte di questo repository e il semaforo dice a che punto è og
 * **L'intestazione e i numeri di ogni file G-code** (`src/gcode_out.rs`): il file si apre con righe di commento che dicono il generatore e la sua versione, le unità (mm, G21), l'immagine da cui è nato con il suo SHA-256 e gli utensili (il laser e la sua potenza); una griglia di calibrazione dice di non avere origine. Un numero si scrive in un solo modo (al massimo tre decimali, niente `-0`) e un valore non finito viene rifiutato invece di essere scritto come `NaN` o `inf`.
 * **`--dry-run`:** `engrave` calcola il risultato e lo conta (punti, righe, tratti, lunghezza bruciata, tempo) senza scrivere il file di uscita, che allora può essere omesso.
 * **I disegni** (`src/svg.rs`, `src/dxf.rs`, `src/flatten.rs`, `src/vector.rs`): un sottoinsieme sicuro di SVG (tracciati con tutti i comandi, forme, trasformazioni, gruppi, unità e un `use` di un elemento dello stesso file) e le entità di un DXF (linee, polilinee con archi, archi, cerchi, spline, unità) diventano forme in millimetri; script, immagini, un `use` di un altro file, entità dichiarate e tutto ciò che è sconosciuto vengono saltati o rifiutati, la dimensione, la profondità e il numero di elementi (conta ciò che porta un `use`) e di punti sono limitati dalle impostazioni, un `use` che torna su se stesso è un errore, e le curve diventano tratti rettilinei entro una tolleranza.
-* **Taglio e incisione** (`src/order.rs`, `src/offset.rs`, `src/cut.rs`): le forme sono raggruppate per livello (DXF) o colore (SVG); ogni gruppo viene tagliato (linee sciolte unite, prima i contorni dentro un altro, il minor spostamento, la larghezza del fascio tolta dal lato giusto, ponticelli lasciati, più passate con il fuoco che avanza) o inciso (forme chiuse riempite di linee con un angolo, con la regola pari-dispari) con le sue impostazioni.
+* **Taglio e incisione** (`src/order.rs`, `src/offset.rs`, `src/cut.rs`): le forme sono raggruppate per livello (DXF) o colore (SVG); ogni gruppo viene tagliato (linee sciolte unite, prima i contorni dentro un altro, il minor spostamento, la larghezza del fascio tolta dal lato giusto, ponticelli lasciati, più passate con il fuoco che avanza) o inciso (forme chiuse riempite di linee con un angolo, con la regola pari-dispari) con le sue impostazioni. `phoenix-laser layers DRAWING --accel A` dà anche il tempo di ogni livello con la testa che frena e accelera a ogni angolo a `A` mm/s2 (e quanto di esso il laser brucia), calcolato dall'anteprima del programma.
 * **Il file di impostazioni** (`src/vconfig.rs`, `docs/vector-settings.md`): ogni valore da regolare (i limiti dei lettori, la macchina, le impostazioni di ogni livello) è in un file di testo semplice controllato riga per riga; nulla di tutto ciò è nel codice.
 * **La prova di fuoco** (`src/calibrate.rs`, `[focus]` nel file delle impostazioni): `phoenix-laser focus` brucia una scala di linee corte, ciascuna con la testa a un'altra altezza, e la linea più nitida mostra dove il fascio è a fuoco; il passo di altezza non ha un valore predefinito (cosa sia giù dipende dalla macchina), la potenza rispetta il limite di potenza e la testa torna alla prima altezza. Con `--powers 10,20,30` (fino a 10 potenze) incide invece una griglia di messa a fuoco: le stesse linee una volta per ogni potenza, affiancate con una colonna per potenza, per leggere quale potenza incide la linea più sottile all'altezza del fuoco; la testa va una sola volta a ogni altezza e incide tutte le colonne di quella riga, e ogni potenza rispetta il limite di potenza.
 * **La griglia di prova di un materiale** (`src/calibrate.rs`, `[calibrate]` nel file delle impostazioni): `phoenix-laser calibrate --material NOME --materials FILE` distribuisce le potenze e le velocità della griglia intorno a ciò che dice il materiale della libreria, entro i limiti e senza ripetere valori, e `--labels` brucia la potenza di ogni colonna e la velocità di ogni riga accanto ai quadrati con un carattere a tratti, così la griglia si può leggere poi sul materiale; un materiale oltre un limite viene rifiutato, mai abbassato. Con un materiale le cifre escono per impostazione predefinita (`--no-labels` le toglie) e la potenza e la velocità minime della scala sono le chiavi `min_power_percent` e `min_feed_mm_min`.
@@ -169,7 +169,7 @@ phoenix-laser info IMAGE
 phoenix-laser cut DRAWING OUT.nc [--config FILE] [--power P] [--speed MM/MIN] [--passes N] [--focus-step MM] [--kerf MM] [--kerf-side none|auto|inside|outside]
               [--tabs N] [--tab-width MM] [--smax N] [--overscan MM] [--origin X,Y] [--bed X,Y] [--max-power P] [--max-speed MM/MIN] [--profile NAME] [--material NAME --materials FILE] [--dpi N] [--tolerance MM] [--dry-run]
 phoenix-laser vector DRAWING OUT.nc [the options of cut] [--angle DEG] [--spacing MM] [--cross|--no-cross]
-phoenix-laser layers DRAWING [--config FILE] [--dpi N]
+phoenix-laser layers DRAWING [--config FILE] [--dpi N] [--accel MM/S2]
 phoenix-laser trace IMAGE OUT.nc --width-mm W [--threshold 128] [--invert] [--simplify MM] [--min-area MM2] [--engrave] [the options of cut]
 phoenix-laser materials FILE
 phoenix-laser focus OUT.nc --z-step MM [--z-start MM] [--steps 9] [--length 10] [--spacing 2] [--feed 1000] [--power 30 | --powers 10,20,30] [--smax 1000] [--max-power P] [--max-speed MM/MIN] [--config FILE] [--profile NAME]
@@ -209,7 +209,7 @@ Per fare un'immagine della finestra senza aprirla a mano, eseguila con `--shot F
 
 ## 🧪 Test
 
-La suite ha 687 test (`cargo test`, eseguiti su Windows e Linux nella CI). Verificano i casi normali, i casi limite e gli input danneggiati: file vuoti, spazzatura e file tagliati non causano mai un panico. La CI esegue anche `cargo fmt --check`, `cargo clippy` con gli avvisi come errori e `python -I tools/ci_validate.py`.
+La suite ha 690 test (`cargo test`, eseguiti su Windows e Linux nella CI). Verificano i casi normali, i casi limite e gli input danneggiati: file vuoti, spazzatura e file tagliati non causano mai un panico. La CI esegue anche `cargo fmt --check`, `cargo clippy` con gli avvisi come errori e `python -I tools/ci_validate.py`.
 
 ## 🏗️ Compilazione e rilascio
 

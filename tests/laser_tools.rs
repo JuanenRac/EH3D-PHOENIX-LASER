@@ -2977,3 +2977,71 @@ fn the_help_tells_the_align_command_and_what_it_is_tried_on() {
     );
     assert!(out.contains("never on a real camera"), "{out}");
 }
+
+#[test]
+fn the_layers_command_tells_the_time_of_each_layer_only_when_an_acceleration_is_given() {
+    let (ok, plain, err) = run(&[
+        "layers",
+        "examples/plate.svg",
+        "--config",
+        "examples/plate.cfg",
+    ]);
+    assert!(ok, "{err}");
+    assert!(
+        !plain.contains("time:") && !plain.contains("all the layers"),
+        "{plain}"
+    );
+    let (ok, out, err) = run(&[
+        "layers",
+        "examples/plate.svg",
+        "--config",
+        "examples/plate.cfg",
+        "--accel",
+        "1000",
+    ]);
+    assert!(ok, "{err}");
+    // every line of the plain list is still there, and each layer that is burnt has its time under it
+    for line in plain.lines() {
+        assert!(out.contains(line), "{line}");
+    }
+    let times = out
+        .lines()
+        .filter(|l| l.starts_with("  time: about "))
+        .count();
+    assert!(times >= 1, "{out}");
+    assert!(
+        out.contains("with the head braking at every corner"),
+        "{out}"
+    );
+    assert!(out.contains("all the layers: about "), "{out}");
+    assert!(out.contains("1000 mm/s2"), "{out}");
+    // a gentler acceleration takes longer
+    let total = |accel: &str| -> f64 {
+        let (ok, out, err) = run(&[
+            "layers",
+            "examples/plate.svg",
+            "--config",
+            "examples/plate.cfg",
+            "--accel",
+            accel,
+        ]);
+        assert!(ok, "{err}");
+        let line = out
+            .lines()
+            .find(|l| l.starts_with("all the layers: about "))
+            .unwrap();
+        line["all the layers: about ".len()..]
+            .split(' ')
+            .next()
+            .unwrap()
+            .parse()
+            .unwrap()
+    };
+    assert!(total("100") > total("1000") && total("1000") >= total("50000"));
+    // an acceleration that is not allowed is told
+    for bad in ["0", "-3", "x", "1e9"] {
+        let (ok, _, err) = run(&["layers", "examples/plate.svg", "--accel", bad]);
+        assert!(!ok, "{bad}");
+        assert!(!err.is_empty());
+    }
+}

@@ -17,7 +17,7 @@
 
 ---
 
-**Verificação de honestidade - o que funciona hoje:** uma biblioteca Rust e um programa de linha de comandos (`phoenix-laser`) com 687 testes que correm num computador: converte uma imagem em pontos por tramagem e escreve o G-code de um laser que queima linha a linha com potência dinâmica e sobrecurso, lê desenhos SVG e DXF e escreve o G-code que corta os seus contornos (os de dentro primeiro, com a largura do feixe, pontes e várias passagens) e grava as suas formas com linhas, com as definições de cada camada num ficheiro, e uma grelha de teste de potência contra avanço. Tem uma janela (compilada com `--features gui`) que abre uma imagem ou um desenho, mostra o percurso do laser, permite alterar as definições e exporta o G-code, mas a janela ainda não foi vista num ecrã; não foi experimentado numa máquina e não foi verificado com uma coleção de ficheiros reais. Também pode enviar um programa para o plugin laser do servidor EH3D e seguir, segurar ou parar o trabalho (`phoenix-laser server`), testado apenas contra um substituto do servidor.
+**Verificação de honestidade - o que funciona hoje:** uma biblioteca Rust e um programa de linha de comandos (`phoenix-laser`) com 690 testes que correm num computador: converte uma imagem em pontos por tramagem e escreve o G-code de um laser que queima linha a linha com potência dinâmica e sobrecurso, lê desenhos SVG e DXF e escreve o G-code que corta os seus contornos (os de dentro primeiro, com a largura do feixe, pontes e várias passagens) e grava as suas formas com linhas, com as definições de cada camada num ficheiro, e uma grelha de teste de potência contra avanço. Tem uma janela (compilada com `--features gui`) que abre uma imagem ou um desenho, mostra o percurso do laser, permite alterar as definições e exporta o G-code, mas a janela ainda não foi vista num ecrã; não foi experimentado numa máquina e não foi verificado com uma coleção de ficheiros reais. Também pode enviar um programa para o plugin laser do servidor EH3D e seguir, segurar ou parar o trabalho (`phoenix-laser server`), testado apenas contra um substituto do servidor.
 
 ---
 
@@ -30,7 +30,7 @@
 |---|---|
 | Versão | `0.1.3` |
 | Maturidade | Funcional |
-| Testes | 687 |
+| Testes | 690 |
 | Tecnologias | Rust |
 | Em hardware real | Não experimentado: nada disto correu numa máquina |
 
@@ -46,7 +46,7 @@ Cada linha é uma parte deste repositório e a luz diz até onde chega hoje. É 
 |---|---|---|
 | Núcleo | 🟡 | converte uma imagem em pontos por tramagem e escreve o G-code de um laser que queima linha a linha com potência dinâmica e sobrecurso, lê desenhos SVG e DXF e corta-os ou grava-os por camada (contornos ordenados, largura do feixe, pontes, passagens, hachura), e uma grelha de teste de potência contra avanço; testado num computador com entradas normais e danificadas, não com uma coleção de ficheiros reais. |
 | Linha de comandos | 🟡 | `phoenix-laser` (`engrave`, `calibrate`, `info`, `cut`, `vector`, `layers`) executa as mesmas funções que a biblioteca e imprime o resultado; cada erro volta como mensagem e código de saída diferente de zero. |
-| Testes | 🟡 | 687 testes passam (`cargo test`), com casos normais, casos-limite e entradas danificadas. |
+| Testes | 🟡 | 690 testes passam (`cargo test`), com casos normais, casos-limite e entradas danificadas. |
 | Segurança | 🟡 | Rust seguro e simples (`forbid(unsafe_code)`): nada entra em pânico com os ficheiros recebidos e um valor mau é um erro com o seu motivo; sem revisão independente. |
 | Janela | 🟠 | Escrita (egui, `--features gui`): abrir ou largar uma imagem ou um desenho SVG ou DXF, ver o percurso do laser (o corte numa cor, a deslocação atenuada), editar a tabela de camadas, uma grelha de calibração, zoom e deslocamento, estimar o tempo, exportar; a sua lógica está testada, mas ainda não foi compilada nem vista num ecrã. |
 | Hardware real | 🔴 | Não experimentado: nada disto foi executado numa máquina. |
@@ -60,7 +60,7 @@ Cada linha é uma parte deste repositório e a luz diz até onde chega hoje. É 
 * **O cabeçalho e os números de todo o ficheiro de G-code** (`src/gcode_out.rs`): o ficheiro começa com linhas de comentário que dizem o gerador e a sua versão, as unidades (mm, G21), a imagem de que foi feito com o seu SHA-256 e as ferramentas (o laser e a sua potência); uma grelha de calibração diz que não tem origem. Um número escreve-se de uma só maneira (no máximo três casas decimais, sem `-0`) e um valor que não é finito é recusado em vez de ser escrito como `NaN` ou `inf`.
 * **`--dry-run`:** `engrave` calcula o resultado e conta-o (pontos, linhas, passagens, comprimento queimado, tempo) sem escrever o ficheiro de saída, que então pode ser omitido.
 * **Os desenhos** (`src/svg.rs`, `src/dxf.rs`, `src/flatten.rs`, `src/vector.rs`): um subconjunto seguro de SVG (trajetos com todos os seus comandos, formas, transformações, grupos, unidades e um `use` de um elemento do mesmo ficheiro) e as entidades de um DXF (linhas, polilinhas com arcos, arcos, círculos, splines, unidades) transformam-se em formas em milímetros; os scripts, as imagens, um `use` de outro ficheiro, as entidades declaradas e tudo o que é desconhecido são ignorados ou recusados, o tamanho, a profundidade e o número de elementos (conta o que um `use` traz) e de pontos são limitados pelas definições, um `use` que volta a si mesmo é um erro, e as curvas passam a troços retos dentro de uma tolerância.
-* **Corte e gravação** (`src/order.rs`, `src/offset.rs`, `src/cut.rs`): as formas são agrupadas por camada (DXF) ou cor (SVG); cada grupo é cortado (linhas soltas unidas, os contornos que estão dentro de outro primeiro, a menor deslocação, a largura do feixe descontada do lado certo, pontes por cortar, várias passagens com o foco a avançar) ou gravado (formas fechadas preenchidas com linhas num ângulo, pela regra par-ímpar) com as suas próprias definições.
+* **Corte e gravação** (`src/order.rs`, `src/offset.rs`, `src/cut.rs`): as formas são agrupadas por camada (DXF) ou cor (SVG); cada grupo é cortado (linhas soltas unidas, os contornos que estão dentro de outro primeiro, a menor deslocação, a largura do feixe descontada do lado certo, pontes por cortar, várias passagens com o foco a avançar) ou gravado (formas fechadas preenchidas com linhas num ângulo, pela regra par-ímpar) com as suas próprias definições. `phoenix-laser layers DRAWING --accel A` dá também o tempo de cada camada com a cabeça a travar e a acelerar em cada canto a `A` mm/s2 (e quanto desse tempo o laser queima), contado pela pré-visualização do programa.
 * **O ficheiro de definições** (`src/vconfig.rs`, `docs/vector-settings.md`): todo o valor que se afina (os limites dos leitores, a máquina, as definições de cada camada) está num ficheiro de texto simples verificado linha a linha; nada disso está no código.
 * **O teste de foco** (`src/calibrate.rs`, `[focus]` no ficheiro de definições): `phoenix-laser focus` queima uma escada de linhas curtas, cada uma com a cabeça a outra altura, e a linha mais nítida mostra onde o feixe está focado; o passo de altura não tem valor por omissão (qual é baixo depende da máquina), a potência obedece ao limite de potência e a cabeça volta à primeira altura. Com `--powers 10,20,30` (até 10 potências) grava em vez disso uma grelha de focagem: as mesmas linhas uma vez para cada potência, lado a lado com uma coluna por potência, para ler que potência grava a linha mais fina à altura do foco; a cabeça vai uma só vez a cada altura e grava todas as colunas dessa fila, e cada potência obedece ao limite de potência.
 * **A grelha de teste de um material** (`src/calibrate.rs`, `[calibrate]` no ficheiro de definições): `phoenix-laser calibrate --material NOME --materials FICHEIRO` distribui as potências e as velocidades da grelha em redor do que diz o material da biblioteca, dentro dos limites e sem repetir valores, e `--labels` queima a potência de cada coluna e a velocidade de cada linha ao lado dos quadrados com um tipo de letra de traços, para que a grelha possa ser lida depois no material; um material acima de um limite é recusado, nunca baixado. Com um material os algarismos saem por omissão (`--no-labels` retira-os) e a potência e a velocidade mínimas da escada são as chaves `min_power_percent` e `min_feed_mm_min`.
@@ -169,7 +169,7 @@ phoenix-laser info IMAGE
 phoenix-laser cut DRAWING OUT.nc [--config FILE] [--power P] [--speed MM/MIN] [--passes N] [--focus-step MM] [--kerf MM] [--kerf-side none|auto|inside|outside]
               [--tabs N] [--tab-width MM] [--smax N] [--overscan MM] [--origin X,Y] [--bed X,Y] [--max-power P] [--max-speed MM/MIN] [--profile NAME] [--material NAME --materials FILE] [--dpi N] [--tolerance MM] [--dry-run]
 phoenix-laser vector DRAWING OUT.nc [the options of cut] [--angle DEG] [--spacing MM] [--cross|--no-cross]
-phoenix-laser layers DRAWING [--config FILE] [--dpi N]
+phoenix-laser layers DRAWING [--config FILE] [--dpi N] [--accel MM/S2]
 phoenix-laser trace IMAGE OUT.nc --width-mm W [--threshold 128] [--invert] [--simplify MM] [--min-area MM2] [--engrave] [the options of cut]
 phoenix-laser materials FILE
 phoenix-laser focus OUT.nc --z-step MM [--z-start MM] [--steps 9] [--length 10] [--spacing 2] [--feed 1000] [--power 30 | --powers 10,20,30] [--smax 1000] [--max-power P] [--max-speed MM/MIN] [--config FILE] [--profile NAME]
@@ -209,7 +209,7 @@ Para tirar uma captura da janela sem a abrir à mão, execute-o com `--shot FICH
 
 ## 🧪 Testes
 
-O conjunto tem 687 testes (`cargo test`, executados em Windows e Linux no CI). Verificam os casos normais, os casos-limite e as entradas danificadas: ficheiros vazios, lixo e ficheiros cortados nunca provocam pânico. O CI executa ainda `cargo fmt --check`, `cargo clippy` com avisos como erros e `python -I tools/ci_validate.py`.
+O conjunto tem 690 testes (`cargo test`, executados em Windows e Linux no CI). Verificam os casos normais, os casos-limite e as entradas danificadas: ficheiros vazios, lixo e ficheiros cortados nunca provocam pânico. O CI executa ainda `cargo fmt --check`, `cargo clippy` com avisos como erros e `python -I tools/ci_validate.py`.
 
 ## 🏗️ Compilação e publicação
 

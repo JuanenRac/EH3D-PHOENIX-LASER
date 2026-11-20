@@ -29,7 +29,7 @@ The shapes of a drawing are grouped, and each group has its own settings:
 * **a DXF:** by layer name, in lower case. The colour of the entity is kept but not used unless `group_by = color`.
 * `group_by` (in `[read]`) is `auto` (what is said above), `layer` or `color`.
 
-`phoenix-laser layers DRAWING` lists the groups with their size and what would be done with each.
+`phoenix-laser layers DRAWING` lists the groups with their size and what would be done with each. With `--accel A` (1 to 100000 mm/s2) it also gives, under each layer that is burnt, its time with the head braking and speeding up at every corner at that acceleration and how much of it the laser burns, and the total of all the layers: the whole drawing is planned once, the program is cut at the comment that opens each layer and each piece is read by the preview of the program (`phoenix-laser preview`), so the burning times add up to the one of the whole program; each piece starts with the head at the origin, so the rapid move to its first contour is counted from there.
 
 ## What the program reads
 

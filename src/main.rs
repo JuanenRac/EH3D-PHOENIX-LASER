@@ -9,7 +9,7 @@ use eh3d_phoenix_laser::barcode;
 use eh3d_phoenix_laser::calibrate::{
     focus_grid, focus_test, grid, labelled_grid, ladder, Grid, Labels,
 };
-use eh3d_phoenix_laser::cut::{layers as layer_list, plan, Plan};
+use eh3d_phoenix_laser::cut::{self, layer_times, layers as layer_list, plan, Plan};
 use eh3d_phoenix_laser::dither::{dither, Method};
 use eh3d_phoenix_laser::dxf::read_dxf;
 use eh3d_phoenix_laser::energy::describe;
@@ -52,7 +52,7 @@ const HELP: &str = "phoenix-laser: laser engraving from an image
   phoenix-laser cut DRAWING OUT.nc [--config FILE] [--power P] [--speed MM/MIN] [--passes N] [--focus-step MM] [--kerf MM] [--kerf-side none|auto|inside|outside]
                 [--tabs N] [--tab-width MM] [--smax N] [--overscan MM] [--origin X,Y] [--bed X,Y] [--max-power P] [--max-speed MM/MIN] [--profile NAME] [--material NAME --materials FILE] [--dpi N] [--tolerance MM] [--dry-run]
   phoenix-laser vector DRAWING OUT.nc [the options of cut] [--angle DEG] [--spacing MM] [--cross|--no-cross]
-  phoenix-laser layers DRAWING [--config FILE] [--dpi N]
+  phoenix-laser layers DRAWING [--config FILE] [--dpi N] [--accel MM/S2]
   phoenix-laser trace IMAGE OUT.nc --width-mm W [--threshold 128] [--invert] [--simplify MM] [--min-area MM2] [--engrave] [the options of cut]
   phoenix-laser materials FILE
   phoenix-laser focus OUT.nc --z-step MM [--z-start MM] [--steps 9] [--length 10] [--spacing 2] [--feed 1000] [--power 30 | --powers 10,20,30] [--smax 1000] [--max-power P] [--max-speed MM/MIN] [--config FILE] [--profile NAME]
@@ -534,9 +534,16 @@ fn trace_job(mut args: Vec<String>) -> Result<(), String> {
 /// `layers`: what is in a drawing and what would be done with it.
 fn layers_job(mut args: Vec<String>) -> Result<(), String> {
     let (settings, _) = drawing_settings(&mut args, LayerMode::Cut)?;
+    let accel = flag(&mut args, "--accel")?
+        .map(|v| num(&v, "--accel"))
+        .transpose()?;
     finish(&args, 1)?;
     let path = args.first().ok_or("layers needs a drawing")?;
     let (_, drawing) = read_drawing(path, &settings)?;
+    let times = match accel {
+        Some(a) => layer_times(&drawing, &settings, a)?,
+        None => Vec::new(),
+    };
     for l in layer_list(&drawing, &settings) {
         let p = settings.params_for(&l.key);
         println!(
@@ -550,6 +557,19 @@ fn layers_job(mut args: Vec<String>) -> Result<(), String> {
             p.speed_mm_min,
             p.passes,
             describe(settings.machine.laser_watts, &p)
+        );
+        if let Some(t) = times.iter().find(|t| t.key == cut::comment_text(&l.key)) {
+            println!(
+                "  time: about {:.1} s with the head braking at every corner, {:.1} s of it burning",
+                t.seconds, t.burn_seconds
+            );
+        }
+    }
+    if !times.is_empty() {
+        println!(
+            "all the layers: about {:.1} s with the acceleration of {} mm/s2 (the head is taken to the first contour of each layer from the origin)",
+            times.iter().map(|t| t.seconds).sum::<f64>(),
+            accel.unwrap_or_default()
         );
     }
     for note in &drawing.warnings {

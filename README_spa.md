@@ -17,7 +17,7 @@
 
 ---
 
-**Comprobación de honestidad - lo que funciona hoy:** una biblioteca Rust y un programa de línea de comandos (`phoenix-laser`) con 687 pruebas que se ejecutan en un ordenador: convierte una imagen en puntos por tramado y escribe el G-code de un láser que quema línea a línea con potencia dinámica y sobrerrecorrido, lee dibujos SVG y DXF y escribe el G-code que corta sus contornos (los de dentro primero, con el ancho del haz, puentes y varias pasadas) y graba sus formas con líneas, con los ajustes de cada capa en un fichero, y una rejilla de prueba de potencia contra avance. Tiene una ventana (se compila con `--features gui`) que abre una imagen o un dibujo, muestra el recorrido del láser, permite cambiar los ajustes y exporta el G-code, pero todavía no se ha visto en una pantalla; no se ha probado en una máquina y no se ha comprobado con una colección de ficheros reales. También puede enviar un programa al plugin láser del servidor de EH3D y seguir, detener o parar el trabajo (`phoenix-laser server`), probado solo contra un doble del servidor.
+**Comprobación de honestidad - lo que funciona hoy:** una biblioteca Rust y un programa de línea de comandos (`phoenix-laser`) con 690 pruebas que se ejecutan en un ordenador: convierte una imagen en puntos por tramado y escribe el G-code de un láser que quema línea a línea con potencia dinámica y sobrerrecorrido, lee dibujos SVG y DXF y escribe el G-code que corta sus contornos (los de dentro primero, con el ancho del haz, puentes y varias pasadas) y graba sus formas con líneas, con los ajustes de cada capa en un fichero, y una rejilla de prueba de potencia contra avance. Tiene una ventana (se compila con `--features gui`) que abre una imagen o un dibujo, muestra el recorrido del láser, permite cambiar los ajustes y exporta el G-code, pero todavía no se ha visto en una pantalla; no se ha probado en una máquina y no se ha comprobado con una colección de ficheros reales. También puede enviar un programa al plugin láser del servidor de EH3D y seguir, detener o parar el trabajo (`phoenix-laser server`), probado solo contra un doble del servidor.
 
 ---
 
@@ -30,7 +30,7 @@
 |---|---|
 | Versión | `0.1.3` |
 | Madurez | Funcional |
-| Pruebas | 687 |
+| Pruebas | 690 |
 | Pila tecnológica | Rust |
 | En hardware real | No probado: nada de esto se ha ejecutado en una máquina |
 
@@ -46,7 +46,7 @@ Cada línea es una parte de este repositorio y la luz dice hasta dónde llega ho
 |---|---|---|
 | Núcleo | 🟡 | convierte una imagen en puntos por tramado y escribe el G-code de un láser que quema línea a línea con potencia dinámica y sobrerrecorrido, lee dibujos SVG y DXF y los corta o graba por capas (contornos ordenados, ancho del haz, puentes, pasadas, rayado) y una rejilla de prueba de potencia contra avance; probado en un ordenador con entradas normales y dañadas, no con una colección de ficheros reales. |
 | Línea de comandos | 🟡 | `phoenix-laser` (`engrave`, `calibrate`, `info`, `cut`, `vector`, `layers`) ejecuta las mismas funciones que la biblioteca e imprime el resultado; cada error vuelve como mensaje y un código de salida distinto de cero. |
-| Pruebas | 🟡 | 687 pruebas pasan (`cargo test`), con casos normales, casos límite y entradas dañadas. |
+| Pruebas | 🟡 | 690 pruebas pasan (`cargo test`), con casos normales, casos límite y entradas dañadas. |
 | Seguridad | 🟡 | Rust seguro y simple (`forbid(unsafe_code)`): nada entra en pánico con los ficheros recibidos y un valor malo es un error con su motivo; sin revisión independiente. |
 | Ventana | 🟠 | Escrita (egui, `--features gui`): abrir o soltar una imagen o un dibujo SVG o DXF, ver el recorrido del láser (el corte en un color, el desplazamiento atenuado), editar la tabla de capas, una rejilla de calibración, zoom y desplazamiento, estimar el tiempo, exportar; su lógica está probada, pero todavía no se ha compilado ni visto en una pantalla. |
 | Hardware real | 🔴 | No probado: nada de esto se ha ejecutado en una máquina. |
@@ -60,7 +60,7 @@ Cada línea es una parte de este repositorio y la luz dice hasta dónde llega ho
 * **La cabecera y los números de todo fichero de G-code** (`src/gcode_out.rs`): el fichero empieza con líneas de comentario que dicen el generador y su versión, las unidades (mm, G21), la imagen de la que se hizo con su SHA-256 y las herramientas (el láser y su potencia); una rejilla de calibración dice que no tiene origen. Un número se escribe de una sola manera (como mucho tres decimales, sin `-0`) y un valor que no es finito se rechaza en vez de escribirse como `NaN` o `inf`.
 * **`--dry-run`:** `engrave` calcula el resultado y lo cuenta (puntos, líneas, tramos, longitud quemada, tiempo) sin escribir el fichero de salida, que entonces puede omitirse.
 * **Los dibujos** (`src/svg.rs`, `src/dxf.rs`, `src/flatten.rs`, `src/vector.rs`): un subconjunto seguro de SVG (trazados con todas sus órdenes, formas, transformaciones, grupos, unidades y un `use` de un elemento del mismo fichero) y las entidades de un DXF (líneas, polilíneas con arcos, arcos, círculos, splines, unidades) se convierten en formas en milímetros; los scripts, las imágenes, un `use` de otro fichero, las entidades declaradas y todo lo desconocido se omiten o se rechazan, el tamaño, la profundidad y el número de elementos (cuenta lo que trae un `use`) y de puntos están limitados por los ajustes, un `use` que vuelve a sí mismo es un error, y las curvas se convierten en tramos rectos dentro de una tolerancia.
-* **Corte y grabado** (`src/order.rs`, `src/offset.rs`, `src/cut.rs`): las formas se agrupan por capa (DXF) o color (SVG); cada grupo se corta (líneas sueltas unidas, los contornos que están dentro de otro primero, el menor desplazamiento, el ancho del haz descontado del lado correcto, puentes sin cortar, varias pasadas con el foco avanzando) o se graba (formas cerradas rellenas de líneas con un ángulo, por la regla par-impar) con sus propios ajustes.
+* **Corte y grabado** (`src/order.rs`, `src/offset.rs`, `src/cut.rs`): las formas se agrupan por capa (DXF) o color (SVG); cada grupo se corta (líneas sueltas unidas, los contornos que están dentro de otro primero, el menor desplazamiento, el ancho del haz descontado del lado correcto, puentes sin cortar, varias pasadas con el foco avanzando) o se graba (formas cerradas rellenas de líneas con un ángulo, por la regla par-impar) con sus propios ajustes. `phoenix-laser layers DRAWING --accel A` da además el tiempo de cada capa con el cabezal frenando y acelerando en cada esquina a `A` mm/s2 (y cuánto quema el láser), contado con la vista previa del programa.
 * **El fichero de ajustes** (`src/vconfig.rs`, `docs/vector-settings.md`): todo valor que se afina (los límites de los lectores, la máquina, los ajustes de cada capa) está en un fichero de texto simple que se comprueba línea a línea; nada de eso está en el código.
 * **La prueba de enfoque** (`src/calibrate.rs`, `[focus]` en el fichero de ajustes): `phoenix-laser focus` quema una escalera de líneas cortas, cada una con el cabezal a otra altura, y la línea más nítida muestra dónde está enfocado el haz; el paso de altura no tiene valor por defecto (qué es abajo depende de la máquina), la potencia obedece el límite de potencia y el cabezal vuelve a su primera altura. Con `--powers 10,20,30` (hasta 10 potencias) graba en cambio una rejilla de enfoque: las mismas líneas una vez por cada potencia, una columna al lado de otra, para leer qué potencia graba la línea más fina a la altura del enfoque; el cabezal va una sola vez a cada altura y graba todas las columnas de esa fila, y cada potencia obedece el límite de potencia.
 * **La rejilla de prueba de un material** (`src/calibrate.rs`, `[calibrate]` en el fichero de ajustes): `phoenix-laser calibrate --material NOMBRE --materials FICHERO` reparte las potencias y las velocidades de la rejilla alrededor de lo que dice el material de la biblioteca, dentro de los límites y sin repetir valores, y `--labels` quema la potencia de cada columna y la velocidad de cada fila junto a los cuadrados con una letra de trazos, de modo que la rejilla se pueda leer después sobre el material; un material por encima de un límite se rechaza, nunca se baja. Con un material las cifras salen por defecto (`--no-labels` las quita) y la potencia y la velocidad mínimas de la escalera son las claves `min_power_percent` y `min_feed_mm_min`.
@@ -169,7 +169,7 @@ phoenix-laser info IMAGE
 phoenix-laser cut DRAWING OUT.nc [--config FILE] [--power P] [--speed MM/MIN] [--passes N] [--focus-step MM] [--kerf MM] [--kerf-side none|auto|inside|outside]
               [--tabs N] [--tab-width MM] [--smax N] [--overscan MM] [--origin X,Y] [--bed X,Y] [--max-power P] [--max-speed MM/MIN] [--profile NAME] [--material NAME --materials FILE] [--dpi N] [--tolerance MM] [--dry-run]
 phoenix-laser vector DRAWING OUT.nc [the options of cut] [--angle DEG] [--spacing MM] [--cross|--no-cross]
-phoenix-laser layers DRAWING [--config FILE] [--dpi N]
+phoenix-laser layers DRAWING [--config FILE] [--dpi N] [--accel MM/S2]
 phoenix-laser trace IMAGE OUT.nc --width-mm W [--threshold 128] [--invert] [--simplify MM] [--min-area MM2] [--engrave] [the options of cut]
 phoenix-laser materials FILE
 phoenix-laser focus OUT.nc --z-step MM [--z-start MM] [--steps 9] [--length 10] [--spacing 2] [--feed 1000] [--power 30 | --powers 10,20,30] [--smax 1000] [--max-power P] [--max-speed MM/MIN] [--config FILE] [--profile NAME]
@@ -209,7 +209,7 @@ Para sacar una captura de la ventana sin abrirla a mano, ejecútelo con `--shot 
 
 ## 🧪 Pruebas
 
-El conjunto tiene 687 pruebas (`cargo test`, ejecutadas en Windows y Linux en el CI). Comprueban los casos normales, los casos límite y las entradas dañadas: ficheros vacíos, basura y ficheros cortados nunca provocan un pánico. El CI ejecuta además `cargo fmt --check`, `cargo clippy` con las advertencias como errores y `python -I tools/ci_validate.py`.
+El conjunto tiene 690 pruebas (`cargo test`, ejecutadas en Windows y Linux en el CI). Comprueban los casos normales, los casos límite y las entradas dañadas: ficheros vacíos, basura y ficheros cortados nunca provocan un pánico. El CI ejecuta además `cargo fmt --check`, `cargo clippy` con las advertencias como errores y `python -I tools/ci_validate.py`.
 
 ## 🏗️ Compilación y publicación
 

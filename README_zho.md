@@ -17,7 +17,7 @@
 
 ---
 
-**诚实检查 - 当前真正能运行的内容：** 一个 Rust 库和一个命令行程序（`phoenix-laser`），有 687 个在计算机上运行的测试：用抖动把图像变成点，并写出逐行烧蚀、带动态功率和超程的激光 G 代码；读取 SVG 和 DXF 图纸，写出切割其轮廓的 G 代码（先内后外，考虑光束宽度、连接桥和多遍），并用线条雕刻其图形，各图层的设置放在一个文件里；还有功率对进给的测试网格。它有一个窗口（用 `--features gui` 构建），可打开图像或图纸、显示激光路径、修改设置并导出 G 代码，但窗口尚未在屏幕上查看过；也没有在机器上试过，没有用一批真实文件检查过。 它还可以把程序发送到 EH3D 服务器的激光插件，并跟踪、暂停或停止作业（`phoenix-laser server`），仅针对服务器的替身测试过。
+**诚实检查 - 当前真正能运行的内容：** 一个 Rust 库和一个命令行程序（`phoenix-laser`），有 690 个在计算机上运行的测试：用抖动把图像变成点，并写出逐行烧蚀、带动态功率和超程的激光 G 代码；读取 SVG 和 DXF 图纸，写出切割其轮廓的 G 代码（先内后外，考虑光束宽度、连接桥和多遍），并用线条雕刻其图形，各图层的设置放在一个文件里；还有功率对进给的测试网格。它有一个窗口（用 `--features gui` 构建），可打开图像或图纸、显示激光路径、修改设置并导出 G 代码，但窗口尚未在屏幕上查看过；也没有在机器上试过，没有用一批真实文件检查过。 它还可以把程序发送到 EH3D 服务器的激光插件，并跟踪、暂停或停止作业（`phoenix-laser server`），仅针对服务器的替身测试过。
 
 ---
 
@@ -30,7 +30,7 @@
 |---|---|
 | 版本 | `0.1.3` |
 | 成熟度 | 可用 |
-| 测试 | 687 |
+| 测试 | 690 |
 | 技术栈 | Rust |
 | 真实硬件 | 未试过：这里的任何内容都没有在机器上运行过 |
 
@@ -46,7 +46,7 @@
 |---|---|---|
 | 核心 | 🟡 | 用抖动把图像变成点，并写出逐行烧蚀、带动态功率和超程的激光 G 代码；读取 SVG 和 DXF 图纸并按图层切割或雕刻（轮廓排序、光束宽度、连接桥、遍数、填充）；还有功率对进给的测试网格；已在计算机上用正常和损坏的输入测试，没有用一批真实文件检查。 |
 | 命令行 | 🟡 | `phoenix-laser`（`engrave`、`calibrate`、`info`、`cut`、`vector`、`layers`）运行与库相同的函数并打印结果；每个错误都以消息和非零退出码返回。 |
-| 测试 | 🟡 | 687 个测试通过（`cargo test`），包含正常情况、边界情况和损坏的输入。 |
+| 测试 | 🟡 | 690 个测试通过（`cargo test`），包含正常情况、边界情况和损坏的输入。 |
 | 安全 | 🟡 | 纯安全 Rust（`forbid(unsafe_code)`）：处理收到的文件时不会 panic，错误的值会返回带原因的错误；没有独立审查。 |
 | 窗口 | 🟠 | 已编写（egui，`--features gui`）：打开或拖入图像或 SVG、DXF 图纸，查看激光路径（切割为单一颜色，空移变淡），编辑图层表，校准网格，缩放与平移，估算时间，导出；其逻辑已测试，但尚未构建，也没有在屏幕上查看过。 |
 | 真实硬件 | 🔴 | 未试过：这里的任何内容都没有在机器上运行过。 |
@@ -60,7 +60,7 @@
 * **每个 G 代码文件的文件头和数字**（`src/gcode_out.rs`）：文件以注释行开头，写明生成器及其版本、单位（mm，G21）、所用图片及其 SHA-256，以及工具（激光及其功率）；校准网格则注明没有来源。数字只有一种写法（最多三位小数，没有 `-0`），不是有限数的值会被拒绝，而不会被写成 `NaN` 或 `inf`。
 * **`--dry-run`：** `engrave` 计算结果并统计（点数、行数、段数、烧蚀长度、时间），但不写入输出文件（此时可省略该文件）。
 * **图纸**（`src/svg.rs`、`src/dxf.rs`、`src/flatten.rs`、`src/vector.rs`）：SVG 的安全子集（含全部命令的路径、图形、变换、分组、单位，以及对同一文件中元素的 `use`）和 DXF 的实体（直线、带圆弧的多段线、圆弧、圆、样条、单位）被转换为毫米图形；脚本、图像、对其他文件的 `use`、已声明的实体和一切未知内容会被跳过或拒绝，大小、深度、元素数（`use` 引入的也计入）和点数由设置限制，指回自身的 `use` 是错误，曲线在容差内变为直线段。
-* **切割与雕刻**（`src/order.rs`、`src/offset.rs`、`src/cut.rs`）：图形按图层（DXF）或颜色（SVG）分组；每组按各自的设置切割（合并零散线条，先切位于其他轮廓内部的轮廓，空移最短，在正确一侧扣除光束宽度，保留连接桥，焦点逐遍推进的多遍切割）或雕刻（闭合图形按角度用线条填充，奇偶规则）。
+* **切割与雕刻**（`src/order.rs`、`src/offset.rs`、`src/cut.rs`）：图形按图层（DXF）或颜色（SVG）分组；每组按各自的设置切割（合并零散线条，先切位于其他轮廓内部的轮廓，空移最短，在正确一侧扣除光束宽度，保留连接桥，焦点逐遍推进的多遍切割）或雕刻（闭合图形按角度用线条填充，奇偶规则）。`phoenix-laser layers DRAWING --accel A` 还会给出每个图层的用时（按磁头在每个拐角以 `A` mm/s2 减速和加速计算，并给出其中激光烧蚀的时间），由程序预览统计。
 * **设置文件**（`src/vconfig.rs`、`docs/vector-settings.md`）：所有调整过的值（读取器的限制、机器、各图层的设置）都在一个逐行检查的纯文本文件里；代码中没有这些值。
 * **对焦测试**（`src/calibrate.rs`，设置文件中的 `[focus]`）：`phoenix-laser focus` 在不同的高度各烧一条短线，排成阶梯，最清晰的那条线显示光束的焦点位置；高度步进没有默认值（哪个方向向下取决于机器），功率服从功率上限，并且机头最后回到第一个高度。加上 `--powers 10,20,30`（最多 10 种功率）则改为烧刻对焦网格：同样的线条每种功率一列并排，从而可以读出在焦点高度烧出最细线条的功率；头每个高度只去一次并烧完该行的所有列，每种功率都遵守功率限制。
 * **材料测试网格**（`src/calibrate.rs`，设置文件中的 `[calibrate]`）：`phoenix-laser calibrate --material 名称 --materials 文件` 围绕库中材料给出的值分配网格的功率和速度，保持在限制之内且不重复；`--labels` 用笔画字体在方块旁烧出每列的功率和每行的速度，之后可以直接在材料上读取网格；超过限制的材料会被拒绝，绝不会被降低。 使用材料时默认会烧出数字（`--no-labels` 可去掉），梯度的最小功率和最小速度是键 `min_power_percent` 和 `min_feed_mm_min`。
@@ -169,7 +169,7 @@ phoenix-laser info IMAGE
 phoenix-laser cut DRAWING OUT.nc [--config FILE] [--power P] [--speed MM/MIN] [--passes N] [--focus-step MM] [--kerf MM] [--kerf-side none|auto|inside|outside]
               [--tabs N] [--tab-width MM] [--smax N] [--overscan MM] [--origin X,Y] [--bed X,Y] [--max-power P] [--max-speed MM/MIN] [--profile NAME] [--material NAME --materials FILE] [--dpi N] [--tolerance MM] [--dry-run]
 phoenix-laser vector DRAWING OUT.nc [the options of cut] [--angle DEG] [--spacing MM] [--cross|--no-cross]
-phoenix-laser layers DRAWING [--config FILE] [--dpi N]
+phoenix-laser layers DRAWING [--config FILE] [--dpi N] [--accel MM/S2]
 phoenix-laser trace IMAGE OUT.nc --width-mm W [--threshold 128] [--invert] [--simplify MM] [--min-area MM2] [--engrave] [the options of cut]
 phoenix-laser materials FILE
 phoenix-laser focus OUT.nc --z-step MM [--z-start MM] [--steps 9] [--length 10] [--spacing 2] [--feed 1000] [--power 30 | --powers 10,20,30] [--smax 1000] [--max-power P] [--max-speed MM/MIN] [--config FILE] [--profile NAME]
@@ -209,7 +209,7 @@ cargo run --release --features gui -- --shot screen.png examples/plate.svg   # a
 
 ## 🧪 测试
 
-测试套件有 687 个测试（`cargo test`，CI 在 Windows 和 Linux 上运行）。它们检查正常情况、边界情况和损坏的输入：空文件、乱码和被截断的文件绝不会 panic。CI 还运行 `cargo fmt --check`、把警告当作错误的 `cargo clippy` 以及 `python -I tools/ci_validate.py`。
+测试套件有 690 个测试（`cargo test`，CI 在 Windows 和 Linux 上运行）。它们检查正常情况、边界情况和损坏的输入：空文件、乱码和被截断的文件绝不会 panic。CI 还运行 `cargo fmt --check`、把警告当作错误的 `cargo clippy` 以及 `python -I tools/ci_validate.py`。
 
 ## 🏗️ 构建与发布
 

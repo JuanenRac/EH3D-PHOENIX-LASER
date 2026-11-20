@@ -138,6 +138,67 @@ pub fn placed_paths(drawing: &Drawing, s: &Settings) -> Vec<(String, Vec<Pt>, bo
         .collect()
 }
 
+/// How long one layer takes.
+#[derive(Debug, Clone, PartialEq)]
+pub struct LayerTime {
+    /// The name of the layer as the program writes it in its comment.
+    pub key: String,
+    /// The time with the head braking and speeding up at every corner at the acceleration that was given (and the rapid moves).
+    pub seconds: f64,
+    /// The part of it in which the laser burns, at the feed of each move (the corners are not counted).
+    pub burn_seconds: f64,
+}
+
+/// The most layers whose time [`layer_times`] gives.
+pub const MAX_TIMED_LAYERS: usize = 64;
+
+/// How long each layer of a drawing takes, with the head braking and speeding up at every corner at `accel_mm_s2` (1 to 100000), counted by the preview of the program: the whole drawing is
+/// planned once, as it would be written, the program is cut at the comment that opens each layer, and each piece is read on its own (the layers that are skipped are not in it). A piece
+/// starts with the head at the origin, so the rapid move that takes it to its first contour is counted from there and not from where the layer before it ended: the burning times add up to
+/// the one of the whole program, and the other times add up to a little more or a little less than its time.
+pub fn layer_times(
+    drawing: &Drawing,
+    s: &Settings,
+    accel_mm_s2: f64,
+) -> Result<Vec<LayerTime>, String> {
+    let options = crate::preview::Options {
+        accel_mm_s2,
+        rapid_mm_min: s.machine.rapid_mm_min,
+        ..crate::preview::Options::default()
+    };
+    options.validate()?;
+    let planned = plan(drawing, s)?;
+    let mut pieces: Vec<(String, String)> = Vec::new();
+    for line in planned.gcode.lines() {
+        if let Some(rest) = line.strip_prefix("; layer ") {
+            let key = rest.split(": ").next().unwrap_or(rest).to_string();
+            pieces.push((key, String::new()));
+        } else if let Some(piece) = pieces.last_mut() {
+            if line != "M5" && line != "M2" {
+                piece.1.push_str(line);
+                piece.1.push('\n');
+            }
+        }
+    }
+    if pieces.len() > MAX_TIMED_LAYERS {
+        return Err(format!(
+            "the drawing has {} layers: the time of each is worked out for {MAX_TIMED_LAYERS} at the most",
+            pieces.len()
+        ));
+    }
+    let mut out = Vec::new();
+    for (key, body) in pieces {
+        let program = format!("G21\nG90\nM4 S0\n{body}M5\nM2\n");
+        let report = crate::preview::analyse(&crate::preview::read(&program), &options)?;
+        out.push(LayerTime {
+            key,
+            seconds: report.seconds,
+            burn_seconds: report.burn_seconds,
+        });
+    }
+    Ok(out)
+}
+
 // ---------------------------------------------------------------- tabs
 
 /// The point at the length `t` along a path (a closed ring also goes back to its first point) and the index of the segment it is on.
@@ -1554,5 +1615,70 @@ hatch_cross = maybe
         );
         // 80 mm cut at 10 mm/s = 8 s, 20 mm of travel at 6000 mm/min = 0.2 s
         assert!((p.stats.seconds - 8.2).abs() < 1e-9, "{}", p.stats.seconds);
+    }
+
+    #[test]
+    fn each_layer_has_its_own_time_with_the_head_braking_at_the_corners() {
+        let d = dxf(vec![
+            shape("a", &square(0.0, 0.0, 10.0), true),
+            shape("b", &square(30.0, 0.0, 20.0), true),
+            shape("skipped", &square(60.0, 0.0, 5.0), true),
+        ]);
+        let s = settings(
+            "[layer a]\nmode = cut\nspeed = 600\n[layer b]\nmode = cut\nspeed = 1200\n[layer skipped]\nmode = skip\n",
+        );
+        let times = layer_times(&d, &s, 1000.0).unwrap();
+        let keys: Vec<&str> = times.iter().map(|t| t.key.as_str()).collect();
+        assert_eq!(keys, ["a", "b"], "the layer that is skipped is left out");
+        // 40 mm at 600 mm/min (10 mm/s) and 80 mm at 1200 mm/min (20 mm/s) are 4 s of burning each
+        assert!((times[0].burn_seconds - 4.0).abs() < 1e-9, "{times:?}");
+        assert!((times[1].burn_seconds - 4.0).abs() < 1e-9, "{times:?}");
+        // the burning adds up to the one of the whole program
+        let whole = crate::preview::analyse(
+            &crate::preview::read(&plan(&d, &s).unwrap().gcode),
+            &crate::preview::Options::default(),
+        )
+        .unwrap();
+        let sum: f64 = times.iter().map(|t| t.burn_seconds).sum();
+        assert!((sum - whole.burn_seconds).abs() < 1e-9, "{sum} {whole:?}");
+        // braking at the corners and the rapid moves take time, more with a gentler acceleration
+        for t in &times {
+            assert!(t.seconds > t.burn_seconds, "{t:?}");
+        }
+        let gentle = layer_times(&d, &s, 100.0).unwrap();
+        let brisk = layer_times(&d, &s, 100_000.0).unwrap();
+        for ((g, m), b) in gentle.iter().zip(&times).zip(&brisk) {
+            assert!(
+                g.seconds > m.seconds && m.seconds > b.seconds,
+                "{g:?} {m:?} {b:?}"
+            );
+            assert!((g.burn_seconds - m.burn_seconds).abs() < 1e-9);
+        }
+        // an acceleration that is not allowed is refused, and so is a drawing with more layers than are timed
+        for bad in [0.0, -5.0, f64::NAN, 1e9] {
+            assert!(layer_times(&d, &s, bad).is_err(), "{bad}");
+        }
+        let many = dxf((0..MAX_TIMED_LAYERS + 1)
+            .map(|i| shape(&format!("l{i}"), &square(i as f64 * 3.0, 0.0, 2.0), true))
+            .collect());
+        let e = layer_times(&many, &settings(""), 1000.0).unwrap_err();
+        assert!(e.contains("65 layers"), "{e}");
+    }
+
+    #[test]
+    fn a_drawing_that_cannot_be_planned_is_refused_and_the_time_changes_nothing() {
+        let d = dxf(vec![shape("far", &square(0.0, 0.0, 500.0), true)]);
+        let s = settings("[machine]\nbed_x_mm = 100\nbed_y_mm = 100\n[layer far]\nmode = cut\n");
+        let e = layer_times(&d, &s, 1000.0).unwrap_err();
+        assert!(!e.is_empty());
+        // nothing but skipped layers: there is nothing to time
+        let skipped = settings("[layer a]\nmode = skip\n");
+        let ok = dxf(vec![shape("a", &square(0.0, 0.0, 10.0), true)]);
+        assert!(layer_times(&ok, &skipped, 1000.0).is_err());
+        // the settings and the plan of the drawing are the same after
+        let before = settings("[layer a]\nmode = cut\nspeed = 600\n");
+        let p1 = plan(&ok, &before).unwrap();
+        assert_eq!(layer_times(&ok, &before, 1000.0).unwrap().len(), 1);
+        assert_eq!(plan(&ok, &before).unwrap().gcode, p1.gcode);
     }
 }
