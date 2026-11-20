@@ -353,6 +353,8 @@ The way to the EH3D server (`phoenix-laser server`): a G-code program goes to th
 
 The keys of `[server]` are `server_address`, `server_token`, `server_machine`, `server_timeout_s`, `server_retries` and `server_mdns`. `--address HOST:PORT` and `--machine ID` of the command win over the file.
 
+In the window, a section for the server shows when this section gives an address: its button sends the program that the window has worked out (after the guards of the export: a program opened to be seen, or a frame that lights the laser and was not confirmed, is not sent), shows how far the job is, and holds it, lets it go on or stops it with the emergency stop. Closing the window leaves the job where it is on the server.
+
 The token travels in the clear over plain HTTP: use it on a network you trust or through a tunnel; the program says so when the address is not a private one. `send` checks the program against the limits of `[machine]` (the limit of power and of speed, the bed) as `verify` does, and a program that fails, or one of more than 200000 lines, is not sent; the server holds the job to its own limits too. `stop` is the emergency stop of the laser machine: the job ends at once and the machine is latched, so that no program is taken until an administrator runs `release`; a machine that says it is latched is not sent a program. Nothing here has run against a real laser, and the `laser` plugin of the server is a simulator so far.
 
 ### `[defaults]` and `[layer NAME]`
