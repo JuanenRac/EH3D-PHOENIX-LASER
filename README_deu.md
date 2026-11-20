@@ -170,6 +170,7 @@ phoenix-laser cut DRAWING OUT.nc [--config FILE] [--power P] [--speed MM/MIN] [-
               [--tabs N] [--tab-width MM] [--smax N] [--overscan MM] [--origin X,Y] [--bed X,Y] [--max-power P] [--max-speed MM/MIN] [--profile NAME] [--material NAME --materials FILE] [--dpi N] [--tolerance MM] [--dry-run]
 phoenix-laser vector DRAWING OUT.nc [the options of cut] [--angle DEG] [--spacing MM] [--cross|--no-cross]
 phoenix-laser layers DRAWING [--config FILE] [--dpi N] [--accel MM/S2]
+phoenix-laser convert DRAWING OUT.svg|dxf [--config FILE] [--dpi N] [--tolerance MM]
 phoenix-laser trace IMAGE OUT.nc --width-mm W [--threshold 128] [--invert] [--simplify MM] [--min-area MM2] [--engrave] [the options of cut]
 phoenix-laser materials FILE
 phoenix-laser focus OUT.nc --z-step MM [--z-start MM] [--steps 9] [--length 10] [--spacing 2] [--feed 1000] [--power 30 | --powers 10,20,30] [--smax 1000] [--max-power P] [--max-speed MM/MIN] [--config FILE] [--profile NAME]
@@ -186,7 +187,7 @@ phoenix-laser server test-fire --power-percent P [--seconds S] --confirm-fire [-
 phoenix-laser [gui] [FILE]                       the window (a build with --features gui); with no arguments it opens
 ```
 
-`DRAWING` ist eine SVG- oder DXF-Datei. `cut` folgt den Konturen (die inneren zuerst); `vector` füllt die geschlossenen Formen mit Linien und folgt den offenen; beide nehmen die Einstellungen jeder Ebene oder Farbe aus `--config FILE` (siehe [docs/vector-settings.md](docs/vector-settings.md)), und eine Option der Kommandozeile ändert sie für alle Ebenen. `layers` listet die Ebenen einer Zeichnung mit dem auf, was mit jeder geschehen würde.
+`DRAWING` ist eine SVG- oder DXF-Datei. `cut` folgt den Konturen (die inneren zuerst); `vector` füllt die geschlossenen Formen mit Linien und folgt den offenen; beide nehmen die Einstellungen jeder Ebene oder Farbe aus `--config FILE` (siehe [docs/vector-settings.md](docs/vector-settings.md)), und eine Option der Kommandozeile ändert sie für alle Ebenen. `layers` listet die Ebenen einer Zeichnung mit dem auf, was mit jeder geschehen würde. `convert` schreibt eine Zeichnung erneut als schlichte SVG- oder DXF-Datei (nach der Endung der Ausgabe, nie über die gelesene Zeichnung), damit ein anderes Programm öffnen kann, was dieses verstanden hat.
 
 ## ⚙️ Konfiguration
 

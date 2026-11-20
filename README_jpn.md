@@ -170,6 +170,7 @@ phoenix-laser cut DRAWING OUT.nc [--config FILE] [--power P] [--speed MM/MIN] [-
               [--tabs N] [--tab-width MM] [--smax N] [--overscan MM] [--origin X,Y] [--bed X,Y] [--max-power P] [--max-speed MM/MIN] [--profile NAME] [--material NAME --materials FILE] [--dpi N] [--tolerance MM] [--dry-run]
 phoenix-laser vector DRAWING OUT.nc [the options of cut] [--angle DEG] [--spacing MM] [--cross|--no-cross]
 phoenix-laser layers DRAWING [--config FILE] [--dpi N] [--accel MM/S2]
+phoenix-laser convert DRAWING OUT.svg|dxf [--config FILE] [--dpi N] [--tolerance MM]
 phoenix-laser trace IMAGE OUT.nc --width-mm W [--threshold 128] [--invert] [--simplify MM] [--min-area MM2] [--engrave] [the options of cut]
 phoenix-laser materials FILE
 phoenix-laser focus OUT.nc --z-step MM [--z-start MM] [--steps 9] [--length 10] [--spacing 2] [--feed 1000] [--power 30 | --powers 10,20,30] [--smax 1000] [--max-power P] [--max-speed MM/MIN] [--config FILE] [--profile NAME]
@@ -186,7 +187,7 @@ phoenix-laser server test-fire --power-percent P [--seconds S] --confirm-fire [-
 phoenix-laser [gui] [FILE]                       the window (a build with --features gui); with no arguments it opens
 ```
 
-`DRAWING` は SVG または DXF ファイルです。`cut` は輪郭をたどり（内側から先に）、`vector` は閉じた図形を線で塗りつぶして開いた図形をたどります。どちらも各レイヤーまたは色の設定を `--config FILE` から読み込み（[docs/vector-settings.md](docs/vector-settings.md) を参照）、コマンドラインのオプションはすべてのレイヤーの設定を上書きします。`layers` は図面のレイヤーと、それぞれに行われる処理を一覧表示します。
+`DRAWING` は SVG または DXF ファイルです。`cut` は輪郭をたどり（内側から先に）、`vector` は閉じた図形を線で塗りつぶして開いた図形をたどります。どちらも各レイヤーまたは色の設定を `--config FILE` から読み込み（[docs/vector-settings.md](docs/vector-settings.md) を参照）、コマンドラインのオプションはすべてのレイヤーの設定を上書きします。`layers` は図面のレイヤーと、それぞれに行われる処理を一覧表示します。`convert` は図面をプレーンな SVG または DXF として書き直します（出力の拡張子で選び、読み込んだ図面は決して上書きしません）。このプログラムが解釈した内容を別のプログラムで開けます。
 
 ## ⚙️ 設定
 

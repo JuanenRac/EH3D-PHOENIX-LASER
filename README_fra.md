@@ -170,6 +170,7 @@ phoenix-laser cut DRAWING OUT.nc [--config FILE] [--power P] [--speed MM/MIN] [-
               [--tabs N] [--tab-width MM] [--smax N] [--overscan MM] [--origin X,Y] [--bed X,Y] [--max-power P] [--max-speed MM/MIN] [--profile NAME] [--material NAME --materials FILE] [--dpi N] [--tolerance MM] [--dry-run]
 phoenix-laser vector DRAWING OUT.nc [the options of cut] [--angle DEG] [--spacing MM] [--cross|--no-cross]
 phoenix-laser layers DRAWING [--config FILE] [--dpi N] [--accel MM/S2]
+phoenix-laser convert DRAWING OUT.svg|dxf [--config FILE] [--dpi N] [--tolerance MM]
 phoenix-laser trace IMAGE OUT.nc --width-mm W [--threshold 128] [--invert] [--simplify MM] [--min-area MM2] [--engrave] [the options of cut]
 phoenix-laser materials FILE
 phoenix-laser focus OUT.nc --z-step MM [--z-start MM] [--steps 9] [--length 10] [--spacing 2] [--feed 1000] [--power 30 | --powers 10,20,30] [--smax 1000] [--max-power P] [--max-speed MM/MIN] [--config FILE] [--profile NAME]
@@ -186,7 +187,7 @@ phoenix-laser server test-fire --power-percent P [--seconds S] --confirm-fire [-
 phoenix-laser [gui] [FILE]                       the window (a build with --features gui); with no arguments it opens
 ```
 
-`DRAWING` est un fichier SVG ou DXF. `cut` suit les contours (ceux de l'intérieur d'abord) ; `vector` remplit les formes fermées de lignes et suit les ouvertes ; les deux prennent les réglages de chaque calque ou couleur dans `--config FILE` (voir [docs/vector-settings.md](docs/vector-settings.md)) et une option de la ligne de commande les change pour tous les calques. `layers` liste les calques d'un dessin avec ce qui serait fait de chacun.
+`DRAWING` est un fichier SVG ou DXF. `cut` suit les contours (ceux de l'intérieur d'abord) ; `vector` remplit les formes fermées de lignes et suit les ouvertes ; les deux prennent les réglages de chaque calque ou couleur dans `--config FILE` (voir [docs/vector-settings.md](docs/vector-settings.md)) et une option de la ligne de commande les change pour tous les calques. `layers` liste les calques d'un dessin avec ce qui serait fait de chacun. `convert` réécrit un dessin en SVG ou DXF simple (selon l'extension de la sortie, jamais par-dessus le dessin lu), pour qu'un autre programme puisse ouvrir ce que celui-ci a compris.
 
 ## ⚙️ Configuration
 

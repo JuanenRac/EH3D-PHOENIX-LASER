@@ -13,6 +13,7 @@ use eh3d_phoenix_laser::cut::{self, layer_times, layers as layer_list, plan, Pla
 use eh3d_phoenix_laser::dither::{dither, Method};
 use eh3d_phoenix_laser::dxf::read_dxf;
 use eh3d_phoenix_laser::energy::describe;
+use eh3d_phoenix_laser::export;
 use eh3d_phoenix_laser::frame::{self, Frame};
 use eh3d_phoenix_laser::gcode_out::{header, sha256_hex, Header};
 use eh3d_phoenix_laser::image::from_bytes;
@@ -53,6 +54,7 @@ const HELP: &str = "phoenix-laser: laser engraving from an image
                 [--tabs N] [--tab-width MM] [--smax N] [--overscan MM] [--origin X,Y] [--bed X,Y] [--max-power P] [--max-speed MM/MIN] [--profile NAME] [--material NAME --materials FILE] [--dpi N] [--tolerance MM] [--dry-run]
   phoenix-laser vector DRAWING OUT.nc [the options of cut] [--angle DEG] [--spacing MM] [--cross|--no-cross]
   phoenix-laser layers DRAWING [--config FILE] [--dpi N] [--accel MM/S2]
+  phoenix-laser convert DRAWING OUT.svg|dxf [--config FILE] [--dpi N] [--tolerance MM]
   phoenix-laser trace IMAGE OUT.nc --width-mm W [--threshold 128] [--invert] [--simplify MM] [--min-area MM2] [--engrave] [the options of cut]
   phoenix-laser materials FILE
   phoenix-laser focus OUT.nc --z-step MM [--z-start MM] [--steps 9] [--length 10] [--spacing 2] [--feed 1000] [--power 30 | --powers 10,20,30] [--smax 1000] [--max-power P] [--max-speed MM/MIN] [--config FILE] [--profile NAME]
@@ -83,6 +85,7 @@ The tone options change the grey levels before the dots are made: --gamma (0.1 t
 DRAWING is an SVG or a DXF file. cut follows the contours (the ones inside first), vector fills the closed shapes with lines and follows the open ones. Every layer (or colour, for an SVG) has its
 own settings in the file of --config (see the documentation); an option of the command line changes them for all the layers. Without --config, cut cuts everything and vector engraves everything.
 layers lists the layers of a drawing with what would be done with each.
+convert reads a drawing (an SVG or a DXF, with its curves cut into straight pieces within --tolerance) and writes it again as a plain SVG or DXF, chosen by the extension of OUT: the SVG has a group for each layer, in millimetres with the y axis down, and the DXF is the old ASCII form of release 12, in millimetres with the y axis up, with the layer names written with letters, figures, _, - and $ only; the colours are kept. It never writes over the drawing it reads.
 trace follows the outline of a picture (a PNG or a PGM of a logo, a silhouette or a stencil) instead of burning it dot by dot: grey levels under --threshold are ink (over it with --invert), the border is found with sub-pixel precision, simplified until no point is farther than --simplify mm from the line, and specks smaller than --min-area mm2 are dropped. The result is a layer called trace that is cut, or filled with lines with --engrave, with the settings of --config, the options of cut and every limit of the file ([trace] holds max_pixels, max_contours and max_segments).
 materials FILE lists the materials of a library: a plain text file with a [material NAME] section for each material and way of working (see the documentation). --material NAME takes the power, the speed, the passes and the rest that the library says for it, before the other options, which win; the library is --materials FILE or the file named by PHOENIX_LASER_MATERIALS.
 focus writes a focus test: short lines side by side, each burnt with the head at another height (Z); the sharpest and thinnest line shows where the beam is in focus. --z-step has no default because which way is down depends on the machine: check it before running the program, which moves Z. --powers P1,P2,... (up to 10) makes a focus grid instead: the same lines once for each power, side by side with a column for each, so that the power that burns the thinnest line at the height of the focus can be read off. The usual values live in the [focus] section of --config.
@@ -586,6 +589,40 @@ fn layers_job(mut args: Vec<String>) -> Result<(), String> {
             accel.unwrap_or_default()
         );
     }
+    for note in &drawing.warnings {
+        eprintln!("note: {note}");
+    }
+    Ok(())
+}
+
+/// `convert`: a drawing read again as a plain SVG or DXF.
+fn convert_job(mut args: Vec<String>) -> Result<(), String> {
+    let (settings, _) = drawing_settings(&mut args, LayerMode::Cut)?;
+    finish(&args, 2)?;
+    let [input, output] = args.as_slice() else {
+        return Err("convert needs a drawing and the file to write (OUT.svg or OUT.dxf)".into());
+    };
+    let ext = Path::new(output)
+        .extension()
+        .map(|e| e.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let format = export::Format::from_extension(&ext)
+        .ok_or_else(|| format!("{output}: the file to write must end in .svg or .dxf"))?;
+    if same_file(Path::new(input), Path::new(output)) {
+        return Err(format!(
+            "{output} is the drawing that is read: it is never written over"
+        ));
+    }
+    let (_, drawing) = read_drawing(input, &settings)?;
+    let text = export::write(&drawing, format).map_err(|e| format!("{input}: {e}"))?;
+    write_atomic(Path::new(output), &text)?;
+    let layers = drawing.keys(eh3d_phoenix_laser::vector::GroupBy::Layer);
+    println!(
+        "{} shapes in {} layer(s) written to {output} as {}",
+        drawing.shapes.len(),
+        layers.len(),
+        format.name()
+    );
     for note in &drawing.warnings {
         eprintln!("note: {note}");
     }
@@ -1743,6 +1780,7 @@ fn run(mut args: Vec<String>) -> Result<(), String> {
         "cut" => drawing_job(args, LayerMode::Cut),
         "vector" => drawing_job(args, LayerMode::Engrave),
         "layers" => layers_job(args),
+        "convert" => convert_job(args),
         "trace" => trace_job(args),
         "focus" => {
             let config = flag(&mut args, "--config")?;

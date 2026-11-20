@@ -95,6 +95,78 @@ fn moves(g: &str) -> Vec<(bool, f64, f64)> {
 }
 
 #[test]
+fn convert_writes_a_drawing_as_svg_or_dxf_and_never_over_the_drawing_it_reads() {
+    let s = Scratch::new("convert");
+    let square = s.write("sq.dxf", SQUARE_DXF);
+    let svg = s.path("sq.svg");
+    let (code, out, err) = run(&["convert", &square, &svg]);
+    assert_eq!(code, Some(0), "{err}");
+    assert!(
+        out.contains("1 shapes in 1 layer(s) written to") && out.contains("as SVG"),
+        "{out}"
+    );
+    let text = fs::read_to_string(&svg).unwrap();
+    assert!(
+        text.contains("<polygon") && text.contains("inkscape:label=\"l\""),
+        "{text}"
+    );
+    // the SVG is read again by the program, and goes on to a DXF that is read again too
+    let (code, listing, _) = run(&["layers", &svg]);
+    assert_eq!(code, Some(0));
+    assert!(
+        listing.contains("1 shapes (1 closed), 40.0 mm"),
+        "{listing}"
+    );
+    let dxf = s.path("again.dxf");
+    let (code, out, err) = run(&["convert", &svg, &dxf]);
+    assert_eq!(code, Some(0), "{err}");
+    assert!(out.contains("as DXF"), "{out}");
+    let (_, listing, _) = run(&["layers", &dxf]);
+    assert!(
+        listing.contains("1 shapes (1 closed), 40.0 mm"),
+        "{listing}"
+    );
+    // the plate with its hole keeps both shapes
+    let plate = s.write("plate.svg", PLATE_SVG);
+    let plate_dxf = s.path("plate.dxf");
+    let (code, out, _) = run(&["convert", &plate, &plate_dxf]);
+    assert_eq!(code, Some(0));
+    assert!(out.contains("2 shapes"), "{out}");
+}
+
+#[test]
+fn convert_refuses_what_it_cannot_do_and_leaves_the_files_as_they_were() {
+    let s = Scratch::new("convert-refuse");
+    let square = s.write("sq.dxf", SQUARE_DXF);
+    // over the drawing it reads, whatever the way the name is written
+    let (code, _, err) = run(&["convert", &square, &square]);
+    assert_eq!(code, Some(1));
+    assert!(err.contains("never written over"), "{err}");
+    assert_eq!(fs::read_to_string(&square).unwrap(), SQUARE_DXF);
+    // an output that is not a drawing format, a missing output, a missing file and a word too many
+    let (code, _, err) = run(&["convert", &square, &s.path("out.nc")]);
+    assert_eq!(code, Some(1));
+    assert!(err.contains("must end in .svg or .dxf"), "{err}");
+    let (code, _, err) = run(&["convert", &square]);
+    assert_eq!(code, Some(1));
+    assert!(
+        err.contains("needs a drawing and the file to write"),
+        "{err}"
+    );
+    let (code, _, _) = run(&["convert", &s.path("missing.svg"), &s.path("o.svg")]);
+    assert_eq!(code, Some(1));
+    let (code, _, err) = run(&["convert", &square, &s.path("o.svg"), "extra"]);
+    assert_eq!(code, Some(1));
+    assert!(err.contains("unexpected argument"), "{err}");
+    assert!(!PathBuf::from(s.path("o.svg")).exists());
+    // a drawing with no shape is not written
+    let empty = s.write("empty.dxf", "0\nSECTION\n2\nENTITIES\n0\nENDSEC\n0\nEOF\n");
+    let (code, _, err) = run(&["convert", &empty, &s.path("e.svg")]);
+    assert_eq!(code, Some(1));
+    assert!(err.contains("no shape to write"), "{err}");
+}
+
+#[test]
 fn cut_writes_the_program_of_a_square_and_says_what_it_did() {
     let s = Scratch::new("square");
     let input = s.write("sq.dxf", SQUARE_DXF);
@@ -700,7 +772,7 @@ fn every_setting_the_file_reads_is_documented_and_every_documented_setting_is_re
         }
     }
     assert_eq!(layer_keys, 13, "{keys:?}");
-    assert_eq!(keys.len(), 13 + 120 + 11, "{keys:?}");
+    assert_eq!(keys.len(), 13 + 121 + 11, "{keys:?}");
     for k in &keys {
         assert!(
             doc.contains(&format!("`{k}`")),
