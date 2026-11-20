@@ -659,6 +659,7 @@ fn a_vector_job_with_wild_numbers_is_refused_or_passes_the_limits_and_never_pani
     for _ in 0..400 {
         let mut s = Settings::default();
         s.machine.max_power_percent = 1.0 + rng.below(100) as f64;
+        s.send.max_power_percent = 1.0 + rng.below(100) as f64;
         s.machine.max_speed_mm_min = 1.0 + rng.below(20_000) as f64;
         s.machine.bed_mm = if rng.below(2) == 0 {
             None
@@ -689,10 +690,9 @@ fn a_vector_job_with_wild_numbers_is_refused_or_passes_the_limits_and_never_pani
             });
         }
         let verdict = check_vector_before_send(&job, &s);
-        let over_power = job
-            .ops
-            .iter()
-            .any(|o| o.power_pct > s.machine.max_power_percent);
+        // the lower of the limit of the machine and the limit of what is sent
+        let cap = s.machine.max_power_percent.min(s.send.max_power_percent);
+        let over_power = job.ops.iter().any(|o| o.power_pct > cap);
         let over_speed = job
             .ops
             .iter()
@@ -723,6 +723,7 @@ fn a_test_fire_with_wild_numbers_is_refused_or_sent_as_numbers_that_read_back() 
             0 => f64::NAN,
             1 => f64::INFINITY,
             2 => -wild_number(&mut rng),
+            3 | 4 => 40.0 * ((rng.below(1000) as f64) / 1000.0),
             _ => wild_number(&mut rng) % 150.0,
         };
         let seconds = match rng.below(8) {
@@ -733,7 +734,7 @@ fn a_test_fire_with_wild_numbers_is_refused_or_sent_as_numbers_that_read_back() 
         let verdict = check_test_fire(power, seconds, &s);
         let fine = power.is_finite()
             && power > 0.0
-            && power <= s.machine.max_power_percent
+            && power <= s.machine.max_power_percent.min(s.send.max_power_percent)
             && seconds.is_finite()
             && (0.01..=10.0).contains(&seconds);
         assert_eq!(verdict.is_ok(), fine, "{power} {seconds}");

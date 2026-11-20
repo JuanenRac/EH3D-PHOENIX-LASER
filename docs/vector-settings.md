@@ -17,7 +17,7 @@ key = value
 key = value
 ```
 
-Sections: `[limits]`, `[read]`, `[order]`, `[offset]`, `[hatch]`, `[machine]`, `[frame]`, `[focus]`, `[trace]`, `[tone]`, `[verify]`, `[calibrate]`, `[text]`, `[qr]`, `[interlocks]`, `[defaults]`, one `[layer NAME]` for each layer or colour, one `[profile NAME]` for each machine and one `[zone NAME]` for each forbidden zone of the bed. `[defaults]` is what a layer gets that the file
+Sections: `[limits]`, `[read]`, `[order]`, `[offset]`, `[hatch]`, `[machine]`, `[frame]`, `[focus]`, `[trace]`, `[tone]`, `[verify]`, `[calibrate]`, `[text]`, `[qr]`, `[send]`, `[interlocks]`, `[defaults]`, one `[layer NAME]` for each layer or colour, one `[profile NAME]` for each machine and one `[zone NAME]` for each forbidden zone of the bed. `[defaults]` is what a layer gets that the file
 does not name, and also what every `[layer NAME]` starts from (wherever in the file `[defaults]` is written). The switches are `on` and `off`.
 
 ## What a layer is
@@ -230,6 +230,14 @@ The check of a program (`phoenix-laser verify`). Work outside the bed is a failu
 | `arc_tolerance_mm` | 0.01 | how far (mm) the straight pieces that an arc (`G2`, `G3`) of the program is cut into may lie from the true arc, from 0.0005 to 1; a finer tolerance gives more pieces. The length, the time, the box and the check against the bed follow the curve |
 
 The keys of `[verify]` are `overscan_mm` and `arc_tolerance_mm`.
+
+### `[send]`: what is held back before something goes to the server
+
+The laser plugin of the EH3D server is a simulator that refuses more than 40 % of full power until its own limit is changed, so a program, a vector job and a test fire are held here first to the lower of the limit of the machine (`max_power_percent` of `[machine]`) and this one, and the refusal says which limit it was. Nothing local uses it: the engraving, the cutting and the other commands keep the limit of the machine alone.
+
+| Key | Default | Meaning |
+|---|---|---|
+| `max_power_percent` | 40 | the most power (a percent of full power) that is sent, from 0.1 to 100 |
 
 ### `[zone NAME]`: a forbidden zone of the bed
 

@@ -840,6 +840,28 @@ impl ServerSettings {
     }
 }
 
+/// What is held back before a program, a vector job or a test fire is sent to the server (`phoenix-laser server`, and the send button of the window).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct SendSettings {
+    /// The most power (a percent of full power) that is sent, whatever the machine allows: the laser machine of the server is a simulator whose default limit is 40 %, and a job over it would only
+    /// be refused there, so it is refused here first and says why. The limit of power of the machine still holds under it.
+    pub max_power_percent: f64,
+}
+
+impl Default for SendSettings {
+    fn default() -> Self {
+        SendSettings {
+            max_power_percent: crate::safety::DEFAULT_SEND_POWER_PERCENT,
+        }
+    }
+}
+
+impl SendSettings {
+    pub fn validate(&self) -> Result<(), String> {
+        crate::safety::validate_max(self.max_power_percent).map_err(|e| format!("[send] {e}"))
+    }
+}
+
 /// Where the rows of a text of several lines start (`phoenix-laser text --align`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TextAlign {
@@ -1104,6 +1126,8 @@ pub struct Settings {
     pub marks: MarksSettings,
     /// The EH3D server the programs can be sent to (`phoenix-laser server`).
     pub server: ServerSettings,
+    /// What is held back before something is sent to the server (`[send]`).
+    pub send: SendSettings,
     /// The rectangles of the bed a program must keep out of (`[zone NAME]`).
     pub zones: Vec<Zone>,
     /// The emergency stop, the enclosure and the air assist as the file says them (`[interlocks]`).
@@ -1144,6 +1168,7 @@ impl Default for Settings {
             barcode: BarcodeSettings::default(),
             marks: MarksSettings::default(),
             server: ServerSettings::default(),
+            send: SendSettings::default(),
             zones: Vec::new(),
             interlocks: Interlocks::default(),
             tone: Tone::default(),
@@ -1250,6 +1275,7 @@ impl Settings {
         self.barcode.validate()?;
         self.marks.validate()?;
         self.server.validate()?;
+        self.send.validate()?;
         if self.zones.len() > MAX_ZONES {
             return Err(format!("the settings describe more than {MAX_ZONES} zones"));
         }
@@ -1410,6 +1436,7 @@ fn set_global(s: &mut Settings, section: &str, key: &str, value: &str) -> Result
         ("tone", "brightness") => s.tone.brightness = number(value)?,
         ("tone", "invert") => s.tone.invert = switch(value)?,
         ("tone", "auto_level") => s.tone.auto_level = switch(value)?,
+        ("send", "max_power_percent") => s.send.max_power_percent = number(value)?,
         ("interlocks", "estop") => {
             s.interlocks.estop = Interlocks::estop_from_word(value)
                 .ok_or_else(|| format!("'{}' is not released or pressed", value.trim()))?
@@ -1614,7 +1641,7 @@ pub fn parse(text: &str) -> Result<Settings, String> {
             let (word, rest) = head.split_once(char::is_whitespace).unwrap_or((head, ""));
             let word = word.to_ascii_lowercase();
             section = match word.as_str() {
-                "limits" | "read" | "order" | "offset" | "hatch" | "machine" | "frame" | "focus" | "trace" | "tone" | "verify" | "calibrate" | "text" | "qr" | "barcode" | "marks" | "server" | "interlocks" | "defaults" if rest.trim().is_empty() => word,
+                "limits" | "read" | "order" | "offset" | "hatch" | "machine" | "frame" | "focus" | "trace" | "tone" | "verify" | "calibrate" | "text" | "qr" | "barcode" | "marks" | "server" | "send" | "interlocks" | "defaults" if rest.trim().is_empty() => word,
                 "layer" if !rest.trim().is_empty() => {
                     named.push(rest.trim().to_lowercase());
                     format!("layer {}", rest.trim().to_lowercase())
@@ -1627,7 +1654,7 @@ pub fn parse(text: &str) -> Result<Settings, String> {
                     named_zones.push(rest.trim().to_lowercase());
                     format!("zone {}", rest.trim().to_lowercase())
                 }
-                _ => return Err(format!("line {line}: '[{head}]' is not a section (limits, read, order, offset, hatch, machine, frame, focus, trace, tone, verify, calibrate, text, qr, barcode, marks, server, interlocks, defaults, layer NAME, profile NAME or zone NAME)")),
+                _ => return Err(format!("line {line}: '[{head}]' is not a section (limits, read, order, offset, hatch, machine, frame, focus, trace, tone, verify, calibrate, text, qr, barcode, marks, server, send, interlocks, defaults, layer NAME, profile NAME or zone NAME)")),
             };
             continue;
         }
@@ -1850,6 +1877,23 @@ mod tests {
         assert_eq!(s.zones[1].kind, ZoneKind::NoGo);
         assert!(s.interlocks.problems().is_empty());
         assert!(s.interlocks.is_active());
+    }
+
+    #[test]
+    fn what_is_sent_to_the_server_is_held_to_forty_percent_unless_the_file_says_another() {
+        assert_eq!(Settings::default().send.max_power_percent, 40.0);
+        let s = parse("[send]\nmax_power_percent = 55\n").unwrap();
+        assert_eq!(s.send.max_power_percent, 55.0);
+        for bad in ["0", "0.05", "100.5", "-3", "x"] {
+            let e = parse(&format!("[send]\nmax_power_percent = {bad}\n")).unwrap_err();
+            assert!(
+                e.contains("max_power_percent") || e.contains("number"),
+                "{bad}: {e}"
+            );
+        }
+        // the limit of the machine is a different key and does not change it
+        let m = parse("[machine]\nmax_power_percent = 20\n[defaults]\npower = 10\n").unwrap();
+        assert_eq!(m.send.max_power_percent, 40.0);
     }
 
     #[test]

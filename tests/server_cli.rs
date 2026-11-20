@@ -465,12 +465,52 @@ const PLATE_SVG: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" width="40mm"
 </svg>"##;
 
 #[test]
+fn a_drawing_at_the_default_power_is_held_back_by_the_limit_of_what_is_sent_and_a_higher_limit_lets_it_go(
+) {
+    let server = Server::start();
+    // a layer that is cut with no power said has the default power of the program, which is over 40 %
+    let w = Work::new(
+        server.port,
+        OPERATOR,
+        "[layer #0000ff]\nmode = engrave\npower = 12\n",
+    );
+    let drawing = w.path("plate.svg");
+    fs::write(&drawing, PLATE_SVG).unwrap();
+    let o = w.run(&["vector", drawing.to_str().unwrap(), "--name", "plate"]);
+    assert!(!o.status.success(), "{} {}", out(&o), err(&o));
+    assert!(
+        err(&o).contains("max_power_percent of [send]"),
+        "{}",
+        err(&o)
+    );
+    assert!(
+        !server
+            .sim
+            .bodies()
+            .iter()
+            .any(|b| b.contains("\"kind\":\"vector\"")),
+        "nothing reached the server"
+    );
+    never_shows_the_token(&o);
+    // raised in the file, it goes
+    let raised = Work::new(
+        server.port,
+        OPERATOR,
+        "[send]\nmax_power_percent = 80\n[layer #0000ff]\nmode = engrave\npower = 12\n",
+    );
+    let drawing = raised.path("plate.svg");
+    fs::write(&drawing, PLATE_SVG).unwrap();
+    let o = raised.run(&["vector", drawing.to_str().unwrap(), "--name", "plate"]);
+    assert!(o.status.success(), "{} {}", out(&o), err(&o));
+}
+
+#[test]
 fn a_drawing_is_sent_as_a_vector_job_with_its_layers_and_followed_to_its_end() {
     let server = Server::start();
     let w = Work::new(
         server.port,
         OPERATOR,
-        "[layer #0000ff]\nmode = engrave\npower = 12\n",
+        "[defaults]\npower = 30\n[layer #0000ff]\nmode = engrave\npower = 12\n",
     );
     let drawing = w.path("plate.svg");
     fs::write(&drawing, PLATE_SVG).unwrap();

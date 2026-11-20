@@ -322,17 +322,37 @@ pub fn vector_job(drawing: &Drawing, s: &Settings) -> Result<(VectorJob, Vec<Str
     Ok((job, notes))
 }
 
+/// The most power that leaves for the server: the limit of the machine of the settings and the limit of what is sent (`[send]`), the lower of the two.
+pub fn send_power_cap(s: &Settings) -> f64 {
+    s.machine.max_power_percent.min(s.send.max_power_percent)
+}
+
+/// Why a cap is the one it is: the limit of what is sent when it is the lower, and the limit of the machine otherwise.
+fn cap_name(s: &Settings) -> String {
+    if s.send.max_power_percent < s.machine.max_power_percent {
+        format!(
+            "the limit of what is sent to the server, {} % (max_power_percent of [send])",
+            s.send.max_power_percent
+        )
+    } else {
+        format!(
+            "the limit of the machine, {} %",
+            s.machine.max_power_percent
+        )
+    }
+}
+
 /// What a vector job is checked against before it leaves, as a program is: the limit of power and of speed of the machine of the settings and the bed. A job that does not pass is not sent.
 pub fn check_vector_before_send(job: &VectorJob, s: &Settings) -> Result<(), String> {
     let m = &s.machine;
     let mut problems: Vec<String> = Vec::new();
     for o in &job.ops {
-        if o.power_pct > m.max_power_percent {
+        if o.power_pct > send_power_cap(s) {
             problems.push(format!(
-                "layer {} asks for {} % and the limit of the machine is {} %",
+                "layer {} asks for {} % and {} is lower",
                 cut::comment_text(&o.layer),
                 o.power_pct,
-                m.max_power_percent
+                cap_name(s)
             ));
         }
         if o.speed_mm_min > m.max_speed_mm_min {
@@ -431,10 +451,10 @@ pub fn check_test_fire(power_pct: f64, seconds: f64, s: &Settings) -> Result<(),
     if !power_pct.is_finite() || power_pct <= 0.0 || power_pct > 100.0 {
         return Err("the power of a test fire is a number above 0 and up to 100 percent".into());
     }
-    if power_pct > s.machine.max_power_percent {
+    if power_pct > send_power_cap(s) {
         return Err(format!(
-            "{power_pct} % is over the limit of the machine of the settings ({} %): nothing is fired",
-            s.machine.max_power_percent
+            "{power_pct} % is over {} of the settings: nothing is fired",
+            cap_name(s)
         ));
     }
     if !seconds.is_finite() || !(TEST_FIRE_MIN_S..=TEST_FIRE_MAX_S).contains(&seconds) {
@@ -551,7 +571,7 @@ pub fn check_before_send(gcode: &str, s: &Settings) -> Result<(), String> {
     let m = &s.machine;
     let limits = verify::Limits {
         s_max: m.s_max,
-        max_power_percent: m.max_power_percent,
+        max_power_percent: send_power_cap(s),
         max_speed_mm_min: m.max_speed_mm_min,
         bed_mm: m.bed_mm,
         accel_mm_s2: 1000.0,
@@ -563,8 +583,13 @@ pub fn check_before_send(gcode: &str, s: &Settings) -> Result<(), String> {
     if verdict.passes() {
         Ok(())
     } else {
+        let hint = if send_power_cap(s) < m.max_power_percent {
+            format!(" (power is held to {})", cap_name(s))
+        } else {
+            String::new()
+        };
         Err(format!(
-            "the program does not pass the check and is not sent: {}",
+            "the program does not pass the check and is not sent: {}{hint}",
             verdict.problems.join("; ")
         ))
     }
@@ -1376,6 +1401,42 @@ mod tests {
         assert!(check_before_send(&long, &s).unwrap_err().contains("lines"));
         let big = "#".repeat(MAX_SEND_BYTES + 1);
         assert!(check_before_send(&big, &s).unwrap_err().contains("larger"));
+    }
+
+    #[test]
+    fn nothing_over_forty_percent_leaves_unless_the_file_raises_the_limit_of_what_is_sent() {
+        // PROGRAM burns at S300 of 1000: 30 %
+        let s = Settings::default();
+        assert_eq!(send_power_cap(&s), 40.0);
+        assert!(check_before_send(PROGRAM, &s).is_ok());
+        let hot = PROGRAM.replace("S300", "S450");
+        let e = check_before_send(&hot, &s).unwrap_err();
+        assert!(
+            e.contains("not sent") && e.contains("max_power_percent of [send]"),
+            "{e}"
+        );
+        // raising the limit of what is sent lets it through, the limit of the machine still holds
+        let mut raised = Settings::default();
+        raised.send.max_power_percent = 60.0;
+        assert_eq!(send_power_cap(&raised), 60.0);
+        assert!(check_before_send(&hot, &raised).is_ok());
+        raised.machine.max_power_percent = 30.0;
+        assert_eq!(send_power_cap(&raised), 30.0);
+        let e = check_before_send(&hot, &raised).unwrap_err();
+        assert!(e.contains("not sent") && !e.contains("of [send]"), "{e}");
+        // a test fire at 41 % is over the cap, at 40 % it is not
+        assert!(check_test_fire(40.0, 0.1, &s).is_ok());
+        let e = check_test_fire(41.0, 0.1, &s).unwrap_err();
+        assert!(
+            e.contains("nothing is fired") && e.contains("[send]"),
+            "{e}"
+        );
+        // a layer of a drawing that asks for more says so
+        let (job, _) = vector_job(&plate(), &plate_settings()).unwrap();
+        let mut strict = plate_settings();
+        strict.send.max_power_percent = 20.0;
+        let e = check_vector_before_send(&job, &strict).unwrap_err();
+        assert!(e.contains("asks for") && e.contains("[send]"), "{e}");
     }
 
     #[test]

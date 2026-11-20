@@ -10,6 +10,10 @@ pub const DEFAULT_MAX_POWER_PERCENT: f64 = 100.0;
 /// The most that a power to show the frame may be when nothing says another (`max_pilot_percent` in `[frame]`): a percent of full power. The limit of power of the machine still holds over it.
 pub const DEFAULT_MAX_PILOT_PERCENT: f64 = 5.0;
 
+/// The most power sent to the laser machine of the server when nothing says another (`max_power_percent` of `[send]`): the plugin of the server for the laser is a simulator that refuses more than
+/// 40 % of full power until its own limit is changed.
+pub const DEFAULT_SEND_POWER_PERCENT: f64 = 40.0;
+
 /// The limit of speed when nothing says another: the fastest speed any setting of the program accepts (mm/min).
 pub const DEFAULT_MAX_SPEED_MM_MIN: f64 = 30_000.0;
 
