@@ -565,7 +565,7 @@ fn a_drawing_over_a_limit_of_the_machine_or_a_machine_that_is_latched_is_not_sen
     fs::write(&junk, "x").unwrap();
     let o = w.run(&["vector", junk.to_str().unwrap()]);
     assert!(
-        !o.status.success() && err(&o).contains("SVG or a DXF"),
+        !o.status.success() && err(&o).contains("SVG, a DXF or an LBRN2"),
         "{}",
         err(&o)
     );

@@ -3,6 +3,7 @@
 //! nothing of the person's changed.
 
 use crate::lang::Lang;
+use crate::panels;
 use crate::window::Mode;
 use std::path::PathBuf;
 
@@ -50,18 +51,20 @@ impl ShotTheme {
     }
 }
 
-/// What the picture shows of the window: one of its modes, or the section for the server.
+/// What the picture shows of the window: one of its modes, the section for the server, or one of the workspaces of the panels.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ShotWindow {
     /// The window with this mode chosen.
     Mode(Mode),
     /// The window with the section for the server open.
     Server,
+    /// The window with this workspace of the panels (`Prepare`, `Run`, `Review` or `Compact`).
+    Workspace(&'static str),
 }
 
 impl ShotWindow {
-    /// The words that name a window on the command line, in the order of the window: its modes and `server`.
-    pub const NAMES: [&'static str; 12] = [
+    /// The words that name a window on the command line, in the order of the window: its modes, `server` and the workspaces.
+    pub const NAMES: [&'static str; 16] = [
         "engrave",
         "calibrate",
         "cut",
@@ -74,6 +77,10 @@ impl ShotWindow {
         "marks",
         "barcode",
         "server",
+        "prepare",
+        "run",
+        "review",
+        "compact",
     ];
 
     /// The word that names the window on the command line.
@@ -91,6 +98,12 @@ impl ShotWindow {
             ShotWindow::Mode(Mode::Marks) => "marks",
             ShotWindow::Mode(Mode::Barcode) => "barcode",
             ShotWindow::Server => "server",
+            ShotWindow::Workspace(name) => match name {
+                panels::WS_PREPARE => "prepare",
+                panels::WS_RUN => "run",
+                panels::WS_REVIEW => "review",
+                _ => "compact",
+            },
         }
     }
 
@@ -110,6 +123,10 @@ impl ShotWindow {
             "marks" => Mode::Marks,
             "barcode" => Mode::Barcode,
             "server" => return Some(ShotWindow::Server),
+            "prepare" => return Some(ShotWindow::Workspace(panels::WS_PREPARE)),
+            "run" => return Some(ShotWindow::Workspace(panels::WS_RUN)),
+            "review" => return Some(ShotWindow::Workspace(panels::WS_REVIEW)),
+            "compact" => return Some(ShotWindow::Workspace(panels::WS_COMPACT)),
             _ => return None,
         };
         Some(ShotWindow::Mode(mode))
@@ -212,7 +229,7 @@ pub fn parse_window_args(args: &[String], max_files: usize) -> Result<WindowArgs
             "--window" => {
                 let text = iter.next().ok_or("--window needs the name of a window")?;
                 picture.window = Some(ShotWindow::parse(text).ok_or(
-                    "--window is engrave, calibrate, cut, focus, frame, preview, trace, text, qr, marks, barcode or server",
+                    "--window is engrave, calibrate, cut, focus, frame, preview, trace, text, qr, marks, barcode, server, prepare, run, review or compact",
                 )?);
             }
             "--lang" => {
@@ -395,6 +412,10 @@ mod tests {
             Some(ShotWindow::Mode(Mode::Barcode))
         );
         assert_eq!(ShotWindow::parse("server"), Some(ShotWindow::Server));
+        assert_eq!(
+            ShotWindow::parse("Review"),
+            Some(ShotWindow::Workspace(panels::WS_REVIEW))
+        );
         assert_eq!(ShotWindow::parse("settings"), None);
         assert_eq!(ShotWindow::parse(""), None);
     }
@@ -414,8 +435,8 @@ mod tests {
             Mode::Marks,
             Mode::Barcode,
         ];
-        // the list of names is the modes plus the server section, with no name twice
-        assert_eq!(ShotWindow::NAMES.len(), modes.len() + 1);
+        // the list of names is the modes, the server section and the four workspaces, with no name twice
+        assert_eq!(ShotWindow::NAMES.len(), modes.len() + 1 + 4);
         for mode in modes {
             let name = ShotWindow::Mode(mode).name();
             assert!(ShotWindow::NAMES.contains(&name), "{name}");

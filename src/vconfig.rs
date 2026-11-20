@@ -1614,6 +1614,9 @@ fn set_zone(z: &mut Zone, key: &str, value: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// The start of every key the frame of the window writes in the settings file; the reader leaves these lines alone.
+pub const DOCK_KEY_PREFIX: &str = "dock.";
+
 /// Reads the text of a settings file. The values are checked, so a file that gives a power of 500 % is refused here.
 pub fn parse(text: &str) -> Result<Settings, String> {
     struct Entry<'a> {
@@ -1631,6 +1634,12 @@ pub fn parse(text: &str) -> Result<Settings, String> {
         let line = n + 1;
         let t = raw.trim();
         if t.is_empty() || t.starts_with('#') || t.starts_with(';') {
+            continue;
+        }
+        // the lines of the frame of the window (`dock.*`: the arrangement of the panels) belong to the window, which writes them back as it found them
+        if t.split_once('=')
+            .is_some_and(|(k, _)| k.trim().starts_with(DOCK_KEY_PREFIX))
+        {
             continue;
         }
         if let Some(head) = t.strip_prefix('[') {

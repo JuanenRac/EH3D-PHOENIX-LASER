@@ -638,7 +638,7 @@ struct Lexer<'a> {
 
 /// The text of an attribute with the five predefined entities and the numbers `&#10;` or `&#xA;` turned into their letters. Any other entity stays as it is written: a declared
 /// entity is never expanded.
-fn decode(raw: &str) -> String {
+pub(crate) fn decode(raw: &str) -> String {
     if !raw.contains('&') {
         return raw.to_string();
     }

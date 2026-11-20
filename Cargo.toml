@@ -19,7 +19,9 @@ path = "src/main.rs"
 [features]
 default = []
 # the window (egui, with the icon of the program): `cargo run --release --features gui`
-gui = ["dep:eframe", "dep:png", "eh3d-view/gui"]
+gui = ["dep:eframe", "dep:png", "eh3d-view/gui", "eh3d-dock/gui"]
+# the starting points of the common database of materials (the family of workpieces of eh3d-materials); it needs a release of EH3D-COMMON that has the module `machining`
+common-machining = ["dep:eh3d-materials"]
 
 [dependencies]
 # the reader of PGM and PNG pictures, shared with the other programs that work from a picture
@@ -31,6 +33,12 @@ eh3d-serverclient = { version = ">=0.0.1", path = "../EH3D-COMMON/crates/serverc
 
 # the panel of the settings of the server, the link badge and the login of the window: the model (no window) is always there, the drawing with the feature `gui`
 eh3d-view = { version = ">=0.0.1", path = "../EH3D-COMMON/crates/view" }
+
+# the frame of the window: panels that dock, float and fold, workspaces, the menu bar and the shortcuts; the model has no window, the drawing is the feature `gui`
+eh3d-dock = { version = ">=0.0.1", path = "../EH3D-COMMON/crates/dock", default-features = false }
+
+# the materials a laser works, with their starting points (verified = false until somebody tries them on a machine), behind the feature `common-machining`
+eh3d-materials = { version = ">=0.0.1", path = "../EH3D-COMMON/crates/materials", optional = true }
 
 # the window
 eframe = { version = "0.37.0", default-features = false, features = ["glow", "default_fonts"], optional = true }

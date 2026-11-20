@@ -4,6 +4,7 @@
 
 use crate::barcode;
 use crate::calibrate::{self, focus_grid, focus_test, grid, labelled_grid, ladder, Grid, Labels};
+use crate::commonmat;
 use crate::cut::{layers as layer_list, plan as plan_cut};
 use crate::dither::{dither, Method};
 use crate::dxf::read_dxf;
@@ -11,6 +12,7 @@ use crate::frame::{self, Frame};
 use crate::gcode_out::{header, sha256_hex, Header};
 use crate::image::{from_bytes, Gray};
 use crate::lang::{fill, Lang, Msg};
+use crate::lbrn2::{read_lbrn2, read_project};
 use crate::linkpane::LoginStore;
 use crate::materials::{self, Library, Material};
 use crate::preview;
@@ -62,7 +64,7 @@ impl Job {
     /// The extensions the list of files shows.
     pub fn extensions(self) -> &'static [&'static str] {
         match self {
-            Job::OpenImage => &["png", "pgm", "svg", "dxf"],
+            Job::OpenImage => &["png", "pgm", "svg", "dxf", "lbrn2"],
             Job::OpenConfig => &["cfg"],
             Job::ExportGcode => &["nc", "ngc", "gcode", "gc", "tap", "txt"],
             Job::OpenMaterials => &["cfg"],
@@ -787,7 +789,8 @@ fn parse_drawing(bytes: &[u8], ext: &str, opts: &ReadOptions) -> Result<Drawing,
     match ext {
         "svg" => read_svg(bytes, opts),
         "dxf" => read_dxf(bytes, opts),
-        _ => Err("not a drawing this program reads (SVG, DXF)".to_string()),
+        "lbrn2" => read_lbrn2(bytes, opts),
+        _ => Err("not a drawing this program reads (SVG, DXF, LBRN2)".to_string()),
     }
 }
 
@@ -820,10 +823,12 @@ pub struct Picture {
 pub struct VectorFile {
     pub path: PathBuf,
     pub name: String,
-    /// `svg` or `dxf`.
+    /// `svg`, `dxf` or `lbrn2`.
     pub ext: String,
     pub bytes: Vec<u8>,
     pub drawing: Drawing,
+    /// What a project file says for each of its layers (by the key of the layer): it fills the table of layers unless the settings file names the layer.
+    pub hints: Vec<(String, LayerParams)>,
 }
 
 /// What was worked out, for the status line.
@@ -1308,6 +1313,13 @@ pub struct Window {
     pub login: LoginStore,
     /// The person ticked the box that says that the program that is open is sent as it is (it is asked again for every program that is opened).
     pub send_opened_confirmed: bool,
+    /// The material of the common database that is chosen in the panel of materials, the kind of laser, what it does and the thickness typed (mm).
+    pub common_id: Option<String>,
+    pub common_kind: commonmat::Kind,
+    pub common_what: commonmat::What,
+    pub common_thickness: String,
+    /// The report of the program that was worked out, once it is asked for (it is dropped when anything changes).
+    pub report_text: Option<String>,
 }
 
 impl Window {
@@ -1360,6 +1372,11 @@ impl Window {
             server_job: None,
             login: LoginStore::new(),
             send_opened_confirmed: false,
+            common_id: None,
+            common_kind: commonmat::Kind::Diode,
+            common_what: commonmat::What::Cut,
+            common_thickness: "3".to_string(),
+            report_text: None,
         }
     }
 
@@ -1401,6 +1418,7 @@ impl Window {
     fn mark_stale(&mut self) {
         // whatever changes, the laser is not lit unless the person says it again
         self.pilot_confirmed = false;
+        self.report_text = None;
         if self.done.is_some() {
             self.stale = true;
         }
@@ -1799,12 +1817,12 @@ impl Window {
     /// Opens a file chosen or dropped on the window: a drawing (SVG, DXF) or a picture (anything else, which the reader of pictures refuses when it is not one).
     pub fn open_dropped(&mut self, path: &Path) -> bool {
         match extension_of(path).as_str() {
-            "svg" | "dxf" => self.open_vector(path),
+            "svg" | "dxf" | "lbrn2" => self.open_vector(path),
             "png" | "pgm" => self.open_image(path),
             "nc" | "ngc" | "gcode" | "gc" | "tap" => self.open_gcode(path),
             _ => {
                 self.status = Status::Failed(format!(
-                    "{}: not a file this program reads (PNG, PGM, SVG, DXF, G-code)",
+                    "{}: not a file this program reads (PNG, PGM, SVG, DXF, LBRN2, G-code)",
                     path.display()
                 ));
                 false
@@ -1878,12 +1896,21 @@ impl Window {
             let ext = extension_of(path);
             let bytes =
                 read_file_up_to(path, opts.limits.max_file_bytes as u64).map_err(Status::Failed)?;
-            let drawing = parse_drawing(&bytes, &ext, &opts)
-                .map_err(|e| Status::Failed(format!("{}: {e}", path.display())))?;
-            Ok((ext, bytes, drawing))
+            let failed = |e: String| Status::Failed(format!("{}: {e}", path.display()));
+            let (drawing, hints) = if ext == "lbrn2" {
+                let project = read_project(&bytes, &opts).map_err(failed)?;
+                let hints = project.hints();
+                (project.drawing, hints)
+            } else {
+                (
+                    parse_drawing(&bytes, &ext, &opts).map_err(failed)?,
+                    Vec::new(),
+                )
+            };
+            Ok((ext, bytes, drawing, hints))
         });
         match opened {
-            Ok((ext, bytes, drawing)) => {
+            Ok((ext, bytes, drawing, hints)) => {
                 self.warnings = drawing.warnings.clone();
                 self.vector = Some(VectorFile {
                     path: path.to_path_buf(),
@@ -1891,6 +1918,7 @@ impl Window {
                     ext,
                     bytes,
                     drawing,
+                    hints,
                 });
                 self.rebuild_rows();
                 self.mode = Mode::Cut;
@@ -1922,7 +1950,15 @@ impl Window {
         };
         self.rows = layer_list(&v.drawing, &self.settings)
             .iter()
-            .map(|l| LayerRow::new(&l.key, l.shapes, &self.settings.params_for(&l.key)))
+            .map(|l| {
+                let named = self.settings.layers.iter().any(|(n, _)| *n == l.key);
+                let hint = v.hints.iter().find(|(k, _)| *k == l.key).map(|(_, p)| *p);
+                let params = match (named, hint) {
+                    (false, Some(p)) => p,
+                    _ => self.settings.params_for(&l.key),
+                };
+                LayerRow::new(&l.key, l.shapes, &params)
+            })
             .collect();
     }
 
@@ -2950,11 +2986,11 @@ impl Window {
         }
     }
 
-    /// What `verify` says about a program, with the limits of the window and the settings file and the overscan of its box.
-    fn verdict_of(&self, gcode: &str, s_max: u32) -> Option<verify::Verdict> {
+    /// The limits the check of a program is made with: the ones of the boxes and the settings file, and the overscan of the box of the check.
+    fn verify_limits(&self, s_max: u32) -> Option<verify::Limits> {
         let (max_power, max_speed) = self.limits().ok()?;
         let m = &self.settings.machine;
-        let l = verify::Limits {
+        Some(verify::Limits {
             s_max,
             max_power_percent: max_power,
             max_speed_mm_min: max_speed,
@@ -2963,8 +2999,201 @@ impl Window {
             rapid_mm_min: m.rapid_mm_min,
             overscan_mm: self.verify_overscan().ok()?,
             arc_tolerance_mm: self.settings.verify.arc_tolerance_mm,
-        };
+        })
+    }
+
+    /// What `verify` says about a program, with the limits of the window and the settings file and the overscan of its box.
+    fn verdict_of(&self, gcode: &str, s_max: u32) -> Option<verify::Verdict> {
+        let l = self.verify_limits(s_max)?;
         verify::verify_with(gcode.as_bytes(), &l, &verify::guard_of(&self.settings)).ok()
+    }
+
+    /// The report of the program that was worked out, written to be read before a job in the language of the window (the same report the command `report` writes): the file and its hash, the
+    /// moves, the box of the work, the power and the speed against the limits, the energy when the power of the laser is known, the material, the zones, the interlocks and the verdict.
+    /// It is kept until anything changes. Returns whether it could be made.
+    pub fn make_report(&mut self) -> bool {
+        let Some(done) = self.done.clone() else {
+            self.status = Status::Failed("there is no program yet: work it out first".to_string());
+            return false;
+        };
+        let Some(limits) = self.verify_limits(done.s_max) else {
+            self.status = Status::Failed("the limits of the boxes are not valid".to_string());
+            return false;
+        };
+        let guard = verify::guard_of(&self.settings);
+        let verdict = match verify::verify_with(done.gcode.as_bytes(), &limits, &guard) {
+            Ok(v) => v,
+            Err(e) => {
+                self.status = Status::Failed(e);
+                return false;
+            }
+        };
+        let program = preview::read_with(&done.gcode, limits.arc_tolerance_mm);
+        let analysis = match preview::analyse(&program, &self.preview_options(done.s_max)) {
+            Ok(a) => a,
+            Err(e) => {
+                self.status = Status::Failed(e);
+                return false;
+            }
+        };
+        let watts = self.laser_watts().ok().flatten();
+        let shown = done
+            .source
+            .as_ref()
+            .map_or_else(|| "program".to_string(), |(n, _)| n.clone());
+        let material = self.material.as_ref().map(|name| {
+            let verified = self
+                .materials
+                .as_ref()
+                .and_then(|l| l.find(name))
+                .and_then(|m| m.verified);
+            (name.as_str(), verified)
+        });
+        self.report_text = Some(crate::report::render(
+            &crate::report::Input {
+                program: &shown,
+                verdict: &verdict,
+                limits: &limits,
+                analysis: &analysis,
+                laser_watts: watts,
+                material,
+                zones: self.settings.zones.len(),
+                interlocks: &self.settings.interlocks,
+            },
+            self.lang,
+        ));
+        true
+    }
+
+    /// The interlocks as the settings file says them, in one line in the language of the window. They are simulated: nothing here reads a sensor.
+    pub fn safety_line(&self) -> String {
+        use crate::guard::{AirAssist, Enclosure, Estop};
+        let i = &self.settings.interlocks;
+        let l = self.lang;
+        let estop = match i.estop {
+            Estop::Released => Msg::StateReleased,
+            Estop::Pressed => Msg::StatePressed,
+        };
+        let cover = match i.enclosure {
+            Enclosure::Unknown => Msg::StateUnknown,
+            Enclosure::Closed => Msg::StateClosed,
+            Enclosure::Open => Msg::StateOpen,
+        };
+        let air = match i.air_assist {
+            AirAssist::Unknown => Msg::StateUnknown,
+            AirAssist::On => Msg::StateOn,
+            AirAssist::Off => Msg::StateOff,
+        };
+        fill(
+            Msg::SafetyLine.tr(l),
+            &[estop.tr(l), cover.tr(l), air.tr(l)],
+        )
+    }
+
+    /// The text of the settings file the window was set from, for the frame to read the arrangement of the panels out of it (empty when there is no file, which keeps nothing).
+    pub fn layout_source(&self) -> String {
+        self.config_path
+            .as_ref()
+            .and_then(|p| std::fs::read(p).ok())
+            .map(|b| String::from_utf8_lossy(&b).into_owned())
+            .unwrap_or_default()
+    }
+
+    /// Keeps the arrangement of the panels in the settings file: only the lines that start with `dock.` are written, every other line stays as it is. Nothing is written when there is no
+    /// settings file (the person did not give one) or when the window is only there to be photographed. Returns whether the file was written.
+    pub fn save_layout(&mut self, pairs: &[(String, String)], keep_nothing: bool) -> bool {
+        if keep_nothing {
+            return false;
+        }
+        let Some(path) = self.config_path.clone() else {
+            return false;
+        };
+        let old = self.layout_source();
+        let merged = eh3d_dock::config::replace_block(&old, pairs);
+        if merged == old {
+            return false;
+        }
+        match write_atomic(&path, &merged) {
+            Ok(()) => true,
+            Err(e) => {
+                self.status = Status::Failed(e);
+                false
+            }
+        }
+    }
+
+    /// Whether an interlock that the settings require is not safe, so the line of the interlocks is shown as a problem.
+    pub fn safety_problem(&self) -> bool {
+        !self.settings.interlocks.problems().is_empty()
+    }
+
+    /// The materials of the common database, named in the language of the window (none in a build without it).
+    pub fn common_entries(&self) -> Vec<commonmat::Entry> {
+        commonmat::entries(self.lang)
+    }
+
+    /// The thickness typed for a starting point of the common database, in mm (0 when the laser engraves, which has none).
+    fn common_thickness_mm(&self) -> Result<f64, Status> {
+        if self.common_what == commonmat::What::Engrave {
+            return Ok(0.0);
+        }
+        self.common_thickness
+            .trim()
+            .parse::<f64>()
+            .ok()
+            .filter(|v| v.is_finite() && *v > 0.0 && *v <= 1000.0)
+            .ok_or(Status::BadValue(Msg::CommonMatThickness))
+    }
+
+    /// The starting point of the common database for the material, the kind of laser and the thickness chosen, with the power of the laser of the box (the answer is a warning, never a
+    /// guess, when the database does not know). `None` while no material is chosen.
+    pub fn common_answer(&self) -> Option<Result<commonmat::Answer, Status>> {
+        let id = self.common_id.as_deref()?;
+        let watts = match self.laser_watts() {
+            Ok(Some(w)) => w,
+            Ok(None) => return Some(Err(Status::BadValue(Msg::LaserWatts))),
+            Err(s) => return Some(Err(s)),
+        };
+        let thickness = match self.common_thickness_mm() {
+            Ok(t) => t,
+            Err(s) => return Some(Err(s)),
+        };
+        Some(Ok(commonmat::lookup(
+            id,
+            self.common_kind,
+            self.common_what,
+            watts,
+            thickness,
+            self.lang,
+        )))
+    }
+
+    /// Puts the starting point of the common database in the boxes and in the table of layers, like any material of the library. The values are the ones of the database and they are marked
+    /// as not verified; the limits still hold when the work is made.
+    pub fn use_common_start(&mut self) -> bool {
+        let Some(id) = self.common_id.clone() else {
+            return false;
+        };
+        let found = match self.common_answer() {
+            Some(Ok(a)) => match a.found {
+                Some(f) => f,
+                None => {
+                    self.status = Status::Failed(a.warning.unwrap_or_default());
+                    return false;
+                }
+            },
+            Some(Err(s)) => {
+                self.status = s;
+                return false;
+            }
+            None => return false,
+        };
+        let m = commonmat::as_material(&id, &found);
+        self.apply_material_values(&m);
+        self.material = Some(id.clone());
+        self.mark_stale();
+        self.status = Status::MaterialApplied(id);
+        true
     }
 
     /// The lines of the check of the program: whether it passes (with the start of its SHA-256) and, when it fails, what is wrong.

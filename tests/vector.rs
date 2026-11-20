@@ -497,7 +497,7 @@ fn the_options_and_the_files_that_are_wrong_say_so() {
         (vec!["cut", &input, &out, "--tolerance", "5"], "tolerance"),
         (vec!["cut", &input, &out, "--speed"], "needs a value"),
         (vec!["cut", &input, &out, "extra"], "unexpected argument"),
-        (vec!["cut", &text, &out], "not an SVG or a DXF"),
+        (vec!["cut", &text, &out], "not an SVG, a DXF or an LBRN2"),
         (vec!["cut", "missing.svg", &out], "missing.svg"),
         (vec!["layers"], "needs a drawing"),
         (vec!["layers", &input, "extra"], "unexpected argument"),

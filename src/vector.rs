@@ -284,6 +284,11 @@ impl Collector {
         Ok(())
     }
 
+    /// How many shapes the drawing holds so far.
+    pub fn count(&self) -> usize {
+        self.drawing.shapes.len()
+    }
+
     pub fn finish(self) -> Drawing {
         self.drawing
     }

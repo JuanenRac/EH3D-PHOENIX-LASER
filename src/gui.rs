@@ -2,15 +2,22 @@
 //! decided there, in code that is tested.
 
 use crate::browse::{self, Browser};
+use crate::commonmat;
 use crate::lang::{fill, Lang, Msg};
 use crate::materials;
+use crate::panels::{self, id as pid, Cmd, LayoutWatch, MenuFacts};
 use crate::shot::{ShotRequest, ShotTheme, ShotWindow, PATIENCE_FRAMES};
 use crate::vconfig::{KerfSide, LayerMode, QrEcc, TextAlign};
 use crate::window::{fire, Job, Key, Kind, LayerField, Mode, Section, Window, MAX_SEGMENTS};
 use eframe::egui::{
     self, Color32, FontData, FontDefinitions, FontFamily, Pos2, Rect, Stroke, Vec2,
 };
+use eh3d_dock::core::AboutInfo;
+use eh3d_dock::gui::Dock;
+use eh3d_dock::menu::{Chosen, DockAction, MenuBar, StdAction};
+use std::cell::RefCell;
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
 // the colours of the theme Forge, the one the other programs of the suite start with: amber on charcoal
@@ -56,6 +63,10 @@ struct App {
     server_pane: Option<crate::linkpane::ServerPane>,
     /// The section for the server is held open (the picture of that window, which keeps no settings).
     server_open: bool,
+    /// What the program asks of the frame of panels (show a panel, change workspace); the shell does it after the frame.
+    pending_dock: Vec<DockAction>,
+    /// The files that were opened, for the list of recent files of the frame.
+    recent_added: Vec<String>,
 }
 
 impl App {
@@ -85,6 +96,8 @@ impl App {
             cursor: None,
             server_pane: None,
             server_open: false,
+            pending_dock: Vec::new(),
+            recent_added: Vec::new(),
         }
     }
 
@@ -132,12 +145,7 @@ impl App {
                     .add_enabled(can, egui::Button::new(Msg::Compute.tr(lang)))
                     .clicked()
                 {
-                    if self.win.needs_confirmation() {
-                        // the laser is not lit until the person has said so
-                        self.confirm = Some(false);
-                    } else if self.win.compute() {
-                        self.fit_pending = true;
-                    }
+                    self.do_compute();
                 }
                 if ui
                     .add_enabled(
@@ -146,11 +154,7 @@ impl App {
                     )
                     .clicked()
                 {
-                    if self.win.needs_confirmation() {
-                        self.confirm = Some(true);
-                    } else {
-                        self.ask(Job::ExportGcode);
-                    }
+                    self.do_export();
                 }
                 if ui
                     .add_enabled(self.win.has_work(), egui::Button::new(Msg::Fit.tr(lang)))
@@ -172,48 +176,439 @@ impl App {
         });
     }
 
-    fn side_panel(&mut self, ui: &mut egui::Ui) {
-        egui::Panel::left("parameters")
-            .default_size(290.0)
-            .show(ui, |ui| {
-                egui::ScrollArea::vertical().show(ui, |ui| {
-                    ui.add_space(4.0);
-                    self.picture_group(ui);
-                    self.mode_group(ui);
-                    self.machine_group(ui);
-                    match self.win.mode {
-                        Mode::Engrave => {
-                            self.dots_group(ui);
-                            self.laser_group(ui);
-                            self.material_group(ui);
-                        }
-                        Mode::Calibrate => self.calibration_group(ui),
-                        Mode::Focus => self.focus_group(ui),
-                        Mode::Frame => self.frame_group(ui),
-                        Mode::Preview => self.program_group(ui),
-                        Mode::Cut => {
-                            self.vector_group(ui);
-                            self.material_group(ui);
-                        }
-                        Mode::Text => self.text_group(ui),
-                        Mode::Qr => self.qr_group(ui),
-                        Mode::Marks => self.marks_group(ui),
-                        Mode::Barcode => self.barcode_group(ui),
-                        Mode::Trace => {
-                            self.trace_group(ui);
-                            self.laser_group(ui);
-                            self.material_group(ui);
-                        }
-                    }
-                    self.preview_group(ui);
-                    self.server_group(ui);
-                    self.layers_group(ui);
-                    self.notes_group(ui);
-                });
-            });
+    // ------------------------------------------------------------ the panels of the window: each draws what is left of its group
+
+    /// The mode of the work and the settings of the work that mode makes: the picture, the laser, the grid, the framing, the text, the codes, the outline.
+    fn panel_cut_settings(&mut self, ui: &mut egui::Ui) {
+        egui::ScrollArea::vertical().show(ui, |ui| {
+            ui.add_space(4.0);
+            self.mode_group(ui);
+            match self.win.mode {
+                Mode::Engrave => {
+                    self.dots_group(ui);
+                    self.laser_group(ui);
+                }
+                Mode::Calibrate => self.calibration_group(ui),
+                Mode::Focus => self.focus_group(ui),
+                Mode::Frame => self.frame_group(ui),
+                Mode::Preview => self.program_group(ui),
+                Mode::Cut => self.vector_group(ui),
+                Mode::Text => self.text_group(ui),
+                Mode::Qr => self.qr_group(ui),
+                Mode::Marks => self.marks_group(ui),
+                Mode::Barcode => self.barcode_group(ui),
+                Mode::Trace => {
+                    self.trace_group(ui);
+                    self.laser_group(ui);
+                }
+            }
+            self.layers_group(ui);
+        });
     }
 
-    /// The title of a group of the side panel.
+    /// The file that is open and the machine profile.
+    fn panel_properties(&mut self, ui: &mut egui::Ui) {
+        egui::ScrollArea::vertical().show(ui, |ui| {
+            ui.add_space(4.0);
+            self.picture_group(ui);
+            self.machine_group(ui);
+        });
+    }
+
+    /// The library of materials of the person.
+    fn panel_library(&mut self, ui: &mut egui::Ui) {
+        egui::ScrollArea::vertical().show(ui, |ui| {
+            ui.add_space(4.0);
+            self.material_group(ui);
+        });
+    }
+
+    /// The starting points of the common database of materials: a material, a laser, what it does and the thickness give the power, the speed and the passes the database has, with the note that
+    /// they were not tried on a machine (always in sight) and the reasons when the material must not meet a laser.
+    fn panel_materials(&mut self, ui: &mut egui::Ui) {
+        let lang = self.win.lang;
+        egui::ScrollArea::vertical().show(ui, |ui| {
+            ui.add_space(4.0);
+            if !commonmat::available() {
+                ui.label(egui::RichText::new(commonmat::UNAVAILABLE).color(DIM));
+                return;
+            }
+            ui.label(
+                egui::RichText::new(commonmat::not_verified_note(lang))
+                    .color(ACCENT)
+                    .small(),
+            );
+            let entries = self.win.common_entries();
+            let shown = self
+                .win
+                .common_id
+                .as_ref()
+                .and_then(|id| entries.iter().find(|e| e.id == *id))
+                .map_or_else(|| Msg::NoMaterial.tr(lang).to_string(), |e| e.name.clone());
+            egui::ComboBox::from_id_salt("common-material")
+                .width(220.0)
+                .selected_text(shown)
+                .show_ui(ui, |ui| {
+                    for e in &entries {
+                        let label = if e.laser_unsafe {
+                            format!("{} ({})", e.name, Msg::CommonMatNoLaser.tr(lang))
+                        } else {
+                            e.name.clone()
+                        };
+                        let current = self.win.common_id.as_deref() == Some(e.id.as_str());
+                        if ui.selectable_label(current, label).clicked() {
+                            self.win.common_id = Some(e.id.clone());
+                        }
+                    }
+                });
+            let mut kind = self.win.common_kind;
+            egui::ComboBox::from_id_salt("common-kind")
+                .selected_text(match kind {
+                    commonmat::Kind::Diode => Msg::CommonMatDiode.tr(lang),
+                    commonmat::Kind::Co2 => Msg::CommonMatCo2.tr(lang),
+                })
+                .show_ui(ui, |ui| {
+                    ui.selectable_value(
+                        &mut kind,
+                        commonmat::Kind::Diode,
+                        Msg::CommonMatDiode.tr(lang),
+                    );
+                    ui.selectable_value(
+                        &mut kind,
+                        commonmat::Kind::Co2,
+                        Msg::CommonMatCo2.tr(lang),
+                    );
+                });
+            self.win.common_kind = kind;
+            let mut what = self.win.common_what;
+            egui::ComboBox::from_id_salt("common-what")
+                .selected_text(match what {
+                    commonmat::What::Cut => Msg::ModeCut.tr(lang),
+                    commonmat::What::Engrave => Msg::ModeEngrave.tr(lang),
+                })
+                .show_ui(ui, |ui| {
+                    ui.selectable_value(&mut what, commonmat::What::Cut, Msg::ModeCut.tr(lang));
+                    ui.selectable_value(
+                        &mut what,
+                        commonmat::What::Engrave,
+                        Msg::ModeEngrave.tr(lang),
+                    );
+                });
+            self.win.common_what = what;
+            if what == commonmat::What::Cut {
+                ui.label(Msg::CommonMatThickness.tr(lang));
+                ui.add(
+                    egui::TextEdit::singleline(&mut self.win.common_thickness)
+                        .desired_width(f32::INFINITY),
+                );
+            }
+            self.field_for(ui, Key::LaserWatts);
+            match self.win.common_answer() {
+                None => {}
+                Some(Err(_)) => {
+                    ui.label(
+                        egui::RichText::new(Msg::CommonMatNeedWatts.tr(lang))
+                            .color(DANGER)
+                            .small(),
+                    );
+                }
+                Some(Ok(answer)) => {
+                    if let Some(f) = answer.found {
+                        ui.label(fill(
+                            Msg::CommonMatResult.tr(lang),
+                            &[
+                                &format!("{}", f.power_percent),
+                                &format!("{}", f.speed_mm_min),
+                                &f.passes.to_string(),
+                            ],
+                        ));
+                        if let Some(air) = f.air_assist {
+                            let on = if air { Msg::StateOn } else { Msg::StateOff };
+                            ui.label(fill(Msg::CommonMatAir.tr(lang), &[on.tr(lang)]));
+                        }
+                        for note in &answer.notes {
+                            ui.label(egui::RichText::new(note.as_str()).color(ACCENT).small());
+                        }
+                        if ui.button(Msg::CommonMatUse.tr(lang)).clicked() {
+                            self.win.use_common_start();
+                        }
+                    }
+                    if let Some(w) = &answer.warning {
+                        ui.label(egui::RichText::new(w.as_str()).color(DANGER));
+                    }
+                    for r in &answer.reasons {
+                        ui.label(egui::RichText::new(r.as_str()).color(DANGER).small());
+                    }
+                }
+            }
+        });
+    }
+
+    /// Framing the work with the laser off or with the pilot of low power, and the limits of the machine.
+    fn panel_jog(&mut self, ui: &mut egui::Ui) {
+        let lang = self.win.lang;
+        egui::ScrollArea::vertical().show(ui, |ui| {
+            ui.add_space(4.0);
+            if self.win.mode != Mode::Frame && ui.button(Msg::ModeFrame.tr(lang)).clicked() {
+                self.win.set_mode(Mode::Frame);
+            }
+            self.frame_group(ui);
+        });
+    }
+
+    /// The server: the settings of the link, the job that was sent, pause, resume and stop.
+    fn panel_machine(&mut self, ui: &mut egui::Ui) {
+        egui::ScrollArea::vertical().show(ui, |ui| {
+            ui.add_space(4.0);
+            self.server_group(ui);
+        });
+    }
+
+    /// What the program does and the check of the program.
+    fn panel_simulation(&mut self, ui: &mut egui::Ui) {
+        let lang = self.win.lang;
+        egui::ScrollArea::vertical().show(ui, |ui| {
+            ui.add_space(4.0);
+            if self.win.preview_lines().is_empty() {
+                ui.label(egui::RichText::new(Msg::NoFile.tr(lang)).color(DIM));
+            }
+            self.preview_group(ui);
+        });
+    }
+
+    /// The program: what it is made from, working it out and writing it.
+    fn panel_job(&mut self, ui: &mut egui::Ui) {
+        let lang = self.win.lang;
+        egui::ScrollArea::vertical().show(ui, |ui| {
+            ui.add_space(4.0);
+            ui.horizontal_wrapped(|ui| {
+                if ui
+                    .add_enabled(
+                        self.win.can_compute(),
+                        egui::Button::new(Msg::Compute.tr(lang)),
+                    )
+                    .clicked()
+                {
+                    self.do_compute();
+                }
+                if ui
+                    .add_enabled(
+                        self.win.can_export(),
+                        egui::Button::new(Msg::ExportGcode.tr(lang)),
+                    )
+                    .clicked()
+                {
+                    self.do_export();
+                }
+                if ui
+                    .add_enabled(self.win.has_work(), egui::Button::new(Msg::Fit.tr(lang)))
+                    .clicked()
+                {
+                    self.fit_pending = true;
+                }
+            });
+            if let Some(done) = &self.win.done {
+                if let Some((name, hash)) = &done.source {
+                    ui.label(egui::RichText::new(name.as_str()).strong());
+                    ui.label(
+                        egui::RichText::new(format!("SHA-256 {hash}"))
+                            .color(DIM)
+                            .small(),
+                    );
+                }
+                ui.label(egui::RichText::new(done.tools.as_str()).color(DIM).small());
+            }
+            let (text, problem) = if self.win.stale {
+                (Msg::Stale.tr(lang).to_string(), true)
+            } else {
+                (self.win.status.text(lang), self.win.status.is_problem())
+            };
+            ui.label(egui::RichText::new(text).color(if problem { DANGER } else { OK }));
+            if let Some(info) = self.win.info_line() {
+                ui.label(info);
+            }
+        });
+    }
+
+    /// The report written to be read before a job.
+    fn panel_report(&mut self, ui: &mut egui::Ui) {
+        let lang = self.win.lang;
+        egui::ScrollArea::vertical().show(ui, |ui| {
+            ui.add_space(4.0);
+            if ui
+                .add_enabled(
+                    self.win.done.is_some(),
+                    egui::Button::new(Msg::ReportMake.tr(lang)),
+                )
+                .clicked()
+            {
+                self.win.make_report();
+            }
+            match &self.win.report_text {
+                Some(text) => {
+                    let mut shown: &str = text.as_str();
+                    ui.add(
+                        egui::TextEdit::multiline(&mut shown)
+                            .font(egui::TextStyle::Monospace)
+                            .desired_width(f32::INFINITY),
+                    );
+                }
+                None => {
+                    ui.label(egui::RichText::new(Msg::PanelNoReport.tr(lang)).color(DIM));
+                }
+            }
+        });
+    }
+
+    /// What the program has to say: the state, the notes of the reading and the lines of the server.
+    fn panel_console(&mut self, ui: &mut egui::Ui) {
+        let lang = self.win.lang;
+        egui::ScrollArea::vertical().show(ui, |ui| {
+            let (text, problem) = if self.win.stale {
+                (Msg::Stale.tr(lang).to_string(), true)
+            } else {
+                (self.win.status.text(lang), self.win.status.is_problem())
+            };
+            ui.label(egui::RichText::new(text).color(if problem { DANGER } else { OK }));
+            for line in self.win.check_lines() {
+                ui.label(egui::RichText::new(line).small());
+            }
+            for line in self.win.server_lines() {
+                ui.label(egui::RichText::new(line).small());
+            }
+            self.notes_group(ui);
+        });
+    }
+
+    /// Works the program out; the laser is not lit until the person has said so.
+    fn do_compute(&mut self) {
+        if self.win.needs_confirmation() {
+            self.confirm = Some(false);
+        } else if self.win.compute() {
+            self.fit_pending = true;
+        }
+    }
+
+    /// Asks for the file to write the program to; the laser is not lit until the person has said so.
+    fn do_export(&mut self) {
+        if self.win.needs_confirmation() {
+            self.confirm = Some(true);
+        } else {
+            self.ask(Job::ExportGcode);
+        }
+    }
+
+    /// The things that are always in sight, in every workspace and outside the panels: the stop of the job and the state of the interlocks.
+    fn safety_bar(&mut self, ui: &mut egui::Ui) {
+        let lang = self.win.lang;
+        egui::Panel::bottom("safety").show(ui, |ui| {
+            ui.horizontal(|ui| {
+                let stop = egui::Button::new(
+                    egui::RichText::new(Msg::ServerStop.tr(lang))
+                        .strong()
+                        .color(Color32::WHITE),
+                )
+                .fill(DANGER);
+                if ui.add_enabled(self.win.server_active(), stop).clicked() {
+                    self.win.server_stop();
+                }
+                let text = egui::RichText::new(self.win.safety_line());
+                ui.label(if self.win.safety_problem() {
+                    text.color(DANGER)
+                } else {
+                    text.color(DIM)
+                });
+            });
+        });
+    }
+
+    /// What the menus need to know to turn entries off.
+    fn menu_facts(&self) -> MenuFacts {
+        MenuFacts {
+            has_work: self.win.has_work(),
+            can_compute: self.win.can_compute(),
+            can_export: self.win.can_export(),
+            has_done: self.win.done.is_some(),
+            can_send: self.win.can_send(),
+            server_active: self.win.server_active(),
+        }
+    }
+
+    /// Opens a file by what it is (a file of settings, a picture, a drawing, a program) and works the result out.
+    fn open_path(&mut self, path: &Path) {
+        let is_settings = path
+            .extension()
+            .is_some_and(|e| e.eq_ignore_ascii_case("cfg"));
+        let ok = if is_settings {
+            let ok = self.win.run_job(Job::OpenConfig, path);
+            if ok && self.win.vector.is_some() {
+                self.win.compute();
+            }
+            ok
+        } else if self.win.open_dropped(path) {
+            self.win.compute();
+            self.fit_pending = true;
+            true
+        } else {
+            false
+        };
+        if ok {
+            self.recent_added.push(path.display().to_string());
+        }
+    }
+
+    /// Does what a menu entry says.
+    fn run_cmd(&mut self, cmd: Cmd, ctx: &egui::Context) {
+        match cmd {
+            Cmd::Std(StdAction::Open) | Cmd::OpenImage => self.ask(Job::OpenImage),
+            Cmd::Std(StdAction::Export) | Cmd::ExportGcode => {
+                if self.win.can_export() {
+                    self.do_export();
+                }
+            }
+            Cmd::Std(StdAction::Quit) => ctx.send_viewport_cmd(egui::ViewportCommand::Close),
+            Cmd::Std(StdAction::Preferences) => self
+                .pending_dock
+                .push(DockAction::ShowPanel(pid::CUT_SETTINGS.to_string())),
+            // the rest of the standard entries are for things this program does not have, and they are turned off
+            Cmd::Std(_) => {}
+            Cmd::OpenSettings => self.ask(Job::OpenConfig),
+            Cmd::OpenGcode => self.ask(Job::OpenGcode),
+            Cmd::OpenMaterials => self.ask(Job::OpenMaterials),
+            Cmd::NewMaterials => self.ask(Job::NewMaterials),
+            Cmd::Compute => {
+                if self.win.can_compute() {
+                    self.do_compute();
+                }
+            }
+            Cmd::Fit => self.fit_pending = true,
+            Cmd::MakeReport => {
+                self.win.make_report();
+            }
+            Cmd::SendToServer => {
+                if self.win.can_send() && !self.win.server_active() {
+                    self.win.send_to_server();
+                }
+            }
+            Cmd::EmergencyStop => self.win.server_stop(),
+        }
+    }
+
+    /// What is done at the start of a frame: a file dropped on the window is opened.
+    fn frame_start(&mut self, ctx: &egui::Context) {
+        let dropped: Vec<PathBuf> = ctx.input(|i| {
+            i.raw
+                .dropped_files
+                .iter()
+                .map(|f| f.path().to_path_buf())
+                .collect()
+        });
+        if let Some(p) = dropped.first() {
+            self.open_path(p);
+        }
+    }
+
+    /// The title of a group of a panel.
     fn heading(&self, msg: Msg) -> egui::RichText {
         egui::RichText::new(msg.tr(self.win.lang))
             .strong()
@@ -979,51 +1374,47 @@ impl App {
     }
 
     /// The table of layers (or colours) of the drawing: what is done with each and with which settings.
-    fn layers_panel(&mut self, ui: &mut egui::Ui) {
+    fn panel_layers(&mut self, ui: &mut egui::Ui) {
+        let lang = self.win.lang;
         if self.win.mode != Mode::Cut || self.win.rows.is_empty() {
+            ui.label(egui::RichText::new(Msg::PanelNoLayers.tr(lang)).color(DIM));
             return;
         }
-        let lang = self.win.lang;
-        egui::Panel::bottom("layers")
-            .resizable(true)
-            .default_size(150.0)
-            .show(ui, |ui| {
-                ui.label(self.heading(Msg::SectionLayers));
-                egui::ScrollArea::both()
-                    .auto_shrink([false, true])
-                    .show(ui, |ui| {
-                        egui::Grid::new("layers_grid")
-                            .striped(true)
-                            .spacing([8.0, 4.0])
-                            .show(ui, |ui| {
-                                let heads = [
-                                    Msg::LayerName,
-                                    Msg::LayerModeHead,
-                                    Msg::LayerPower,
-                                    Msg::LayerSpeed,
-                                    Msg::Passes,
-                                    Msg::FocusStep,
-                                    Msg::Kerf,
-                                    Msg::KerfSide,
-                                    Msg::Tabs,
-                                    Msg::TabWidth,
-                                    Msg::HatchAngle,
-                                    Msg::HatchSpacing,
-                                    Msg::HatchCross,
-                                ];
-                                for h in heads {
-                                    ui.label(
-                                        egui::RichText::new(h.tr(lang)).strong().color(ACCENT),
-                                    );
-                                }
+        ui.scope(|ui| {
+            ui.label(self.heading(Msg::SectionLayers));
+            egui::ScrollArea::both()
+                .auto_shrink([false, true])
+                .show(ui, |ui| {
+                    egui::Grid::new("layers_grid")
+                        .striped(true)
+                        .spacing([8.0, 4.0])
+                        .show(ui, |ui| {
+                            let heads = [
+                                Msg::LayerName,
+                                Msg::LayerModeHead,
+                                Msg::LayerPower,
+                                Msg::LayerSpeed,
+                                Msg::Passes,
+                                Msg::FocusStep,
+                                Msg::Kerf,
+                                Msg::KerfSide,
+                                Msg::Tabs,
+                                Msg::TabWidth,
+                                Msg::HatchAngle,
+                                Msg::HatchSpacing,
+                                Msg::HatchCross,
+                            ];
+                            for h in heads {
+                                ui.label(egui::RichText::new(h.tr(lang)).strong().color(ACCENT));
+                            }
+                            ui.end_row();
+                            for r in 0..self.win.rows.len() {
+                                self.layer_row(ui, r);
                                 ui.end_row();
-                                for r in 0..self.win.rows.len() {
-                                    self.layer_row(ui, r);
-                                    ui.end_row();
-                                }
-                            });
-                    });
-            });
+                            }
+                        });
+                });
+        });
     }
 
     /// The cells of one row of the table of layers.
@@ -1131,9 +1522,9 @@ impl App {
         });
     }
 
-    fn canvas(&mut self, ui: &mut egui::Ui) {
+    fn panel_view(&mut self, ui: &mut egui::Ui) {
         let lang = self.win.lang;
-        egui::CentralPanel::no_frame().show(ui, |ui| {
+        ui.scope(|ui| {
             let size = ui.available_size();
             let (response, painter) = ui.allocate_painter(size, egui::Sense::click_and_drag());
             let rect = response.rect;
@@ -1414,34 +1805,144 @@ fn show_dialog(ctx: &egui::Context, d: &mut Dialog, lang: Lang) -> Option<Outcom
     outcome
 }
 
-impl eframe::App for App {
-    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
-        let ctx = ui.ctx().clone();
-        // a picture dropped on the window is opened
-        let dropped: Vec<PathBuf> = ctx.input(|i| {
-            i.raw
-                .dropped_files
-                .iter()
-                .map(|f| f.path().to_path_buf())
-                .collect()
-        });
-        if let Some(p) = dropped.first() {
-            if self.win.open_dropped(p) {
-                self.win.compute();
-                self.fit_pending = true;
+/// How a panel of the window is drawn: with the program and the room the frame gives it.
+type PanelDraw = fn(&mut App, &mut egui::Ui);
+
+/// How often the arrangement of the panels is compared with what was written, in frames.
+const LAYOUT_CHECK_EVERY: u32 = 20;
+
+/// The window: the frame of the suite with the panels of the program in it, the menu bar above, and the bars of the toolbar, the status and the safety (the stop and the interlocks) around
+/// it, which are never part of a panel.
+struct Shell {
+    app: Rc<RefCell<App>>,
+    dock: Dock,
+    bar: MenuBar<Cmd>,
+    watch: LayoutWatch,
+    /// How many frames were drawn, so the arrangement is looked at a few times a second and not at every frame.
+    ticks: u32,
+}
+
+impl Shell {
+    fn new(app: App) -> Shell {
+        let lang = app.win.lang;
+        let source = app.win.layout_source();
+        let app = Rc::new(RefCell::new(app));
+        let mut dock = Dock::new(panels::defs(), panels::workspaces());
+        let draw: [(&str, PanelDraw); 12] = [
+            (pid::VIEW, App::panel_view),
+            (pid::LAYERS, App::panel_layers),
+            (pid::CUT_SETTINGS, App::panel_cut_settings),
+            (pid::PROPERTIES, App::panel_properties),
+            (pid::LIBRARY, App::panel_library),
+            (pid::MATERIALS, App::panel_materials),
+            (pid::JOG, App::panel_jog),
+            (pid::MACHINE, App::panel_machine),
+            (pid::SIMULATION, App::panel_simulation),
+            (pid::JOB, App::panel_job),
+            (pid::REPORT, App::panel_report),
+            (pid::CONSOLE, App::panel_console),
+        ];
+        for (name, f) in draw {
+            let a = app.clone();
+            dock.register(name, move |ui| f(&mut a.borrow_mut(), ui));
+        }
+        dock.load_config(&source);
+        dock.set_language(view_lang(lang));
+        let watch = LayoutWatch::new(&dock.core().config_pairs());
+        Shell {
+            app,
+            dock,
+            bar: panels::menu_bar(),
+            watch,
+            ticks: 0,
+        }
+    }
+
+    /// What the program says about itself in the window «About».
+    fn about() -> AboutInfo {
+        AboutInfo {
+            app_name: "EH3D-PHOENIX-LASER".to_string(),
+            version: env!("CARGO_PKG_VERSION").to_string(),
+            license: "GPL-3.0-or-later".to_string(),
+            extra: Vec::new(),
+        }
+    }
+
+    /// Does what the program asked of the frame (show a panel, change workspace).
+    fn flush_dock(&mut self) {
+        let actions = std::mem::take(&mut self.app.borrow_mut().pending_dock);
+        for action in actions {
+            let _ = self.dock.apply(action);
+        }
+    }
+
+    /// Does what was chosen in the menus, and keeps the list of recent files.
+    fn after(&mut self, chosen: Option<Chosen<Cmd>>, ctx: &egui::Context) {
+        {
+            let mut app = self.app.borrow_mut();
+            match chosen {
+                Some(Chosen::App(cmd)) => app.run_cmd(cmd, ctx),
+                Some(Chosen::Recent(path)) => app.open_path(Path::new(&path)),
+                Some(Chosen::Dock(_)) | None => {}
             }
         }
-        if ctx.input(|i| i.modifiers.command && i.key_pressed(egui::Key::O)) {
-            self.ask(Job::OpenImage);
+        self.flush_dock();
+        let added = std::mem::take(&mut self.app.borrow_mut().recent_added);
+        for path in added {
+            self.dock.core_mut().recent_mut().push(&path);
         }
-        self.top_bar(ui);
-        self.status_bar(ui);
-        self.layers_panel(ui);
-        self.side_panel(ui);
-        self.canvas(ui);
-        self.dialog_window(&ctx);
-        self.confirm_window(&ctx);
-        self.shot_tick(&ctx);
+    }
+}
+
+/// The language of the window for the frame.
+fn view_lang(lang: Lang) -> eh3d_view::texts::Lang {
+    eh3d_view::texts::Lang::from_code(lang.code()).unwrap_or(eh3d_view::texts::Lang::En)
+}
+
+impl eframe::App for Shell {
+    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        let ctx = ui.ctx().clone();
+        self.flush_dock();
+        let (lang, facts) = {
+            let mut app = self.app.borrow_mut();
+            app.frame_start(&ctx);
+            (app.win.lang, app.menu_facts())
+        };
+        self.dock.set_language(view_lang(lang));
+        self.dock.set_about(Shell::about());
+        self.dock
+            .set_menu_state(panels::disabled_entries(&facts), Vec::new());
+        // the menu bar, then the bars that no workspace can hide, then the frame with the panels
+        let mut chosen = None;
+        egui::Panel::top("menu").show(ui, |ui| {
+            chosen = self.dock.menu_bar(ui, &self.bar);
+        });
+        {
+            let mut app = self.app.borrow_mut();
+            app.top_bar(ui);
+            app.status_bar(ui);
+            app.safety_bar(ui);
+        }
+        egui::CentralPanel::default()
+            .frame(egui::Frame::NONE)
+            .show(ui, |ui| self.dock.show(ui));
+        self.after(chosen, &ctx);
+        {
+            let mut app = self.app.borrow_mut();
+            app.dialog_window(&ctx);
+            app.confirm_window(&ctx);
+            app.shot_tick(&ctx);
+        }
+        // the arrangement is kept in the settings file when it changed (a picture keeps nothing)
+        self.ticks = self.ticks.wrapping_add(1);
+        if self.ticks.is_multiple_of(LAYOUT_CHECK_EVERY) {
+            let pairs = self.dock.core().config_pairs();
+            if self.watch.changed(&pairs) {
+                let mut app = self.app.borrow_mut();
+                let picture = app.shot.is_some();
+                app.win.save_layout(&pairs, picture);
+            }
+        }
     }
 }
 
@@ -1542,7 +2043,7 @@ pub fn run(initial: Option<PathBuf>, lang: Lang) -> eframe::Result {
         Box::new(move |cc| {
             install_fonts(&cc.egui_ctx);
             apply_theme(&cc.egui_ctx, ShotTheme::Forge);
-            Ok(Box::new(App::new(lang, initial)))
+            Ok(Box::new(Shell::new(App::new(lang, initial))))
         }),
     )
 }
@@ -1668,6 +2169,9 @@ pub fn run_shot(files: Vec<PathBuf>, lang: Lang, request: ShotRequest) -> Result
             match window {
                 Some(ShotWindow::Mode(mode)) => app.win.set_mode(mode),
                 Some(ShotWindow::Server) => app.server_open = true,
+                Some(ShotWindow::Workspace(name)) => app
+                    .pending_dock
+                    .push(DockAction::SwitchWorkspace(name.to_string())),
                 None => {}
             }
             app.shot = Some(ShotState {
@@ -1675,7 +2179,7 @@ pub fn run_shot(files: Vec<PathBuf>, lang: Lang, request: ShotRequest) -> Result
                 frame: 0,
                 outcome: outcome_for_app,
             });
-            Ok(Box::new(app))
+            Ok(Box::new(Shell::new(app)))
         }),
     )
     .map_err(|e| e.to_string())?;

@@ -19,6 +19,7 @@ use eh3d_phoenix_laser::frame::{self, Frame};
 use eh3d_phoenix_laser::gcode_out::{header, sha256_hex, Header};
 use eh3d_phoenix_laser::image::from_bytes;
 use eh3d_phoenix_laser::lang::Lang;
+use eh3d_phoenix_laser::lbrn2::read_lbrn2;
 use eh3d_phoenix_laser::materials::{self, Material};
 use eh3d_phoenix_laser::preview;
 use eh3d_phoenix_laser::qr;
@@ -86,10 +87,10 @@ const HELP: &str = "phoenix-laser: laser engraving from an image
 IMAGE is a PNG or a PGM file. --dry-run works the engraving out and counts it but writes nothing (OUT.nc may then be left out). --power is a percent of full power; --smax is the spindle value that is full power for the controller (GRBL: $30).
 The engraving is made of dots of --dot-mm on a side, so the image is scaled to --width-mm / --dot-mm dots wide.
 The tone options change the grey levels before the dots are made: --gamma (0.1 to 10, more than 1 lightens the middle greys), --contrast and --brightness (-100 to 100), --invert (black burns least) and --auto-level (the darkest level becomes black and the lightest white).
-DRAWING is an SVG or a DXF file. cut follows the contours (the ones inside first), vector fills the closed shapes with lines and follows the open ones. Every layer (or colour, for an SVG) has its
+DRAWING is an SVG, a DXF or an LBRN2 project file. cut follows the contours (the ones inside first), vector fills the closed shapes with lines and follows the open ones. Every layer (or colour, for an SVG) has its
 own settings in the file of --config (see the documentation); an option of the command line changes them for all the layers. Without --config, cut cuts everything and vector engraves everything.
 layers lists the layers of a drawing with what would be done with each.
-convert reads a drawing (an SVG or a DXF, with its curves cut into straight pieces within --tolerance) and writes it again as a plain SVG or DXF, chosen by the extension of OUT: the SVG has a group for each layer, in millimetres with the y axis down, and the DXF is the old ASCII form of release 12, in millimetres with the y axis up, with the layer names written with letters, figures, _, - and $ only; the colours are kept. It never writes over the drawing it reads.
+convert reads a drawing (an SVG, a DXF or an LBRN2 project, with its curves cut into straight pieces within --tolerance) and writes it again as a plain SVG or DXF, chosen by the extension of OUT: the SVG has a group for each layer, in millimetres with the y axis down, and the DXF is the old ASCII form of release 12, in millimetres with the y axis up, with the layer names written with letters, figures, _, - and $ only; the colours are kept. It never writes over the drawing it reads.
 trace follows the outline of a picture (a PNG or a PGM of a logo, a silhouette or a stencil) instead of burning it dot by dot: grey levels under --threshold are ink (over it with --invert), the border is found with sub-pixel precision, simplified until no point is farther than --simplify mm from the line, and specks smaller than --min-area mm2 are dropped. The result is a layer called trace that is cut, or filled with lines with --engrave, with the settings of --config, the options of cut and every limit of the file ([trace] holds max_pixels, max_contours and max_segments).
 materials FILE lists the materials of a library: a plain text file with a [material NAME] section for each material and way of working (see the documentation). --material NAME takes the power, the speed, the passes and the rest that the library says for it, before the other options, which win; the library is --materials FILE or the file named by PHOENIX_LASER_MATERIALS.
 focus writes a focus test: short lines side by side, each burnt with the head at another height (Z); the sharpest and thinnest line shows where the beam is in focus. --z-step has no default because which way is down depends on the machine: check it before running the program, which moves Z. --powers P1,P2,... (up to 10) makes a focus grid instead: the same lines once for each power, side by side with a column for each, so that the power that burns the thinnest line at the height of the focus can be read off. The usual values live in the [focus] section of --config.
@@ -388,7 +389,7 @@ fn drawing_settings(
     Ok((s, sources))
 }
 
-/// Reads an SVG or DXF file, with the limit on its size that the settings give.
+/// Reads an SVG, DXF or LBRN2 file, with the limit on its size that the settings give.
 fn read_drawing(path: &str, s: &Settings) -> Result<(Vec<u8>, Drawing), String> {
     let meta = fs::metadata(path).map_err(|e| format!("{path}: {e}"))?;
     if meta.len() > s.read.limits.max_file_bytes as u64 {
@@ -405,7 +406,8 @@ fn read_drawing(path: &str, s: &Settings) -> Result<(Vec<u8>, Drawing), String> 
     let drawing = match ext.as_str() {
         "svg" => read_svg(&bytes, &s.read),
         "dxf" => read_dxf(&bytes, &s.read),
-        _ => Err("it is not an SVG or a DXF file".to_string()),
+        "lbrn2" => read_lbrn2(&bytes, &s.read),
+        _ => Err("it is not an SVG, a DXF or an LBRN2 file".to_string()),
     }
     .map_err(|e| format!("{path}: {e}"))?;
     Ok((bytes, drawing))
