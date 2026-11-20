@@ -20,6 +20,8 @@ key = value
 Sections: `[limits]`, `[read]`, `[order]`, `[offset]`, `[hatch]`, `[machine]`, `[frame]`, `[focus]`, `[trace]`, `[tone]`, `[verify]`, `[calibrate]`, `[text]`, `[qr]`, `[send]`, `[interlocks]`, `[defaults]`, one `[layer NAME]` for each layer or colour, one `[profile NAME]` for each machine and one `[zone NAME]` for each forbidden zone of the bed. `[defaults]` is what a layer gets that the file
 does not name, and also what every `[layer NAME]` starts from (wherever in the file `[defaults]` is written). The switches are `on` and `off`.
 
+The window keeps the arrangement of its panels in the same file, as lines that start with `dock.` (for example `dock.version=1`). The reader of the settings leaves those lines alone wherever they are, the window writes them back without touching any other line, and a line that is not a setting and does not start with `dock.` is still an error.
+
 `phoenix-laser settings` lists every key of this file and of a library of materials (section, key, kind of value, default and whether it is a safety setting), as text or as JSON with `--json`; a test keeps that list equal to the keys the reader takes and to the defaults of the tables below.
 
 ## What a layer is
@@ -42,7 +44,7 @@ The shapes of a drawing are grouped, and each group has its own settings:
 | Units | `mm cm in pt pc px`; a `px` is `25.4 / dpi` mm (`dpi` is 96 unless the file has a size and a view box) | `$INSUNITS` (inch, foot, mile, millimetre, centimetre, metre, mil, yard, micrometre, decimetre); a drawing with no unit uses `dxf_unit_mm` |
 | Never read | scripts, images, a `use` of another file or an address, text, styles with selectors, filters, gradients, masks, and any entity declared in the file (an external entity or a declared one is an error) | text, hatches, dimensions, meshes, binary files |
 
-What is left out is listed as a note (in the window and on the standard error of the commands). Curves become straight pieces that are never farther than `tolerance_mm` from the true curve.
+A project of LBRN2 kind (`.lbrn2`) is read too: see [lbrn2.md](lbrn2.md). What is left out is listed as a note (in the window and on the standard error of the commands). Curves become straight pieces that are never farther than `tolerance_mm` from the true curve.
 
 ## Order of the work
 

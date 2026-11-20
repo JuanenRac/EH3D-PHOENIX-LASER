@@ -17,7 +17,7 @@
 
 ---
 
-**Verificação de honestidade - o que funciona hoje:** uma biblioteca Rust e um programa de linha de comandos (`phoenix-laser`) com 778 testes que correm num computador: converte uma imagem em pontos por tramagem e escreve o G-code de um laser que queima linha a linha com potência dinâmica e sobrecurso, lê desenhos SVG e DXF e escreve o G-code que corta os seus contornos (os de dentro primeiro, com a largura do feixe, pontes e várias passagens) e grava as suas formas com linhas, com as definições de cada camada num ficheiro, e uma grelha de teste de potência contra avanço. Tem uma janela (compilada com `--features gui`) que abre uma imagem ou um desenho, mostra o percurso do laser, permite alterar as definições e exporta o G-code, mas a janela ainda não foi vista num ecrã; não foi experimentado numa máquina e não foi verificado com uma coleção de ficheiros reais. Também pode enviar um programa para o plugin laser do servidor EH3D e seguir, segurar ou parar o trabalho (`phoenix-laser server`), testado apenas contra um substituto do servidor.
+**Verificação de honestidade - o que funciona hoje:** uma biblioteca Rust e um programa de linha de comandos (`phoenix-laser`) com 840 testes que correm num computador: converte uma imagem em pontos por tramagem e escreve o G-code de um laser que queima linha a linha com potência dinâmica e sobrecurso, lê desenhos SVG e DXF e escreve o G-code que corta os seus contornos (os de dentro primeiro, com a largura do feixe, pontes e várias passagens) e grava as suas formas com linhas, com as definições de cada camada num ficheiro, e uma grelha de teste de potência contra avanço. Tem uma janela (compilada com `--features gui`) que abre uma imagem ou um desenho, mostra o percurso do laser, permite alterar as definições e exporta o G-code, mas a janela ainda não foi vista num ecrã; não foi experimentado numa máquina. A janela é agora a moldura de painéis da suite (painéis que se movem, flutuam e se recolhem, quatro espaços de trabalho e uma barra de menus) e o leitor de projetos LBRN2 foi medido com doze projetos reais de um fabricante de lasers (os doze são lidos; uma imagem dentro de um projeto não), mas nada feito com eles foi cortado numa máquina. Também pode enviar um programa para o plugin laser do servidor EH3D e seguir, segurar ou parar o trabalho (`phoenix-laser server`), testado apenas contra um substituto do servidor.
 
 ---
 
@@ -30,7 +30,7 @@
 |---|---|
 | Versão | `0.1.5` |
 | Maturidade | Funcional |
-| Testes | 778 |
+| Testes | 840 |
 | Tecnologias | Rust |
 | Em hardware real | Não experimentado: nada disto correu numa máquina |
 
@@ -46,7 +46,7 @@ Cada linha é uma parte deste repositório e a luz diz até onde chega hoje. É 
 |---|---|---|
 | Núcleo | 🟡 | converte uma imagem em pontos por tramagem e escreve o G-code de um laser que queima linha a linha com potência dinâmica e sobrecurso, lê desenhos SVG e DXF e corta-os ou grava-os por camada (contornos ordenados, largura do feixe, pontes, passagens, hachura), e uma grelha de teste de potência contra avanço; testado num computador com entradas normais e danificadas, não com uma coleção de ficheiros reais. |
 | Linha de comandos | 🟡 | `phoenix-laser` (`engrave`, `calibrate`, `info`, `cut`, `vector`, `layers`) executa as mesmas funções que a biblioteca e imprime o resultado; cada erro volta como mensagem e código de saída diferente de zero. |
-| Testes | 🟡 | 778 testes passam (`cargo test`), com casos normais, casos-limite e entradas danificadas. |
+| Testes | 🟡 | 840 testes passam (`cargo test`), com casos normais, casos-limite e entradas danificadas. |
 | Segurança | 🟡 | Rust seguro e simples (`forbid(unsafe_code)`): nada entra em pânico com os ficheiros recebidos e um valor mau é um erro com o seu motivo; sem revisão independente. |
 | Janela | 🟠 | Escrita (egui, `--features gui`): abrir ou largar uma imagem ou um desenho SVG ou DXF, ver o percurso do laser (o corte numa cor, a deslocação atenuada), editar a tabela de camadas, uma grelha de calibração, zoom e deslocamento, estimar o tempo, exportar; a sua lógica está testada, mas ainda não foi compilada nem vista num ecrã. |
 | Hardware real | 🔴 | Não experimentado: nada disto foi executado numa máquina. |
@@ -93,6 +93,10 @@ Cada linha é uma parte deste repositório e a luz diz até onde chega hoje. É 
 * **Zonas proibidas, bloqueios, o relatório e a lista de definições** (`src/guard.rs`, `src/report.rs`, `src/contract.rs`): os retângulos da cama que um programa tem de evitar (`[zone NOME]`) e o estado da paragem de emergência, da cobertura e da assistência de ar tal como o diz o ficheiro de definições (`[interlocks]`) fazem falhar a verificação e impedem o envio de um programa, de um trabalho vetorial e de um disparo de teste; o que vai para o servidor fica limitado a 40 % da potência, salvo se `[send]` indicar outro limite; `phoenix-laser report` escreve a verificação para ler antes de um trabalho, em oito línguas; `phoenix-laser settings` lista cada definição para que outro programa a possa ler. Nenhum sensor nem paragem de emergência real foi experimentado.
 * **Envio para o servidor EH3D** (`src/server.rs`, `[server]` no ficheiro de definições): `phoenix-laser server send PROGRAMA.nc` envia um programa G-code como trabalho do plugin `laser` do EH3D-SERVER, com o cliente partilhado da suite (`eh3d-serverclient` do EH3D-COMMON: as chaves `server_address`, `server_token`, `server_machine`, `server_timeout_s`, `server_retries` e `server_mdns`, tentativas repetidas com pausas crescentes, um pedido que cria alguma coisa nunca é enviado duas vezes e as recusas do servidor são ditas pelo seu código na língua do sistema). Antes de sair, o programa é verificado contra os limites da máquina das definições (o limite de potência e de velocidade, a mesa) e um que falhe não é enviado; `--follow` fica até o trabalho terminar; `status`, `job`, `pause` e `resume` perguntam pela máquina e pelo trabalho e seguram-no ou deixam-no continuar; `stop` é a PARAGEM DE EMERGÊNCIA da máquina laser: o trabalho termina logo e a máquina fica bloqueada, de modo que não aceita nenhum programa, nem lhe é enviado nenhum, até um administrador executar `release`. O token nunca é impresso (pode estar na variável `PHOENIX_LASER_SERVER_TOKEN`) e viaja em claro por HTTP simples. Os comandos locais não são tocados. Testado contra um substituto do plugin laser, em memória e num socket deste computador; o plugin do servidor é ele próprio um simulador, e nada disto correu com um laser verdadeiro. `phoenix-laser server vector DRAWING.svg|dxf` envia um desenho como trabalho vetorial (os traçados e uma operação por camada, verificados antes contra os limites das definições) e `phoenix-laser server test-fire --power-percent P --confirm-fire` dispara o laser por um instante para encontrar o foco (o servidor recusa-o enquanto um trabalho corre, enquanto uma paragem de emergência retém a máquina, com o recinto aberto ou a assistência de ar desligada, e acima do seu próprio limite). A secção do servidor da janela mostra o painel da suite (endereço, token, máquina, ligação e um início de sessão com nome e palavra-passe), envia um programa aberto só para o ver quando passa a verificação e a pessoa o confirma, e o modo de marcas pode tirar o seu tamanho do trabalho.
 * **Envio para o servidor a partir da janela** (`src/window.rs`, `src/linkpane.rs`, `[server]` no ficheiro de definições): a secção do servidor da janela mostra o painel da suite (o endereço, o token, a máquina, os limites da ligação, o estado da ligação e um início de sessão com nome e palavra-passe), e o seu botão envia o programa calculado como trabalho da máquina laser, mostra o andamento e permite segurá-lo, deixá-lo continuar ou pará-lo com um botão de PARAGEM DE EMERGÊNCIA (o trabalho termina logo e a máquina fica bloqueada até um administrador a libertar); uma moldura que acende o laser e não foi confirmada e um programa que não passa a verificação dos limites não são enviados, e um programa aberto só para o ver é enviado tal como está apenas depois de passar a verificação e de a pessoa assinalar a caixa que o diz. Fechar a janela deixa o trabalho onde está no servidor.
+* **Projetos LBRN2** (`src/lbrn2.rs`, `docs/lbrn2.md`, `examples/lbrn2_survey.rs`): `cut`, `vector`, `layers` e `convert` (e a janela) também leem projetos `.lbrn2`. Os retângulos, os caminhos (troços retos e curvas de Bézier), os grupos com as suas transformações e o contorno de um texto passam a ser um desenho em milímetros; cada camada do projeto passa a ser uma linha da tabela com a sua potência, velocidade (o projeto tem mm/s, a tabela mm/min), passagens, distância de preenchimento e ordem como sugestões sobre as quais continuam a valer os limites da máquina, e uma camada que não é enviada ao laser é ignorada. As imagens dentro de um projeto e as formas de um tipo que não apareceu nos exemplos reais ficam de fora e são contadas nas notas. O formato é lido a partir do comportamento de doze projetos reais, sem especificação, e o eixo y é tomado como o de um SVG (não confirmado numa máquina). `cargo run --release --example lbrn2_survey -- PASTA` lê todos os ficheiros `.lbrn2` de uma pasta e diz quais são lidos, quais não e porquê, e que elementos e atributos os ficheiros têm que o leitor não usa.
+* **A janela de painéis** (`src/panels.rs`, `src/gui.rs`): a janela é a moldura de painéis da suite (`eh3d-dock`): doze painéis (vista, camadas, definições do trabalho, propriedades, biblioteca, materiais, enquadramento, máquina, simulação e tempo, trabalho, relatório e consola) que se podem retirar, repor, mover, agrupar em separadores, fazer flutuar, recolher e maximizar; quatro espaços de trabalho por tarefas, não por níveis de experiência (Preparar, Executar, Rever e Compacto); uma barra de menus com Ficheiro, Editar, Ver, Ferramentas, Janela e Ajuda; e, fora de qualquer painel para que nenhum espaço de trabalho os possa esconder, a paragem do trabalho e o estado dos bloqueios. A disposição guarda-se no ficheiro de definições como linhas que começam por `dock.`, que o leitor das definições deixa em paz. Os painéis, os espaços de trabalho e os menus são dados com testes; a janela ainda não foi vista num ecrã.
+* **Pontos de partida da base comum de materiais** (`src/commonmat.rs`, funcionalidade `common-machining`): um material, um tipo de laser (díodo ou CO2), cortar ou gravar, a potência do laser em watts e a espessura dão a potência, a velocidade e as passagens que a base comum tem, tal como as tem, com a nota sempre à vista de que ninguém as experimentou numa máquina, e os motivos quando o material não deve encontrar um laser (então não há resposta). Fora do intervalo que a base conhece também não há resposta, nunca um palpite. A funcionalidade precisa de uma versão do EH3D-COMMON que tenha o módulo `machining`, pelo que a compilação por omissão a deixa de fora.
+* **O relatório na janela** (`src/window.rs`): o relatório de `phoenix-laser report` pode ser feito a partir do programa que a janela calculou, no idioma da janela, e é descartado quando muda qualquer coisa.
 * **Pontilhado ordenado** (`src/dither.rs`): `--dither bayer` (também na janela) decide cada ponto pelo seu lugar e pelo seu cinzento com uma matriz de Bayer de 8 x 8, por isso o padrão é regular e o mesmo cinzento queima sempre os mesmos pontos; os testes verificam que cada nível da matriz aparece uma vez e que a escuridão de um cinzento se mantém.
 * **A curva de tons** (`src/tone.rs`): antes de fazer os pontos, os cinzentos podem ser esticados a toda a gama (`--auto-level`), receber mais ou menos contraste e brilho, ser curvados com um gama ou invertidos, com uma única tabela de 256 entradas; com os valores por omissão a imagem não muda de todo.
 * **Um G-code verificado:** o programa de um desenho é verificado linha a linha antes de ser entregue: nenhum laser ligado durante um movimento rápido ou sem velocidade, nenhum `S` acima da potência máxima, nenhum movimento fora da mesa, `M5` no fim; o ficheiro nunca é escrito por cima do desenho nem das definições de que provém.
@@ -209,11 +213,11 @@ cargo run --release --features gui   # the window
 cargo run --release --features gui -- --shot screen.png examples/plate.svg   # a picture of the window
 ```
 
-Para tirar uma captura da janela sem a abrir à mão, execute-o com `--shot FICHEIRO.png` (também `--size WxH`, `--theme forge|dark|light`, `--wait N`, `--window NAME`, `--lang CODE`, `--open FILE`, `--replace`): abre-se com esse tamanho, guarda o PNG, não guarda definições e fecha-se sozinho (código de saída 0 se o ficheiro foi escrito, 1 se não, 2 se os argumentos estiverem errados). `--window NOME` mostra uma janela do programa: `engrave`, `calibrate`, `cut`, `focus`, `frame`, `preview`, `trace`, `text`, `qr`, `marks`, `barcode` (esse modo fica escolhido) ou `server` (a secção do servidor fica aberta), para que as capturas do README possam mostrar cada modo.
+Para tirar uma captura da janela sem a abrir à mão, execute-o com `--shot FICHEIRO.png` (também `--size WxH`, `--theme forge|dark|light`, `--wait N`, `--window NAME`, `--lang CODE`, `--open FILE`, `--replace`): abre-se com esse tamanho, guarda o PNG, não guarda definições e fecha-se sozinho (código de saída 0 se o ficheiro foi escrito, 1 se não, 2 se os argumentos estiverem errados). `--window NOME` mostra uma janela do programa: `engrave`, `calibrate`, `cut`, `focus`, `frame`, `preview`, `trace`, `text`, `qr`, `marks`, `barcode` (esse modo fica escolhido) ou `server` (a secção do servidor fica aberta), para que as capturas do README possam mostrar cada modo. `--window` também aceita `prepare`, `run`, `review` e `compact`, os quatro espaços de trabalho dos painéis.
 
 ## 🧪 Testes
 
-O conjunto tem 778 testes (`cargo test`, executados em Windows e Linux no CI). Verificam os casos normais, os casos-limite e as entradas danificadas: ficheiros vazios, lixo e ficheiros cortados nunca provocam pânico. O CI executa ainda `cargo fmt --check`, `cargo clippy` com avisos como erros e `python -I tools/ci_validate.py`.
+O conjunto tem 840 testes (`cargo test`, executados em Windows e Linux no CI). Verificam os casos normais, os casos-limite e as entradas danificadas: ficheiros vazios, lixo e ficheiros cortados nunca provocam pânico. O CI executa ainda `cargo fmt --check`, `cargo clippy` com avisos como erros e `python -I tools/ci_validate.py`.
 
 ## 🏗️ Compilação e publicação
 
@@ -241,6 +245,7 @@ EH3D-PHOENIX-LASER/
 │   ├── cli_args.rs                              os argumentos da linha de comandos, o mesmo ficheiro em cada utilitário pequeno
 │   ├── dither.rs                                uma parte da lógica
 │   ├── materials.rs                             a biblioteca de materiais: potência, velocidade, passagens, tons
+│   ├── commonmat.rs                             pontos de partida da base comum de materiais, tal como estão
 │   ├── preview.rs                               a pré-visualização de um G-code: movimentos, tempo, perigos e um SVG do percurso
 │   ├── tone.rs                                  a curva de tons de uma imagem: níveis, contraste, brilho, gama e inversão antes dos pontos
 │   ├── trace.rs                                 os contornos de uma imagem: limiar, marching squares e anéis simplificados, com limites
@@ -262,6 +267,7 @@ EH3D-PHOENIX-LASER/
 │   ├── register.rs                              onde está o trabalho: as marcas encontradas numa imagem e a câmara simulada
 │   ├── svg.rs                                   o leitor de SVG: um subconjunto seguro, sem scripts, imagens nem entidades
 │   ├── dxf.rs                                   o leitor de DXF: linhas, polilinhas, arcos, círculos, elipses, splines e blocos, com unidades
+│   ├── lbrn2.rs                                 o leitor de projetos LBRN2: camadas, formas, grupos e curvas
 │   ├── export.rs                                um desenho escrito de novo como SVG ou DXF simples
 │   ├── energy.rs                                a energia de uma passagem por milímetro ou milímetro quadrado, a partir da potência ótica
 │   ├── offset.rs                                deslocar um contorno de lado pela largura do feixe, verificado aresta a aresta
@@ -271,6 +277,7 @@ EH3D-PHOENIX-LASER/
 │   ├── contract.rs                              cada definição em lista: secção, chave, tipo, valor por omissão e se é de segurança
 │   ├── browse.rs                                a lista de ficheiros da janela que abre um ficheiro
 │   ├── gui.rs                                   a janela (egui, com a funcionalidade gui): desenha o estado e transmite o que a pessoa faz
+│   ├── panels.rs                                os painéis, espaços de trabalho e menus da janela como dados
 │   ├── lang.rs                                  as palavras da janela nos oito idiomas
 │   ├── viewport.rs                              zoom e deslocamento da imagem, em números simples
 │   └── window.rs                                o estado da janela sem ecrã: imagem ou desenho, definições, camadas, passagens e exportação
@@ -282,9 +289,11 @@ EH3D-PHOENIX-LASER/
 │   ├── readme.rs                                testes que executam o que o README e os scripts run prometem
 │   ├── strict.rs                                testes da linha de comandos: opções e palavras que não conhece
 │   ├── vector.rs                                testes do corte a partir de desenhos: comandos, exemplos, ficheiros hostis e a verificação do G-code
+│   ├── lbrn2.rs                                 testes do leitor LBRN2 com projetos escritos aqui, ficheiros hostis e fuzz
 │   ├── guard.rs                                 testes das zonas, dos bloqueios, dos tetos de material, do relatório e da lista de definições
 │   ├── server_cli.rs                            o comando server contra um substituto do plugin laser
-│   └── window_cli.rs                            testes de que uma compilação sem a funcionalidade gui continua a ser só linha de comandos
+│   ├── window_cli.rs                            testes de que uma compilação sem a funcionalidade gui continua a ser só linha de comandos
+│   └── dockwindow.rs                            testes do modelo da janela: camadas de um projeto, relatório, bloqueios, disposição e materiais
 ├── examples/
 │   ├── gradient.pgm                             um exemplo para experimentar o programa
 │   ├── plate.svg                                uma placa com um furo e um painel para gravar (SVG)
@@ -292,12 +301,14 @@ EH3D-PHOENIX-LASER/
 │   ├── plate.cfg                                as definições das suas camadas: potência, velocidade, passagens, largura do feixe, pontes e hachura
 │   ├── materials.cfg                            uma biblioteca de materiais: vidoeiro e ardósia, corte, gravação e fotografias
 │   ├── safety.cfg                               zonas proibidas e bloqueios para experimentar com verify
-│   └── materials-starter.cfg                    uma biblioteca inicial de materiais, todos marcados como não verificados
+│   ├── materials-starter.cfg                    uma biblioteca inicial de materiais, todos marcados como não verificados
+│   └── lbrn2_survey.rs                          lê todos os ficheiros LBRN2 de uma pasta e diz o que se lê e o que não
 ├── docs/
 │   ├── architecture.json                        dados da imagem de Arquitetura
 │   ├── structure.json                           dados da imagem de Estrutura
 │   ├── vector-settings.md                       o ficheiro de definições do trabalho vetorial, chave a chave
-│   └── materials.md                             a biblioteca de materiais, chave a chave
+│   ├── materials.md                             a biblioteca de materiais, chave a chave
+│   └── lbrn2.md                                 o que o leitor LBRN2 lê, o que deixa de fora e como foi medido
 ├── tools/                                       verificação da CI e do README e ferramentas de imagens
 ├── images/                                      banner, imagens do README e capturas de ecrã da janela
 ├── .github/                                     fluxos de CI e de publicação, modelos de issues e pull requests
@@ -315,7 +326,7 @@ EH3D-PHOENIX-LASER/
 
 **Limites conhecidos hoje**
 
-* A janela ainda não foi vista num ecrã.
+* Não foi experimentado numa máquina e não teve revisão independente. O leitor de projetos LBRN2 foi medido com doze projetos reais de um fabricante de lasers e com mais nada: as imagens dentro de um projeto, as formas de um tipo que não estava entre eles, o sentido do eixo y e o canto arredondado de um retângulo não estão confirmados.
 * Não foi experimentado numa máquina nem com uma coleção de ficheiros reais e não teve revisão independente.
 * Um desenho é lido num subconjunto seguro (sem `use` de outro ficheiro, texto, gradientes nem estilos com seletores; sem hachuras, texto nem cotas num DXF); um contorno mais estreito do que o feixe não é cortado e o programa di-lo; o laser é o de um controlador GRBL com `M4` e nada foi experimentado num laser nem num material reais.
 

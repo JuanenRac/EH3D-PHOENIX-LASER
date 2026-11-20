@@ -106,6 +106,19 @@
           }
         },
         {
+          "name": "commonmat.rs",
+          "desc": {
+            "en": "starting points of the common database of materials, as it has them",
+            "es": "puntos de partida de la base común de materiales, tal como los tiene",
+            "de": "Startwerte der gemeinsamen Materialdatenbank, so wie sie sind",
+            "fr": "points de départ de la base commune de matériaux, tels quels",
+            "it": "punti di partenza della base comune dei materiali, così come sono",
+            "ja": "共通の材料データベースの開始点（値はそのまま）",
+            "zh": "通用材料数据库的起始点，按原样使用",
+            "pt": "pontos de partida da base comum de materiais, tal como estão"
+          }
+        },
+        {
           "name": "preview.rs",
           "desc": {
             "en": "the preview of a G-code program: its moves, time, dangers and an SVG of the path",
@@ -379,6 +392,19 @@
           }
         },
         {
+          "name": "lbrn2.rs",
+          "desc": {
+            "en": "the reader of LBRN2 project files: layers, shapes, groups and curves",
+            "es": "el lector de proyectos LBRN2: capas, formas, grupos y curvas",
+            "de": "der Leser von LBRN2-Projekten: Ebenen, Formen, Gruppen und Kurven",
+            "fr": "le lecteur des projets LBRN2 : calques, formes, groupes et courbes",
+            "it": "il lettore dei progetti LBRN2: livelli, forme, gruppi e curve",
+            "ja": "LBRN2プロジェクトの読み取り：レイヤー、図形、グループ、曲線",
+            "zh": "LBRN2 工程文件读取：图层、图形、分组和曲线",
+            "pt": "o leitor de projetos LBRN2: camadas, formas, grupos e curvas"
+          }
+        },
+        {
           "name": "export.rs",
           "desc": {
             "en": "a drawing written again as a plain SVG or DXF",
@@ -493,6 +519,19 @@
             "ja": "ウィンドウ（egui、gui 機能）：状態を描き、操作を伝える",
             "zh": "窗口（egui，gui 特性）：绘制状态并传递用户的操作",
             "pt": "a janela (egui, com a funcionalidade gui): desenha o estado e transmite o que a pessoa faz"
+          }
+        },
+        {
+          "name": "panels.rs",
+          "desc": {
+            "en": "the panels, workspaces and menus of the window as data",
+            "es": "los paneles, espacios de trabajo y menús de la ventana como datos",
+            "de": "die Panels, Arbeitsbereiche und Menüs des Fensters als Daten",
+            "fr": "les panneaux, espaces de travail et menus de la fenêtre en données",
+            "it": "i pannelli, gli spazi di lavoro e i menu della finestra come dati",
+            "ja": "ウィンドウのパネル、ワークスペース、メニューをデータとして定義",
+            "zh": "窗口的面板、工作区和菜单（纯数据）",
+            "pt": "os painéis, espaços de trabalho e menus da janela como dados"
           }
         },
         {
@@ -633,6 +672,19 @@
           }
         },
         {
+          "name": "lbrn2.rs",
+          "desc": {
+            "en": "tests of the LBRN2 reader on projects written here, hostile files and fuzz",
+            "es": "pruebas del lector LBRN2 con proyectos escritos aquí, ficheros hostiles y fuzz",
+            "de": "Tests des LBRN2-Lesers mit hier geschriebenen Projekten, feindlichen Dateien und Fuzz",
+            "fr": "tests du lecteur LBRN2 sur des projets écrits ici, fichiers hostiles et fuzz",
+            "it": "test del lettore LBRN2 su progetti scritti qui, file ostili e fuzz",
+            "ja": "LBRN2リーダーのテスト：自作プロジェクト、悪意あるファイル、ファズ",
+            "zh": "LBRN2 读取器测试：自编工程、恶意文件和模糊测试",
+            "pt": "testes do leitor LBRN2 com projetos escritos aqui, ficheiros hostis e fuzz"
+          }
+        },
+        {
           "name": "guard.rs",
           "desc": {
             "en": "tests of the zones, interlocks, material ceilings, the report and the settings list",
@@ -669,6 +721,19 @@
             "ja": "gui 機能なしのビルドがコマンドラインのままであることのテスト",
             "zh": "测试没有 gui 特性的构建仍然只是命令行",
             "pt": "testes de que uma compilação sem a funcionalidade gui continua a ser só linha de comandos"
+          }
+        },
+        {
+          "name": "dockwindow.rs",
+          "desc": {
+            "en": "tests of the window model: layers of a project, report, interlocks, layout and materials",
+            "es": "pruebas del modelo de la ventana: capas de un proyecto, informe, enclavamientos, disposición y materiales",
+            "de": "Tests des Fenstermodells: Projektebenen, Bericht, Verriegelungen, Anordnung und Materialien",
+            "fr": "tests du modèle de la fenêtre : calques d'un projet, rapport, verrouillages, disposition et matériaux",
+            "it": "test del modello della finestra: livelli di un progetto, rapporto, interblocchi, disposizione e materiali",
+            "ja": "ウィンドウモデルのテスト：レイヤー、レポート、インターロック、配置、材料",
+            "zh": "窗口模型测试：工程图层、报告、联锁、布局和材料",
+            "pt": "testes do modelo da janela: camadas de um projeto, relatório, bloqueios, disposição e materiais"
           }
         }
       ]
@@ -768,6 +833,19 @@
             "zh": "起步用材料库，每一项都标明为未验证",
             "pt": "uma biblioteca inicial de materiais, todos marcados como não verificados"
           }
+        },
+        {
+          "name": "lbrn2_survey.rs",
+          "desc": {
+            "en": "reads every LBRN2 file of a folder and says what is read and what is not",
+            "es": "lee todos los ficheros LBRN2 de una carpeta y dice qué se lee y qué no",
+            "de": "liest alle LBRN2-Dateien eines Ordners und meldet, was gelesen wird und was nicht",
+            "fr": "lit tous les fichiers LBRN2 d'un dossier et dit ce qui est lu ou non",
+            "it": "legge tutti i file LBRN2 di una cartella e dice cosa si legge e cosa no",
+            "ja": "フォルダ内の全LBRN2ファイルを読み、読めるものと読めないものを報告",
+            "zh": "读取文件夹中所有 LBRN2 文件，并报告哪些可读、哪些不可读",
+            "pt": "lê todos os ficheiros LBRN2 de uma pasta e diz o que se lê e o que não"
+          }
         }
       ]
     },
@@ -826,6 +904,19 @@
             "ja": "素材ライブラリをキーごとに説明",
             "zh": "材料库，逐项说明",
             "pt": "a biblioteca de materiais, chave a chave"
+          }
+        },
+        {
+          "name": "lbrn2.md",
+          "desc": {
+            "en": "what the LBRN2 reader reads, what it leaves out and how it was measured",
+            "es": "qué lee el lector LBRN2, qué deja fuera y cómo se midió",
+            "de": "was der LBRN2-Leser liest, was er auslässt und wie er gemessen wurde",
+            "fr": "ce que lit le lecteur LBRN2, ce qu'il laisse de côté et comment il a été mesuré",
+            "it": "cosa legge il lettore LBRN2, cosa lascia fuori e come è stato misurato",
+            "ja": "LBRN2リーダーが読むもの、省くもの、測定方法",
+            "zh": "LBRN2 读取器读取什么、忽略什么以及如何测量",
+            "pt": "o que o leitor LBRN2 lê, o que deixa de fora e como foi medido"
           }
         }
       ]
