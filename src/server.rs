@@ -546,6 +546,7 @@ pub fn check_before_send(gcode: &str, s: &Settings) -> Result<(), String> {
         accel_mm_s2: 1000.0,
         rapid_mm_min: m.rapid_mm_min,
         overscan_mm: s.verify.overscan_mm,
+        arc_tolerance_mm: s.verify.arc_tolerance_mm,
     };
     let verdict = verify::verify(gcode.as_bytes(), &limits)?;
     if verdict.passes() {

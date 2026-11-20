@@ -99,8 +99,84 @@ fn words(line: &str) -> Vec<(char, f64)> {
     out
 }
 
-/// Reads a program. It never fails: what it cannot understand is left out and told in the notes.
+/// How far (mm) the straight pieces that an arc (G2 or G3) is cut into may lie from the true arc, when nothing says another (`arc_tolerance_mm` in `[verify]`).
+pub const DEFAULT_ARC_TOLERANCE_MM: f64 = 0.01;
+
+/// The smallest and the largest tolerance of an arc (mm).
+pub const ARC_TOLERANCE_RANGE_MM: (f64, f64) = (0.0005, 1.0);
+
+/// An arc is never cut into more pieces than this.
+pub const MAX_ARC_SEGMENTS: usize = 2000;
+
+/// The centre of the arc of radius `r` (G2 when `clockwise`) that goes from `from` to `to`: a positive radius is the arc of at most half a turn, a negative one the other. `None` when the
+/// two points are the same (a full turn needs the centre) or the radius is shorter than half the distance between them.
+fn arc_centre(from: Pt, to: Pt, r: f64, clockwise: bool) -> Option<Pt> {
+    let (dx, dy) = (to.0 - from.0, to.1 - from.1);
+    let d = dx.hypot(dy);
+    if d < 1e-12 {
+        return None;
+    }
+    let half = d / 2.0;
+    let radius = r.abs();
+    if radius < half - 1e-9 {
+        return None;
+    }
+    let h = (radius * radius - half * half).max(0.0).sqrt();
+    // the centre of a counter-clockwise arc of at most half a turn lies to the left of the chord; clockwise, or the long way round, it is the other side
+    let side = if clockwise == (r < 0.0) { 1.0 } else { -1.0 };
+    let (px, py) = (-dy / d, dx / d);
+    Some((
+        (from.0 + to.0) / 2.0 + side * h * px,
+        (from.1 + to.1) / 2.0 + side * h * py,
+    ))
+}
+
+/// The points of an arc round `c` from `from` to `to` (the last one is `to` itself), no piece lying farther than `tolerance` from the arc. The same point at both ends is a full turn.
+fn arc_points(from: Pt, to: Pt, c: Pt, clockwise: bool, tolerance: f64) -> Vec<Pt> {
+    let r = (from.0 - c.0).hypot(from.1 - c.1);
+    let r_end = (to.0 - c.0).hypot(to.1 - c.1);
+    let a0 = (from.1 - c.1).atan2(from.0 - c.0);
+    let a1 = (to.1 - c.1).atan2(to.0 - c.0);
+    let mut sweep = a1 - a0;
+    if clockwise {
+        if sweep >= -1e-12 {
+            sweep -= std::f64::consts::TAU;
+        }
+    } else if sweep <= 1e-12 {
+        sweep += std::f64::consts::TAU;
+    }
+    let step = if r > tolerance {
+        2.0 * (1.0 - tolerance / r).acos()
+    } else {
+        std::f64::consts::PI
+    };
+    let n = ((sweep.abs() / step).ceil() as usize).clamp(1, MAX_ARC_SEGMENTS);
+    (1..=n)
+        .map(|k| {
+            if k == n {
+                to
+            } else {
+                let t = k as f64 / n as f64;
+                let angle = a0 + sweep * t;
+                let radius = r + (r_end - r) * t;
+                (c.0 + radius * angle.cos(), c.1 + radius * angle.sin())
+            }
+        })
+        .collect()
+}
+
+/// Reads a program; the arcs (G2 and G3) are cut into pieces no farther than [`DEFAULT_ARC_TOLERANCE_MM`] from the true arc. It never fails: what it cannot understand is left out and told in the notes.
 pub fn read(text: &str) -> Program {
+    read_with(text, DEFAULT_ARC_TOLERANCE_MM)
+}
+
+/// Reads a program like [`read`], with the tolerance of the arcs given (mm; out of [`ARC_TOLERANCE_RANGE_MM`] it is held to the nearest end).
+pub fn read_with(text: &str, arc_tolerance_mm: f64) -> Program {
+    let tolerance = if arc_tolerance_mm.is_finite() {
+        arc_tolerance_mm.clamp(ARC_TOLERANCE_RANGE_MM.0, ARC_TOLERANCE_RANGE_MM.1)
+    } else {
+        DEFAULT_ARC_TOLERANCE_MM
+    };
     let mut p = Program::default();
     let (mut x, mut y) = (0.0f64, 0.0f64);
     let (mut absolute, mut inch) = (true, false);
@@ -108,7 +184,9 @@ pub fn read(text: &str) -> Program {
     let mut feed = 0.0f64;
     let mut s = 0.0f64;
     let mut spindle = false;
-    let mut arcs = false;
+    // the plane of the arcs (17, 18 or 19) and whether the centre of an arc is given as a point (G90.1) and not as the offset from where it starts (G91.1, the usual way)
+    let mut plane = 17u32;
+    let mut centre_absolute = false;
     let mut ended_by_word = false;
     for (n, raw) in text.lines().enumerate() {
         if n >= MAX_LINES {
@@ -127,22 +205,27 @@ pub fn read(text: &str) -> Program {
             continue;
         }
         let (mut nx, mut ny): (Option<f64>, Option<f64>) = (None, None);
+        let (mut ci, mut cj, mut radius): (Option<f64>, Option<f64>, Option<f64>) =
+            (None, None, None);
         let mut new_feed: Option<f64> = None;
         let mut ended_here = false;
         for &(letter, v) in &ws {
             let code = v.round() as i64;
             match letter {
-                'G' => match code {
+                'G' => match (v * 10.0).round() as i64 {
                     0 => motion = Some(0),
-                    1 => motion = Some(1),
-                    2 | 3 => {
-                        motion = Some(code as u8);
-                        arcs = true;
-                    }
-                    20 => inch = true,
-                    21 => inch = false,
-                    90 => absolute = true,
-                    91 => absolute = false,
+                    10 => motion = Some(1),
+                    20 => motion = Some(2),
+                    30 => motion = Some(3),
+                    170 => plane = 17,
+                    180 => plane = 18,
+                    190 => plane = 19,
+                    200 => inch = true,
+                    210 => inch = false,
+                    900 => absolute = true,
+                    901 => centre_absolute = true,
+                    910 => absolute = false,
+                    911 => centre_absolute = false,
                     _ => {}
                 },
                 'M' => match code {
@@ -153,6 +236,9 @@ pub fn read(text: &str) -> Program {
                 },
                 'X' => nx = Some(v),
                 'Y' => ny = Some(v),
+                'I' => ci = Some(v),
+                'J' => cj = Some(v),
+                'R' => radius = Some(v),
                 'F' => new_feed = Some(v),
                 'S' => {
                     s = v.max(0.0);
@@ -167,47 +253,97 @@ pub fn read(text: &str) -> Program {
         if let Some(f) = new_feed {
             feed = (f * unit).max(0.0);
         }
-        if nx.is_some() || ny.is_some() {
+        let is_arc = matches!(motion, Some(2 | 3));
+        let has_centre = ci.is_some() || cj.is_some() || radius.is_some();
+        // an arc with its centre and no end is a full turn
+        if nx.is_some() || ny.is_some() || (is_arc && has_centre) {
             let (tx, ty) = if absolute {
                 (nx.map_or(x, |v| v * unit), ny.map_or(y, |v| v * unit))
             } else {
                 (x + nx.unwrap_or(0.0) * unit, y + ny.unwrap_or(0.0) * unit)
             };
             let rapid = matches!(motion, Some(0));
-            if motion.is_none() {
+            let path: Vec<Pt> = if motion.is_none() {
                 note(
                     &mut p.notes,
                     format!("line {line}: a move before any G0 or G1 was left out"),
                 );
-            } else if (tx - x).abs() > 1e-9 || (ty - y).abs() > 1e-9 {
-                if p.moves.len() >= MAX_MOVES {
-                    note(
-                        &mut p.notes,
-                        format!("only the first {MAX_MOVES} moves were read"),
-                    );
-                    return p;
+                Vec::new()
+            } else if is_arc {
+                let clockwise = motion == Some(2);
+                let centre = if !has_centre {
+                    None
+                } else if let Some(r) = radius.filter(|_| ci.is_none() && cj.is_none()) {
+                    arc_centre((x, y), (tx, ty), r * unit, clockwise)
+                } else if centre_absolute {
+                    Some((ci.map_or(x, |v| v * unit), cj.map_or(y, |v| v * unit)))
+                } else {
+                    Some((x + ci.unwrap_or(0.0) * unit, y + cj.unwrap_or(0.0) * unit))
+                };
+                match centre {
+                    Some(c) if plane == 17 => {
+                        let radius_from = (x - c.0).hypot(y - c.1);
+                        let radius_to = (tx - c.0).hypot(ty - c.1);
+                        let gap = (radius_from - radius_to).abs();
+                        if gap > 0.5 || gap > 0.005 * radius_to {
+                            note(
+                                &mut p.notes,
+                                format!("line {line}: the two ends of an arc are not at the same distance from its centre ({gap:.3} mm apart): GRBL refuses it"),
+                            );
+                        }
+                        arc_points((x, y), (tx, ty), c, clockwise, tolerance)
+                    }
+                    Some(_) => {
+                        note(
+                            &mut p.notes,
+                            format!("line {line}: an arc outside of the XY plane (G18 or G19) is drawn as a straight line to its end"),
+                        );
+                        vec![(tx, ty)]
+                    }
+                    None => {
+                        note(
+                            &mut p.notes,
+                            format!("line {line}: an arc with no centre, or a radius too short for its ends, is drawn as a straight line to its end"),
+                        );
+                        vec![(tx, ty)]
+                    }
                 }
-                let burning = !rapid && spindle && s > 0.0;
-                if rapid && spindle && s > 0.0 {
-                    note(
-                        &mut p.notes,
-                        format!("line {line}: the laser is on (M3 or M4 with S above 0) during a rapid move"),
-                    );
+            } else {
+                vec![(tx, ty)]
+            };
+            for to in path {
+                if (to.0 - x).abs() > 1e-9 || (to.1 - y).abs() > 1e-9 {
+                    if p.moves.len() >= MAX_MOVES {
+                        note(
+                            &mut p.notes,
+                            format!("only the first {MAX_MOVES} moves were read"),
+                        );
+                        return p;
+                    }
+                    let burning = !rapid && spindle && s > 0.0;
+                    if rapid && spindle && s > 0.0 {
+                        note(
+                            &mut p.notes,
+                            format!("line {line}: the laser is on (M3 or M4 with S above 0) during a rapid move"),
+                        );
+                    }
+                    if burning && feed <= 0.0 {
+                        note(
+                            &mut p.notes,
+                            format!("line {line}: a burning move has no feed (F)"),
+                        );
+                    }
+                    p.moves.push(Move {
+                        from: (x, y),
+                        to,
+                        rapid,
+                        power: if burning { s } else { 0.0 },
+                        feed,
+                        line,
+                    });
                 }
-                if burning && feed <= 0.0 {
-                    note(
-                        &mut p.notes,
-                        format!("line {line}: a burning move has no feed (F)"),
-                    );
-                }
-                p.moves.push(Move {
-                    from: (x, y),
-                    to: (tx, ty),
-                    rapid,
-                    power: if burning { s } else { 0.0 },
-                    feed,
-                    line,
-                });
+                x = to.0;
+                y = to.1;
             }
             x = tx;
             y = ty;
@@ -220,12 +356,6 @@ pub fn read(text: &str) -> Program {
     }
     // the end is M2 or M30 after the last move, or the spindle off
     p.ended = ended_by_word || !spindle;
-    if arcs {
-        note(
-            &mut p.notes,
-            "arcs (G2 and G3) are drawn as straight lines to their end".to_string(),
-        );
-    }
     p
 }
 
@@ -618,15 +748,162 @@ mod tests {
     }
 
     #[test]
-    fn a_move_with_no_mode_and_arcs_are_told_and_the_rest_is_read() {
+    fn a_move_with_no_mode_is_told_and_an_arc_after_it_is_still_read() {
         let p = read_ok("G90\nX5 Y5\nG2 X10 Y0 I5 J0\nM2\n");
-        assert_eq!(p.moves.len(), 1);
+        assert!(p.moves.len() > 1, "the arc is cut into pieces");
+        assert_eq!(p.moves.last().unwrap().to, (10.0, 0.0));
         assert!(
             p.notes.iter().any(|n| n.contains("before any G0")),
             "{:?}",
             p.notes
         );
-        assert!(p.notes.iter().any(|n| n.contains("arcs")), "{:?}", p.notes);
+        assert!(!p.notes.iter().any(|n| n.contains("arc")), "{:?}", p.notes);
+    }
+
+    /// The length of the moves of a program.
+    fn total_mm(p: &Program) -> f64 {
+        p.moves.iter().map(Move::length).sum()
+    }
+
+    #[test]
+    fn a_half_turn_counter_clockwise_is_a_half_circle_and_clockwise_goes_the_other_way() {
+        // from (0, 0) to (10, 0) about (5, 0)
+        let ccw = read_ok("G90\nG0 X0 Y0\nG3 X10 Y0 I5 J0\n");
+        let cw = read_ok("G90\nG0 X0 Y0\nG2 X10 Y0 I5 J0\n");
+        // a half turn of radius 5 is 5 pi long
+        for p in [&ccw, &cw] {
+            let len = total_mm(p);
+            assert!((len - 5.0 * std::f64::consts::PI).abs() < 0.03, "{len}");
+        }
+        // G3 turns counter-clockwise: from the point at the left of the centre it goes down first
+        let first = ccw.moves[0].to;
+        assert!(first.1 < 0.0, "{first:?}");
+        let first = cw.moves[0].to;
+        assert!(first.1 > 0.0, "{first:?}");
+        let (lo, hi) =
+            crate::vector::bounds_of(cw.moves.iter().flat_map(|m| [m.from, m.to])).unwrap();
+        assert!(
+            (hi.1 - 5.0).abs() < 0.01 && lo.1.abs() < 1e-9,
+            "{lo:?} {hi:?}"
+        );
+    }
+
+    #[test]
+    fn an_arc_with_a_centre_and_no_end_is_a_full_circle() {
+        let p = read_ok("G90\nG0 X10 Y0\nG3 I-10 J0\n");
+        let len: f64 = p.moves.iter().filter(|m| !m.rapid).map(Move::length).sum();
+        assert!((len - 20.0 * std::f64::consts::PI).abs() < 0.05, "{len}");
+        assert_eq!(p.moves.last().unwrap().to, (10.0, 0.0));
+        let (lo, hi) =
+            crate::vector::bounds_of(p.moves.iter().flat_map(|m| [m.from, m.to])).unwrap();
+        assert!(
+            (lo.0 + 10.0).abs() < 0.01 && (hi.0 - 10.0).abs() < 1e-9,
+            "{lo:?} {hi:?}"
+        );
+        assert!(
+            (lo.1 + 10.0).abs() < 0.01 && (hi.1 - 10.0).abs() < 0.01,
+            "{lo:?} {hi:?}"
+        );
+    }
+
+    #[test]
+    fn the_radius_form_takes_the_short_way_with_a_positive_radius_and_the_long_way_with_a_negative_one(
+    ) {
+        // a quarter circle of radius 10 from (0, 0) to (10, 10) counter-clockwise
+        let short = read_ok("G90\nG0 X0 Y0\nG3 X10 Y10 R10\n");
+        assert!((total_mm(&short) - 5.0 * std::f64::consts::PI).abs() < 0.02);
+        // the long way round is three quarters of the same circle
+        let long = read_ok("G90\nG0 X0 Y0\nG3 X10 Y10 R-10\n");
+        assert!((total_mm(&long) - 15.0 * std::f64::consts::PI).abs() < 0.05);
+        // clockwise with a positive radius is the other quarter circle, bulging the other way
+        let cw = read_ok("G90\nG0 X0 Y0\nG2 X10 Y10 R10\n");
+        assert!((total_mm(&cw) - 5.0 * std::f64::consts::PI).abs() < 0.02);
+        let high = |p: &Program| p.moves.iter().map(|m| m.to.1).fold(f64::MIN, f64::max);
+        let right = |p: &Program| p.moves.iter().map(|m| m.to.0).fold(f64::MIN, f64::max);
+        // counter-clockwise the centre is at (0, 10) and the arc bulges to the lower right; clockwise it is at (10, 0) and the arc bulges to the upper left
+        let (lo_short, _) = crate::vector::bounds_of(short.moves.iter().map(|m| m.to)).unwrap();
+        assert!(lo_short.1 >= 0.0 && short.moves[0].to.0 > short.moves[0].to.1);
+        assert!(cw.moves[0].to.1 > cw.moves[0].to.0);
+        assert!(right(&short) <= 10.0 + 1e-9 && high(&short) <= 10.0 + 1e-9);
+        assert!(right(&cw) <= 10.0 + 1e-9 && high(&cw) <= 10.0 + 1e-9);
+        // a radius shorter than half the chord cannot be drawn: a straight line and a note
+        let short_radius = read_ok("G90\nG0 X0 Y0\nG2 X10 Y0 R2\n");
+        assert_eq!(short_radius.moves.len(), 1);
+        assert!(short_radius
+            .notes
+            .iter()
+            .any(|n| n.contains("radius too short")));
+    }
+
+    #[test]
+    fn the_pieces_of_an_arc_lie_within_the_tolerance_and_a_finer_tolerance_gives_more_pieces() {
+        let text = "G90\nG0 X10 Y0\nG3 X-10 Y0 I-10 J0\n";
+        let coarse = read_with(text, 0.1);
+        let fine = read_with(text, 0.001);
+        assert!(fine.moves.len() > coarse.moves.len());
+        for p in [&coarse, &fine] {
+            for m in &p.moves {
+                // the points are on the circle and the middle of each piece is no farther from the circle than the tolerance asked
+                let r = m.to.0.hypot(m.to.1);
+                assert!((r - 10.0).abs() < 1e-9, "{r}");
+            }
+        }
+        for (p, tol) in [(&coarse, 0.1), (&fine, 0.001)] {
+            for m in p.moves.iter().filter(|m| !m.rapid) {
+                let mid = ((m.from.0 + m.to.0) / 2.0, (m.from.1 + m.to.1) / 2.0);
+                assert!(10.0 - mid.0.hypot(mid.1) <= tol + 1e-9, "{m:?}");
+            }
+        }
+        // the tolerance is held to its range and a number that is not one means the default
+        assert_eq!(read_with(text, f64::NAN), read(text));
+        assert_eq!(
+            read_with(text, 0.0),
+            read_with(text, ARC_TOLERANCE_RANGE_MM.0)
+        );
+        assert_eq!(
+            read_with(text, 50.0),
+            read_with(text, ARC_TOLERANCE_RANGE_MM.1)
+        );
+    }
+
+    #[test]
+    fn the_centre_as_a_point_and_the_other_planes_are_read_as_they_are_written() {
+        // G90.1 gives the centre as a point
+        let abs = read_ok("G90\nG90.1\nG0 X0 Y0\nG3 X10 Y0 I5 J0\n");
+        let rel = read_ok("G90\nG0 X0 Y0\nG3 X10 Y0 I5 J0\n");
+        let ends = |p: &Program| p.moves.iter().map(|m| m.to).collect::<Vec<Pt>>();
+        assert_eq!(ends(&abs), ends(&rel));
+        // G91.1 goes back to the offset, and neither changes how the moves are positioned
+        let again = read_ok("G90\nG90.1\nG91.1\nG0 X0 Y0\nG3 X10 Y0 I5 J0\n");
+        assert_eq!(ends(&again), ends(&rel));
+        let line = read_ok("G90\nG91.1\nG0 X5\nG1 X8\n");
+        assert_eq!(line.moves.last().unwrap().to, (8.0, 0.0));
+        // an arc in the plane G18 is drawn straight, with a note
+        let other = read_ok("G90\nG18\nG0 X0 Y0\nG2 X10 Y10 I5 K0\n");
+        assert_eq!(other.moves.len(), 1);
+        assert!(other.notes.iter().any(|n| n.contains("G18 or G19")));
+    }
+
+    #[test]
+    fn an_arc_whose_ends_are_not_at_the_same_distance_from_its_centre_is_told() {
+        let p = read_ok("G90\nG0 X0 Y0\nG3 X10 Y3 I5 J0\n");
+        assert!(
+            p.notes.iter().any(|n| n.contains("same distance")),
+            "{:?}",
+            p.notes
+        );
+        assert_eq!(p.moves.last().unwrap().to, (10.0, 3.0));
+    }
+
+    #[test]
+    fn the_burning_arcs_keep_the_power_the_feed_and_the_line() {
+        let p = read_ok("G21\nG90\nM4 S0\nF600\nG0 X0 Y0\nG3 X10 Y0 I5 J0 S250\nM5\nM2\n");
+        let arc: Vec<&Move> = p.moves.iter().filter(|m| !m.rapid).collect();
+        assert!(arc.len() > 10);
+        assert!(arc
+            .iter()
+            .all(|m| m.power == 250.0 && m.feed == 600.0 && m.line == 6));
+        assert_eq!(p.max_s, 250.0);
     }
 
     #[test]
@@ -643,6 +920,12 @@ mod tests {
             "X5 Y5 Z5",
             "\u{0}\u{1}G1\u{2}",
             "G1 X9999999999999999999999999999999999999999999999 Y1",
+            "G2 I1e5 J1e5",
+            "G2 X1e9 Y1e9 R1e9",
+            "G3 X0 Y0 R0",
+            "G3 I0 J0",
+            "G2 X1 Y1 R-0.0001",
+            "G90.1 G91.1 G2 X5 I9999999999",
         ] {
             let p = read(text);
             assert!(p

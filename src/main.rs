@@ -2084,6 +2084,7 @@ fn run(mut args: Vec<String>) -> Result<(), String> {
                 accel_mm_s2: 1000.0,
                 rapid_mm_min: m.rapid_mm_min,
                 overscan_mm: settings.verify.overscan_mm,
+                arc_tolerance_mm: settings.verify.arc_tolerance_mm,
             };
             if let Some(v) = flag(&mut args, "--smax")? {
                 l.s_max = whole(&v, "--smax")?;

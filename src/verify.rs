@@ -9,7 +9,7 @@
 //! far that is allowed (`overscan_mm`, 0 by default): the head may go that far past the bed with the laser off, and anything that burns outside the bed fails whatever the allowance.
 
 use crate::gcode_out::sha256_hex;
-use crate::preview::{analyse, read, Options};
+use crate::preview::{analyse, read_with, Options};
 use crate::vector::Pt;
 
 /// What the program is checked against.
@@ -29,6 +29,8 @@ pub struct Limits {
     pub rapid_mm_min: f64,
     /// How far (mm) the head may go past the bed with the laser off, as the overscan of another program does. Burning outside the bed always fails.
     pub overscan_mm: f64,
+    /// How far (mm) the pieces that an arc (G2 or G3) is cut into may lie from the true arc.
+    pub arc_tolerance_mm: f64,
 }
 
 impl Default for Limits {
@@ -41,6 +43,7 @@ impl Default for Limits {
             accel_mm_s2: 1000.0,
             rapid_mm_min: 6000.0,
             overscan_mm: 0.0,
+            arc_tolerance_mm: crate::preview::DEFAULT_ARC_TOLERANCE_MM,
         }
     }
 }
@@ -103,7 +106,14 @@ pub fn verify(bytes: &[u8], l: &Limits) -> Result<Verdict, String> {
             l.overscan_mm
         ));
     }
-    let program = read(&String::from_utf8_lossy(bytes));
+    let (lo, hi) = crate::preview::ARC_TOLERANCE_RANGE_MM;
+    if !(l.arc_tolerance_mm.is_finite() && (lo..=hi).contains(&l.arc_tolerance_mm)) {
+        return Err(format!(
+            "arc_tolerance_mm is {}: it must be from {lo} to {hi}",
+            l.arc_tolerance_mm
+        ));
+    }
+    let program = read_with(&String::from_utf8_lossy(bytes), l.arc_tolerance_mm);
     let report = analyse(
         &program,
         &Options {

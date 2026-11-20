@@ -2952,6 +2952,7 @@ impl Window {
             accel_mm_s2: self.preview_options(s_max).accel_mm_s2,
             rapid_mm_min: m.rapid_mm_min,
             overscan_mm: self.verify_overscan().ok()?,
+            arc_tolerance_mm: self.settings.verify.arc_tolerance_mm,
         };
         verify::verify(gcode.as_bytes(), &l).ok()
     }

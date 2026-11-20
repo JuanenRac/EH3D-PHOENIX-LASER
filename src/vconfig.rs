@@ -960,21 +960,39 @@ impl TextSettings {
 }
 
 /// The check of a program (`phoenix-laser verify`).
-#[derive(Debug, Clone, Copy, PartialEq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct VerifySettings {
     /// How far (mm) the head may go past the bed with the laser off, as the overscan of another program does: 0 allows none. Burning outside the bed always fails.
     pub overscan_mm: f64,
+    /// How far (mm) the straight pieces that an arc (G2 or G3) of a program is cut into may lie from the true arc.
+    pub arc_tolerance_mm: f64,
+}
+
+impl Default for VerifySettings {
+    fn default() -> Self {
+        VerifySettings {
+            overscan_mm: 0.0,
+            arc_tolerance_mm: crate::preview::DEFAULT_ARC_TOLERANCE_MM,
+        }
+    }
 }
 
 impl VerifySettings {
     pub fn validate(&self) -> Result<(), String> {
         let max = crate::verify::MAX_OVERSCAN_MM;
-        if self.overscan_mm.is_finite() && (0.0..=max).contains(&self.overscan_mm) {
+        if !(self.overscan_mm.is_finite() && (0.0..=max).contains(&self.overscan_mm)) {
+            return Err(format!(
+                "verify overscan_mm is {}: it must be from 0 to {max}",
+                self.overscan_mm
+            ));
+        }
+        let (lo, hi) = crate::preview::ARC_TOLERANCE_RANGE_MM;
+        if self.arc_tolerance_mm.is_finite() && (lo..=hi).contains(&self.arc_tolerance_mm) {
             Ok(())
         } else {
             Err(format!(
-                "verify overscan_mm is {}: it must be from 0 to {max}",
-                self.overscan_mm
+                "verify arc_tolerance_mm is {}: it must be from {lo} to {hi}",
+                self.arc_tolerance_mm
             ))
         }
     }
@@ -1380,6 +1398,7 @@ fn set_global(s: &mut Settings, section: &str, key: &str, value: &str) -> Result
         ("tone", "invert") => s.tone.invert = switch(value)?,
         ("tone", "auto_level") => s.tone.auto_level = switch(value)?,
         ("verify", "overscan_mm") => s.verify.overscan_mm = number(value)?,
+        ("verify", "arc_tolerance_mm") => s.verify.arc_tolerance_mm = number(value)?,
         ("calibrate", "steps") => {
             s.calibrate.steps =
                 u32::try_from(whole(value)?).map_err(|_| "steps is too large".to_string())?
@@ -1672,6 +1691,24 @@ pub fn load(path: &Path) -> Result<Settings, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_tolerance_of_the_arcs_of_a_program_is_a_setting_with_a_range() {
+        assert_eq!(
+            Settings::default().verify.arc_tolerance_mm,
+            crate::preview::DEFAULT_ARC_TOLERANCE_MM
+        );
+        let s = parse("[verify]\narc_tolerance_mm = 0.05\noverscan_mm = 2\n").unwrap();
+        assert_eq!(s.verify.arc_tolerance_mm, 0.05);
+        assert_eq!(s.verify.overscan_mm, 2.0);
+        for bad in ["0", "0.0001", "1.5", "-1", "x"] {
+            let e = parse(&format!("[verify]\narc_tolerance_mm = {bad}\n")).unwrap_err();
+            assert!(
+                e.contains("arc_tolerance_mm") || e.contains("number"),
+                "{bad}: {e}"
+            );
+        }
+    }
 
     #[test]
     fn the_defaults_are_valid() {
