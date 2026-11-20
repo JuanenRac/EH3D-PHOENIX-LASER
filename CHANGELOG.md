@@ -4,6 +4,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+- **The pictures of the window are taken again with the newest build:** the two pictures of `images/screens/` come from the Windows 64 bits program of the latest release.
+
 ## [0.1.4] - Server panel in the window, test fire and vector jobs, alignment from a camera picture, labels of the material editor and layer times with acceleration
 
 - **The time of each layer, with the head braking at the corners:** `phoenix-laser layers DRAWING --accel A` (1 to 100000 mm/s2) also prints, under each layer that is burnt, how long it takes with the head braking and speeding up at every corner at that acceleration and how much of that time the laser burns, and the total of all the layers. The whole drawing is planned once, as it would be written, the program is cut at the comment that opens each layer, and each piece is read by the preview of the program, so the burning times add up to the one of the whole program; each piece starts with the head at the origin, so the rapid move to its first contour is counted from there. Without `--accel` the output is the same as before.
