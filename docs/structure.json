@@ -236,6 +236,19 @@
           }
         },
         {
+          "name": "linkpane.rs",
+          "desc": {
+            "en": "the panel of the server in the window: the boxes, the link and the login",
+            "es": "el panel del servidor en la ventana: las casillas, el enlace y el inicio de sesión",
+            "de": "das Serverfeld im Fenster: die Felder, die Verbindung und die Anmeldung",
+            "fr": "le panneau du serveur dans la fenêtre : les cases, la liaison et la connexion",
+            "it": "il pannello del server nella finestra: le caselle, il collegamento e l'accesso",
+            "ja": "ウィンドウのサーバーパネル：入力欄、接続、ログイン",
+            "zh": "窗口中的服务器面板：输入框、连接和登录",
+            "pt": "o painel do servidor na janela: as caixas, a ligação e o início de sessão"
+          }
+        },
+        {
           "name": "shot.rs",
           "desc": {
             "en": "the picture mode of the window (--shot): its arguments, read and checked without a screen",

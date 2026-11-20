@@ -52,6 +52,8 @@ struct App {
     fit_pending: bool,
     /// The place of the work under the pointer.
     cursor: Option<(f64, f64)>,
+    /// The panel of the settings of the server (the boxes, the state of the link, the login), made the first time the section is drawn.
+    server_pane: Option<crate::linkpane::ServerPane>,
 }
 
 impl App {
@@ -79,6 +81,7 @@ impl App {
             confirm: None,
             fit_pending,
             cursor: None,
+            server_pane: None,
         }
     }
 
@@ -473,8 +476,9 @@ impl App {
         {
             self.win.set_draft_note(note);
         }
+        let labels = crate::lang::material_labels();
         for (i, key) in materials::KEYS.iter().enumerate() {
-            ui.label(*key);
+            ui.label(format!("{} ({key})", labels[i].tr(lang)));
             let mut text = draft.values.get(i).cloned().unwrap_or_default();
             if ui
                 .add(egui::TextEdit::singleline(&mut text).desired_width(f32::INFINITY))
@@ -646,20 +650,35 @@ impl App {
             });
     }
 
-    /// The EH3D server: send the program of the window as a job, follow it, hold it and stop it with the emergency stop. It shows only when the settings give a server or a job is followed.
+    /// The EH3D server: the panel of the suite (the address, the token, the machine, the limits of the link, the state of the link and the login with a name and a password), then the buttons that
+    /// send the program of the window as a job, follow it, hold it and stop it with the emergency stop. It is open when the settings give a server or a job is followed.
     fn server_group(&mut self, ui: &mut egui::Ui) {
         let lang = self.win.lang;
         let lines = self.win.server_lines();
-        if !self.win.server_configured() && lines.is_empty() {
-            return;
-        }
+        let mut pane = self.server_pane.take().unwrap_or_else(|| {
+            crate::linkpane::ServerPane::new(&self.win.settings.server, self.win.login.clone())
+        });
+        pane.refresh();
+        let view_lang =
+            eh3d_view::texts::Lang::from_code(lang.code()).unwrap_or(eh3d_view::texts::Lang::En);
         egui::CollapsingHeader::new(self.heading(Msg::SectionServer))
-            .default_open(true)
+            .default_open(self.win.server_configured() || !lines.is_empty())
             .show(ui, |ui| {
+                if let Some(action) = eh3d_view::server_gui::show(ui, &mut pane.panel, view_lang) {
+                    pane.handle(action, &mut self.win.settings.server);
+                }
+                ui.separator();
                 let busy = self.win.server_active();
+                // a program that was opened to be seen is sent as it is only when the person says so (and only after it passes the check)
+                if self.win.mode == Mode::Preview {
+                    ui.checkbox(
+                        &mut self.win.send_opened_confirmed,
+                        Msg::ServerConfirmOpened.tr(lang),
+                    );
+                }
                 if ui
                     .add_enabled(
-                        self.win.can_export() && !busy,
+                        self.win.can_send() && !busy,
                         egui::Button::new(Msg::ServerSend.tr(lang)),
                     )
                     .clicked()
@@ -691,6 +710,7 @@ impl App {
                     });
                 }
             });
+        self.server_pane = Some(pane);
         // the job is asked after again a moment later, so that the window shows how it goes without a click
         if self.win.server_active() {
             ui.ctx()
@@ -893,6 +913,15 @@ impl App {
             .default_open(true)
             .show(ui, |ui| {
                 self.fields_of(ui, Section::Marks);
+                if ui
+                    .add_enabled(
+                        self.win.framed_mode().is_some(),
+                        egui::Button::new(Msg::MarksFromJob.tr(lang)),
+                    )
+                    .clicked()
+                {
+                    self.win.marks_from_job();
+                }
                 let mut cross = self.win.marks_cross;
                 if ui.checkbox(&mut cross, Msg::MarksCross.tr(lang)).changed() {
                     self.win.set_marks_cross(cross);

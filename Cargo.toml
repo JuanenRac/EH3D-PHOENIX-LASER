@@ -19,7 +19,7 @@ path = "src/main.rs"
 [features]
 default = []
 # the window (egui, with the icon of the program): `cargo run --release --features gui`
-gui = ["dep:eframe", "dep:png"]
+gui = ["dep:eframe", "dep:png", "eh3d-view/gui"]
 
 [dependencies]
 # the reader of PGM and PNG pictures, shared with the other programs that work from a picture
@@ -28,6 +28,9 @@ eh3d-image = { version = ">=0.0.1", path = "../EH3D-COMMON/crates/image" }
 eh3d-parser-gcode = { version = ">=0.0.7", path = "../EH3D-CORE-LIBS/crates/eh3d-parser-gcode" }
 # the one client every program of the suite uses to talk to the EH3D server: login, retries, errors by code in eight languages, a token that is never printed
 eh3d-serverclient = { version = ">=0.0.1", path = "../EH3D-COMMON/crates/serverclient" }
+
+# the panel of the settings of the server, the link badge and the login of the window: the model (no window) is always there, the drawing with the feature `gui`
+eh3d-view = { version = ">=0.0.1", path = "../EH3D-COMMON/crates/view" }
 
 # the window
 eframe = { version = "0.37.0", default-features = false, features = ["glow", "default_fonts"], optional = true }

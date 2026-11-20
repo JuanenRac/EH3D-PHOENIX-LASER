@@ -11,6 +11,7 @@ use crate::frame::{self, Frame};
 use crate::gcode_out::{header, sha256_hex, Header};
 use crate::image::{from_bytes, Gray};
 use crate::lang::{fill, Lang, Msg};
+use crate::linkpane::LoginStore;
 use crate::materials::{self, Library, Material};
 use crate::preview;
 use crate::qr;
@@ -958,6 +959,10 @@ pub enum Status {
     MaterialDeleted(String, String),
     /// The person asked to delete a material and must say it again to confirm.
     MaterialDeleteAsk(String),
+    /// The size of the marks was taken from the work that is open: the width and the height in mm.
+    MarksTaken(f64, f64),
+    /// A program that was opened to be seen is sent only when it passes the check and the person ticked the box that says so.
+    ServerOpenedRefused,
     /// A machine profile was chosen: its name, its full-power value and its limits of power and speed.
     ProfileApplied {
         name: String,
@@ -976,6 +981,7 @@ impl Status {
                 | Status::NeedVector
                 | Status::NeedConfirm
                 | Status::NothingToWrite
+                | Status::ServerOpenedRefused
                 | Status::BadValue(_)
                 | Status::SameFile(_)
                 | Status::Failed(_)
@@ -1167,6 +1173,11 @@ impl Status {
             }
             Status::MaterialApplied(name) => fill(Msg::MaterialApplied.tr(lang), &[name]),
             Status::ServerSent(name) => fill(Msg::ServerSent.tr(lang), &[name]),
+            Status::MarksTaken(w, h) => fill(
+                Msg::MarksTaken.tr(lang),
+                &[&format!("{w}"), &format!("{h}")],
+            ),
+            Status::ServerOpenedRefused => Msg::ServerOpenedRefused.tr(lang).to_string(),
             Status::MaterialSaved(name, file) => fill(Msg::MaterialSaved.tr(lang), &[name, file]),
             Status::MaterialDeleted(name, file) => {
                 fill(Msg::MaterialDeleted.tr(lang), &[name, file])
@@ -1288,6 +1299,10 @@ pub struct Window {
     material_delete_armed: Option<String>,
     /// The job on the server that is followed, when a program was sent.
     pub server_job: Option<ServerJob>,
+    /// The login of the panel of the server, kept in memory: the job that is sent uses it when the settings give no token.
+    pub login: LoginStore,
+    /// The person ticked the box that says that the program that is open is sent as it is (it is asked again for every program that is opened).
+    pub send_opened_confirmed: bool,
 }
 
 impl Window {
@@ -1338,6 +1353,8 @@ impl Window {
             material_draft: None,
             material_delete_armed: None,
             server_job: None,
+            login: LoginStore::new(),
+            send_opened_confirmed: false,
         }
     }
 
@@ -1351,6 +1368,15 @@ impl Window {
     /// Whether there is something to write: not a program that was opened to be seen.
     pub fn can_export(&self) -> bool {
         self.mode != Mode::Preview && self.can_compute()
+    }
+
+    /// Whether there is a program to send to the server: the one the window works out, or one that was opened to be seen (which is sent only after the check and the confirmation).
+    pub fn can_send(&self) -> bool {
+        if self.mode == Mode::Preview {
+            self.program.is_some()
+        } else {
+            self.can_export()
+        }
     }
 
     /// Whether the G-code can be worked out now.
@@ -1752,6 +1778,7 @@ impl Window {
         let before = (self.program.take(), self.mode);
         self.program = Some(program);
         self.mode = Mode::Preview;
+        self.send_opened_confirmed = false;
         if self.compute() {
             self.stale = false;
             true
@@ -2391,7 +2418,7 @@ impl Window {
     /// line, after the same guards as the export (nothing is sent from a frame that lights the laser and was not confirmed) and the check against the limits of the window and the machine of the settings.
     fn server_program(&mut self) -> Result<(String, String), Status> {
         if self.mode == Mode::Preview {
-            return Err(Status::NothingToWrite);
+            return self.opened_program();
         }
         if (self.done.is_none() || self.stale) && !self.compute() {
             return Err(self.status.clone());
@@ -2418,12 +2445,77 @@ impl Window {
         Ok((name, text))
     }
 
+    /// The program that was opened to be seen, as it is, for the server: it is sent only when the check of the window passes for exactly the bytes that are open (the same SHA-256), the person ticked
+    /// the box that says it is sent as it is, and it passes the check against the limits of the machine of the settings as any other program does. Nothing is added to it and it is never written.
+    fn opened_program(&mut self) -> Result<(String, String), Status> {
+        if self.program.is_none() {
+            return Err(Status::NothingToWrite);
+        }
+        if self.done.is_none() || self.stale {
+            self.compute();
+        }
+        let program = self.program.as_ref().ok_or(Status::NothingToWrite)?;
+        let passes = self
+            .check
+            .as_ref()
+            .is_some_and(|v| v.passes() && v.sha256 == sha256_hex(program.text.as_bytes()));
+        if self.stale || !passes || !self.send_opened_confirmed {
+            return Err(Status::ServerOpenedRefused);
+        }
+        let s_max = self.done.as_ref().ok_or(Status::NeedImage)?.s_max;
+        let mut s = self.settings.clone();
+        s.machine.s_max = s_max;
+        (s.machine.max_power_percent, s.machine.max_speed_mm_min) = self.limits()?;
+        server::check_before_send(&program.text, &s).map_err(Status::Failed)?;
+        Ok((program.name.clone(), program.text.clone()))
+    }
+
+    /// The size of what the work that is open burns (the picture, the drawing or the outline, as the frame takes it), from the same program the window would write.
+    fn work_size(&self) -> Result<(f64, f64), Status> {
+        let work = match self.framed_mode() {
+            Some(Mode::Cut) => self.cut_job()?,
+            Some(Mode::Trace) => self.trace_job()?,
+            Some(_) => self.engrave_job()?,
+            None => return Err(Status::NeedImage),
+        };
+        let report = preview::analyse(&preview::read(&work.gcode), &preview::Options::default())
+            .map_err(Status::Failed)?;
+        let (lo, hi) = report
+            .burn_bounds
+            .ok_or_else(|| Status::Failed("the work burns nothing".to_string()))?;
+        Ok((hi.0 - lo.0, hi.1 - lo.1))
+    }
+
+    /// Puts the size of the work that is open in the boxes of the positioning marks, so that the marks go round exactly what is burnt (rounded up to a hundredth of a millimetre). The rest of the
+    /// boxes of the marks are left as they are; the marks are placed from the origin, where the work is placed too.
+    pub fn marks_from_job(&mut self) -> bool {
+        match self.work_size() {
+            Ok((w, h)) => {
+                let up = |v: f64| ((v * 100.0).ceil() / 100.0).max(1.0);
+                let (w, h) = (up(w), up(h));
+                for (key, v) in [(Key::MarksWidth, w), (Key::MarksHeight, h)] {
+                    if let Some(i) = self.fields.iter().position(|f| f.key == key) {
+                        self.set_field(i, format!("{v}"));
+                    }
+                }
+                self.status = Status::MarksTaken(w, h);
+                true
+            }
+            Err(s) => {
+                self.status = s;
+                false
+            }
+        }
+    }
+
     /// Sends the program of the window to the server of the settings and follows the job. The server, the token and the machine come from `[server]` of the settings file (or the variable of the
     /// token); a program that fails the check against the limits, or a machine that an emergency stop holds, is not sent.
     pub fn send_to_server(&mut self) -> bool {
         let lang = self.lang;
         let s = self.settings.server.clone();
-        let Some(client) = server::Client::from_settings(&s, lang) else {
+        let Some(client) =
+            server::Client::from_settings(&s, lang).map(|c| c.with_login(self.login.clone()))
+        else {
             self.status = Status::Failed(
                 "server_address and server_machine are needed: give them in [server] of the settings file".to_string(),
             );
@@ -2431,7 +2523,7 @@ impl Window {
         };
         if !client.has_token() {
             self.status = Status::Failed(format!(
-                "server_token is empty: give it in [server] of the settings file or in the variable {}",
+                "server_token is empty: give it in [server] of the settings file or in the variable {}, or log in with the panel of the server",
                 server::TOKEN_ENV
             ));
             return false;
@@ -6153,12 +6245,12 @@ hatch_cross = on
             unreachable!("nothing is sent")
         };
         let mut w = Window::new(Lang::En);
-        // a program that was opened to be seen is not sent
+        // a program that was opened to be seen is not sent unless the person says so
         let s = Scratch::new("server-preview");
         let nc = s.write("a.nc", "G21\nG90\nM4 S0\nG1 X5 S100 F500\nM5\nM2\n");
         assert!(w.open_gcode(&nc));
         assert!(!w.send_with(start));
-        assert_eq!(w.status, Status::NothingToWrite);
+        assert_eq!(w.status, Status::ServerOpenedRefused);
         // a frame that lights the laser is not sent until the person has confirmed it
         w.set_mode(Mode::Text);
         w.set_words("A".to_string());
@@ -7329,5 +7421,161 @@ hatch_cross = on
         w.set_mode(Mode::Calibrate);
         assert!(w.compute());
         assert!(w.check.is_none() && w.check_lines().is_empty());
+    }
+
+    #[test]
+    fn a_program_that_was_opened_is_sent_as_it_is_only_after_it_passes_the_check_and_the_person_ticks_the_box(
+    ) {
+        let sim = server::sim::LaserSim::new("op", "adm");
+        let s = Scratch::new("server-opened");
+        let good = "G21\nG90\nM4 S0\nG1 X5 S100 F500\nM5\nM2\n";
+        let nc = s.write("a.nc", good);
+        let mut w = Window::new(Lang::En);
+        assert!(w.open_gcode(&nc));
+        assert!(w.check.as_ref().is_some_and(|v| v.passes()));
+        // it passes, but the person has not said that it is sent as it is
+        assert!(!w.send_with(sim_follower(&sim)));
+        assert_eq!(w.status, Status::ServerOpenedRefused);
+        assert!(w.status.is_problem());
+        assert!(sim.seen().is_empty());
+        for l in Lang::ALL {
+            assert!(Status::ServerOpenedRefused.text(l).len() > 20);
+        }
+        // with the box ticked it goes, byte for byte, under its own name
+        w.send_opened_confirmed = true;
+        assert!(w.send_with(sim_follower(&sim)));
+        assert_eq!(w.status, Status::ServerSent("a.nc".to_string()));
+        wait_for(&w, |w| !w.server_active());
+        let bodies = sim.bodies();
+        let made = bodies
+            .iter()
+            .find(|b| b.contains("\"kind\":\"gcode\""))
+            .unwrap();
+        let sent = eh3d_serverclient::Json::parse(made).unwrap();
+        let text = sent
+            .get("request")
+            .and_then(|r| r.get("text"))
+            .and_then(eh3d_serverclient::Json::as_str)
+            .unwrap();
+        assert_eq!(text, good, "nothing is added to a program that was opened");
+        assert_eq!(
+            sent.get("name").and_then(eh3d_serverclient::Json::as_str),
+            Some("a.nc")
+        );
+        // the bytes that are open are not the bytes that were checked: refused
+        w.server_forget();
+        w.program
+            .as_mut()
+            .unwrap()
+            .text
+            .push_str("G1 X6 S100 F500\n");
+        assert!(!w.send_with(sim_follower(&sim)));
+        assert_eq!(w.status, Status::ServerOpenedRefused);
+        // a program that fails the check is not sent whatever the box says
+        let bad = s.write("b.nc", "G21\nG90\nM4 S0\nG1 X5 S5000 F500\nM5\nM2\n");
+        assert!(w.open_gcode(&bad));
+        assert!(!w.send_opened_confirmed, "a new program asks again");
+        w.send_opened_confirmed = true;
+        assert!(w.check.as_ref().is_some_and(|v| !v.passes()));
+        assert!(!w.send_with(sim_follower(&sim)));
+        assert_eq!(w.status, Status::ServerOpenedRefused);
+        assert_eq!(
+            sim.seen()
+                .iter()
+                .filter(|r| r.as_str() == "POST /api/v1/work/jobs")
+                .count(),
+            1,
+            "only the first program reached the server"
+        );
+        // the limit of power of the window is the one of the check: a program over it is not sent either
+        let over = s.write("c.nc", good);
+        let mut limited = Window::new(Lang::En);
+        set(&mut limited, Key::MaxPower, "5");
+        assert!(limited.open_gcode(&over));
+        limited.send_opened_confirmed = true;
+        assert!(!limited.send_with(sim_follower(&sim)));
+        assert_eq!(limited.status, Status::ServerOpenedRefused);
+    }
+
+    #[test]
+    fn the_size_of_the_marks_is_taken_from_the_work_that_is_open() {
+        let (_s, mut w) = ready("marks-from-job");
+        set(&mut w, Key::WidthMm, "20");
+        set(&mut w, Key::MarksWidth, "1");
+        set(&mut w, Key::MarksHeight, "1");
+        assert!(w.marks_from_job());
+        let (width, height) = match w.status {
+            Status::MarksTaken(a, b) => (a, b),
+            ref other => panic!("{other:?}"),
+        };
+        assert_eq!(text_of(&w, Key::MarksWidth), format!("{width}"));
+        assert_eq!(text_of(&w, Key::MarksHeight), format!("{height}"));
+        // the dark half of the picture of 8 x 4 dots, engraved 20 mm wide, is about 10 mm wide and 10 mm high; the marks go round what burns, to a hundredth of a millimetre
+        assert!((7.0..=10.2).contains(&width), "{width}");
+        assert!((7.0..=10.2).contains(&height), "{height}");
+        assert!(
+            ((width * 100.0).round() - width * 100.0).abs() < 1e-6,
+            "{width}"
+        );
+        assert!(w.status.text(Lang::Es).contains("Marcas"));
+        for l in Lang::ALL {
+            assert!(!Msg::MarksFromJob.tr(l).is_empty());
+            assert!(w.status.text(l).contains(&format!("{width}")));
+        }
+        // the marks are then worked out from those boxes
+        set(&mut w, Key::MarksArm, "2");
+        w.set_mode(Mode::Marks);
+        w.settings.machine.bed_mm = None;
+        assert!(w.compute(), "{:?}", w.status);
+        // nothing open: told, and the boxes stay
+        let mut empty = Window::new(Lang::En);
+        set(&mut empty, Key::MarksWidth, "33");
+        assert!(!empty.marks_from_job());
+        assert_eq!(empty.status, Status::NeedImage);
+        assert_eq!(text_of(&empty, Key::MarksWidth), "33");
+    }
+
+    #[test]
+    fn every_value_of_a_material_has_a_label_in_the_eight_languages() {
+        // the editor of materials names each box with its own word and keeps the key of the file beside it
+        let labels = crate::lang::material_labels();
+        assert_eq!(labels.len(), materials::KEYS.len());
+        for (key, msg) in materials::KEYS.iter().zip(labels) {
+            let mut seen: Vec<&str> = Lang::ALL.iter().map(|l| msg.tr(*l)).collect();
+            assert!(seen.iter().all(|t| !t.trim().is_empty()), "{key}");
+            seen.sort_unstable();
+            seen.dedup();
+            assert!(seen.len() >= 4, "{key}: the languages differ: {seen:?}");
+        }
+    }
+
+    #[test]
+    fn a_login_of_the_panel_is_the_token_of_the_job_when_the_settings_give_none() {
+        let mut w = Window::new(Lang::En);
+        w.set_mode(Mode::Text);
+        w.set_words("A".to_string());
+        w.settings.server.server_address = "10.0.0.2:18200".to_string();
+        w.settings.server.server_machine = "laser-1".to_string();
+        if std::env::var(server::TOKEN_ENV).is_ok() {
+            return;
+        }
+        // no token and no login: told what to do, with the panel among the ways
+        assert!(!w.send_to_server());
+        assert!(
+            matches!(&w.status, Status::Failed(e) if e.contains("server_token") && e.contains("log in")),
+            "{:?}",
+            w.status
+        );
+        // with a login in the store the job has a token to send (the address is not reached here: the follower fails on its own)
+        eh3d_serverclient::TokenStore::save(
+            &w.login,
+            &eh3d_serverclient::Secret::new("login-token"),
+        )
+        .unwrap();
+        assert!(w.login.is_logged());
+        let client = server::Client::from_settings(&w.settings.server, Lang::En)
+            .unwrap()
+            .with_login(w.login.clone());
+        assert!(client.has_token() && client.has_login());
     }
 }

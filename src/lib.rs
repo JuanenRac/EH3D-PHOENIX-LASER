@@ -18,6 +18,7 @@ pub mod gcode_out;
 #[cfg(feature = "gui")]
 pub mod gui;
 pub mod lang;
+pub mod linkpane;
 pub mod materials;
 pub mod offset;
 pub mod order;

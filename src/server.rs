@@ -14,6 +14,7 @@
 
 use crate::cut;
 use crate::lang::Lang;
+use crate::linkpane::LoginStore;
 use crate::vconfig::{LayerMode, ServerSettings, Settings};
 use crate::vector::{Drawing, Pt};
 use crate::verify;
@@ -53,6 +54,8 @@ pub struct Client {
     link: sc::Settings,
     machine: String,
     lang: sc::Lang,
+    /// Where the login of the panel of the window is kept, when the connection is to use it.
+    login: Option<LoginStore>,
 }
 
 /// Whether a machine or a job id can go into a path as it is: letters, digits, `_` and `-`, up to 64.
@@ -98,7 +101,19 @@ impl Client {
             link,
             machine: machine.to_string(),
             lang: sc::Lang::from_tag(lang.code()).unwrap_or(sc::Lang::En),
+            login: None,
         })
+    }
+
+    /// The same client keeping its login in this store: a person who logged in through the panel of the window sends the job with that login.
+    pub fn with_login(mut self, store: LoginStore) -> Client {
+        self.login = Some(store);
+        self
+    }
+
+    /// Whether a login of the panel is kept for this client.
+    pub fn has_login(&self) -> bool {
+        self.login.as_ref().is_some_and(LoginStore::is_logged)
     }
 
     /// The settings of the link, with the token that never shows in a `Debug`.
@@ -106,9 +121,9 @@ impl Client {
         &self.link
     }
 
-    /// Whether the link has a token to send.
+    /// Whether the link has a token to send: the token of the program or a login of the panel.
     pub fn has_token(&self) -> bool {
-        !self.link.server_token.is_empty()
+        !self.link.server_token.is_empty() || self.has_login()
     }
 
     /// Whether the token would travel in the clear over a network that is not the person's own.
@@ -118,11 +133,11 @@ impl Client {
 
     /// A connection over plain HTTP to the address of the settings.
     pub fn connect(&self) -> Conn {
-        Conn::over(
-            sc::Client::connect(self.link.clone()),
-            &self.machine,
-            self.lang,
-        )
+        let mut inner = sc::Client::connect(self.link.clone());
+        if let Some(store) = &self.login {
+            inner = inner.with_store(Box::new(store.clone()));
+        }
+        Conn::over(inner, &self.machine, self.lang)
     }
 }
 
