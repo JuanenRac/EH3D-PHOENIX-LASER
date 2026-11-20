@@ -17,7 +17,7 @@
 
 ---
 
-**正直さの確認 - 現在実際に動くもの：** Rust ライブラリとコマンドラインプログラム（`phoenix-laser`）。コンピューター上で動く 647 件のテストがあります。画像をディザリングで点に変換し、動的出力とオーバースキャンで1行ずつ照射するレーザーの G コードを書き、SVG と DXF の図面を読んで輪郭を切断する G コード（内側から先に、ビーム幅、タブ、複数パスを考慮）と図形を線で彫刻する G コードを書き（各レイヤーの設定は1つのファイルに）、出力対送り速度のテスト格子も作ります。ウィンドウ（`--features gui` でビルド）は画像または図面を開き、レーザーの経路を表示し、設定を変更でき、G コードを書き出しますが、画面ではまだ確認していません。実機では試しておらず、実際のファイルの集まりでも確認していません。 また、EH3D サーバーの laser プラグインにプログラムを送り、ジョブを追跡、保留、停止できます（`phoenix-laser server`）。サーバーの代役に対してのみテストされています。
+**正直さの確認 - 現在実際に動くもの：** Rust ライブラリとコマンドラインプログラム（`phoenix-laser`）。コンピューター上で動く 658 件のテストがあります。画像をディザリングで点に変換し、動的出力とオーバースキャンで1行ずつ照射するレーザーの G コードを書き、SVG と DXF の図面を読んで輪郭を切断する G コード（内側から先に、ビーム幅、タブ、複数パスを考慮）と図形を線で彫刻する G コードを書き（各レイヤーの設定は1つのファイルに）、出力対送り速度のテスト格子も作ります。ウィンドウ（`--features gui` でビルド）は画像または図面を開き、レーザーの経路を表示し、設定を変更でき、G コードを書き出しますが、画面ではまだ確認していません。実機では試しておらず、実際のファイルの集まりでも確認していません。 また、EH3D サーバーの laser プラグインにプログラムを送り、ジョブを追跡、保留、停止できます（`phoenix-laser server`）。サーバーの代役に対してのみテストされています。
 
 ---
 
@@ -30,7 +30,7 @@
 |---|---|
 | バージョン | `0.1.3` |
 | 成熟度 | 機能する |
-| テスト | 647 |
+| テスト | 658 |
 | 技術スタック | Rust |
 | 実機での動作 | 未試験：ここにあるものは機械で動かしたことがありません |
 
@@ -46,7 +46,7 @@
 |---|---|---|
 | コア | 🟡 | 画像をディザリングで点に変換し、動的出力とオーバースキャンで1行ずつ照射するレーザーの G コードを書き、SVG と DXF の図面を読んでレイヤーごとに切断または彫刻し（輪郭の順序、ビーム幅、タブ、パス、ハッチ）、出力対送り速度のテスト格子も作ります。コンピューター上で通常入力と壊れた入力を使ってテスト済みで、実際のファイルの集まりでは確認していません。 |
 | コマンドライン | 🟡 | `phoenix-laser`（`engrave`、`calibrate`、`info`、`cut`、`vector`、`layers`）はライブラリと同じ関数を実行して結果を表示します。エラーはすべてメッセージと 0 以外の終了コードで返ります。 |
-| テスト | 🟡 | 647 件のテストが通ります（`cargo test`）。通常ケース、境界ケース、破損入力を含みます。 |
+| テスト | 🟡 | 658 件のテストが通ります（`cargo test`）。通常ケース、境界ケース、破損入力を含みます。 |
 | セキュリティ | 🟡 | 安全な Rust のみ（`forbid(unsafe_code)`）。受け取ったファイルでパニックせず、不正な値は理由付きのエラーになります。独立したレビューはありません。 |
 | ウィンドウ | 🟠 | 作成済み（egui、`--features gui`）：画像または SVG・DXF の図面を開く／ドロップする、レーザーの経路（切断は1色、移動は薄く）を見る、レイヤーの表を編集する、キャリブレーション格子、拡大縮小と移動、時間の見積り、書き出し。ロジックはテスト済みですが、まだビルドも画面での確認もしていません。 |
 | 実機 | 🔴 | 未試験：ここにあるものは機械で実行したことがありません。 |
@@ -179,6 +179,8 @@ phoenix-laser verify PROGRAM.nc [--config FILE] [--profile NAME] [--smax N] [--m
 phoenix-laser preview PROGRAM.nc [OUT.svg] [--accel 1000] [--rapid 6000] [--smax N] [--laser-watts W] [--bed X,Y] [--width-px 900] [--config FILE] [--profile NAME]
 phoenix-laser server status|release [--address HOST:PORT] [--machine ID] [--config FILE] [--profile NAME]
 phoenix-laser server send PROGRAM.nc [--name TEXT] [--follow] | job|pause|resume|stop JOB [--address HOST:PORT] [--machine ID] [--config FILE] [--profile NAME]
+phoenix-laser server vector DRAWING.svg|dxf [--name TEXT] [--follow] [--address HOST:PORT] [--machine ID] [--config FILE] [--profile NAME] [--material NAME] [--power P] [--speed MM/MIN] [--passes N]
+phoenix-laser server test-fire --power-percent P [--seconds S] --confirm-fire [--address HOST:PORT] [--machine ID] [--config FILE] [--profile NAME]
 phoenix-laser [gui] [FILE]                       the window (a build with --features gui); with no arguments it opens
 ```
 
@@ -205,7 +207,7 @@ cargo run --release --features gui -- --shot screen.png examples/plate.svg   # a
 
 ## 🧪 テスト
 
-テストは 647 件あります（`cargo test`、CI では Windows と Linux で実行）。通常ケース、境界ケース、破損入力を確認し、空のファイル、ゴミデータ、途中で切れたファイルでもパニックしません。CI は `cargo fmt --check`、警告をエラーにした `cargo clippy`、`python -I tools/ci_validate.py` も実行します。
+テストは 658 件あります（`cargo test`、CI では Windows と Linux で実行）。通常ケース、境界ケース、破損入力を確認し、空のファイル、ゴミデータ、途中で切れたファイルでもパニックしません。CI は `cargo fmt --check`、警告をエラーにした `cargo clippy`、`python -I tools/ci_validate.py` も実行します。
 
 ## 🏗️ ビルドとリリース
 

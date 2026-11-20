@@ -458,3 +458,169 @@ fn the_settings_of_the_server_are_in_the_example_and_in_the_help() {
     assert!(text.contains("EMERGENCY STOP"), "{text}");
     assert!(text.contains("PHOENIX_LASER_SERVER_TOKEN"), "{text}");
 }
+
+const PLATE_SVG: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" width="40mm" height="30mm" viewBox="0 0 40 30">
+  <rect x="2" y="2" width="30" height="20" fill="none" stroke="#ff0000"/>
+  <path d="M5,25 L20,25" fill="none" stroke="#0000ff"/>
+</svg>"##;
+
+#[test]
+fn a_drawing_is_sent_as_a_vector_job_with_its_layers_and_followed_to_its_end() {
+    let server = Server::start();
+    let w = Work::new(
+        server.port,
+        OPERATOR,
+        "[layer #0000ff]\nmode = engrave\npower = 12\n",
+    );
+    let drawing = w.path("plate.svg");
+    fs::write(&drawing, PLATE_SVG).unwrap();
+    let o = w.run(&[
+        "vector",
+        drawing.to_str().unwrap(),
+        "--follow",
+        "--name",
+        "plate",
+    ]);
+    assert!(o.status.success(), "{} {}", out(&o), err(&o));
+    let text = out(&o);
+    assert!(text.contains("job w-1 on laser-1: running"), "{text}");
+    assert!(text.contains("2 layers, 2 paths"), "{text}");
+    assert!(text.contains("job w-1: done"), "{text}");
+    never_shows_the_token(&o);
+    let bodies = server.sim.bodies();
+    let made = bodies
+        .iter()
+        .find(|b| b.contains("\"kind\":\"vector\""))
+        .expect("the vector job reached the server");
+    assert!(made.contains("\"layer\":\"#ff0000\"") && made.contains("\"layer\":\"#0000ff\""));
+    assert!(made.contains("\"mode\":\"engrave\"") && made.contains("\"power_pct\":12"));
+    // a note says what the server does not apply, on stderr
+    assert!(err(&o).contains("hatch"), "{}", err(&o));
+}
+
+#[test]
+fn a_drawing_over_a_limit_of_the_machine_or_a_machine_that_is_latched_is_not_sent() {
+    let server = Server::start();
+    let w = Work::new(
+        server.port,
+        OPERATOR,
+        "[machine]\nmax_power_percent = 20\n[defaults]\npower = 10\n",
+    );
+    let drawing = w.path("plate.svg");
+    fs::write(&drawing, PLATE_SVG).unwrap();
+    // a layer that asks for more than the machine of the settings allows is refused before anything is read or sent
+    let o = w.run(&["vector", drawing.to_str().unwrap(), "--power", "50"]);
+    assert!(!o.status.success());
+    assert!(err(&o).contains("limit of power"), "{}", err(&o));
+    assert!(server.sim.seen().is_empty(), "{:?}", server.sim.seen());
+    // within the limit it goes, and a latched machine is not sent anything
+    let o = w.run(&["vector", drawing.to_str().unwrap()]);
+    assert!(o.status.success(), "{} {}", out(&o), err(&o));
+    server.sim.latch();
+    let o = w.run(&["vector", drawing.to_str().unwrap()]);
+    assert!(!o.status.success());
+    assert!(err(&o).contains("emergency stop"), "{}", err(&o));
+    // a file that is not a drawing and a missing drawing are told
+    let junk = w.path("junk.txt");
+    fs::write(&junk, "x").unwrap();
+    let o = w.run(&["vector", junk.to_str().unwrap()]);
+    assert!(
+        !o.status.success() && err(&o).contains("SVG or a DXF"),
+        "{}",
+        err(&o)
+    );
+    let o = w.run(&["vector"]);
+    assert!(
+        !o.status.success() && err(&o).contains("a drawing (SVG or DXF)"),
+        "{}",
+        err(&o)
+    );
+}
+
+#[test]
+fn a_test_fire_needs_the_confirmation_and_the_limits_and_the_server_refuses_what_is_over_its_own() {
+    let server = Server::start();
+    let w = Work::new(server.port, OPERATOR, "");
+    // it lights the laser: not without the confirmation, and then the server sees nothing
+    let o = w.run(&["test-fire", "--power-percent", "1"]);
+    assert!(!o.status.success());
+    assert!(err(&o).contains("--confirm-fire"), "{}", err(&o));
+    assert!(server.sim.seen().is_empty());
+    let o = w.run(&["test-fire", "--confirm-fire"]);
+    assert!(
+        !o.status.success() && err(&o).contains("--power-percent"),
+        "{}",
+        err(&o)
+    );
+    // the limits of the command line are checked before anything leaves
+    for args in [
+        &["test-fire", "--power-percent", "0", "--confirm-fire"][..],
+        &["test-fire", "--power-percent", "101", "--confirm-fire"][..],
+        &[
+            "test-fire",
+            "--power-percent",
+            "1",
+            "--seconds",
+            "11",
+            "--confirm-fire",
+        ][..],
+        &["test-fire", "--power-percent", "x", "--confirm-fire"][..],
+    ] {
+        let o = w.run(args);
+        assert!(!o.status.success(), "{args:?}");
+    }
+    assert!(server.sim.fires().is_empty());
+    let o = w.run(&[
+        "test-fire",
+        "--power-percent",
+        "1",
+        "--seconds",
+        "0.2",
+        "--confirm-fire",
+    ]);
+    assert!(o.status.success(), "{} {}", out(&o), err(&o));
+    assert!(
+        out(&o).contains("fired 1 % for 0.2 s on laser-1"),
+        "{}",
+        out(&o)
+    );
+    never_shows_the_token(&o);
+    assert_eq!(server.sim.fires(), vec![(1.0, 0.2)]);
+    // over the limit of a test fire of the machine of the server: it says so and nothing is fired
+    let o = w.run(&["test-fire", "--power-percent", "5", "--confirm-fire"]);
+    assert!(!o.status.success());
+    assert!(err(&o).contains("test fire"), "{}", err(&o));
+    assert_eq!(server.sim.fires().len(), 1);
+    // an emergency stop that holds the machine
+    server.sim.latch();
+    let o = w.run(&["test-fire", "--power-percent", "1", "--confirm-fire"]);
+    assert!(!o.status.success());
+    assert!(
+        err(&o).to_lowercase().contains("emergency stop"),
+        "{}",
+        err(&o)
+    );
+    assert_eq!(server.sim.fires().len(), 1);
+    // the options of a test fire are not for the other commands
+    let o = w.run(&["status", "--confirm-fire"]);
+    assert!(
+        !o.status.success() && err(&o).contains("test-fire"),
+        "{}",
+        err(&o)
+    );
+}
+
+#[test]
+fn the_help_tells_the_vector_and_test_fire_commands() {
+    let help = Command::new(BIN).arg("help").output().unwrap();
+    let text = out(&help);
+    assert!(
+        text.contains("phoenix-laser server vector DRAWING.svg|dxf"),
+        "{text}"
+    );
+    assert!(
+        text.contains("phoenix-laser server test-fire --power-percent P"),
+        "{text}"
+    );
+    assert!(text.contains("--confirm-fire"), "{text}");
+}

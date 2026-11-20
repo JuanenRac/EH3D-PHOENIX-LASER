@@ -12,8 +12,10 @@
 //! The requests are plain HTTP/1.1, one per connection. The token travels in the clear: use it on a network that can be trusted or through a tunnel. Nothing here has run against a real laser,
 //! and the `laser` plugin of the server is a simulator so far.
 
+use crate::cut;
 use crate::lang::Lang;
-use crate::vconfig::{ServerSettings, Settings};
+use crate::vconfig::{LayerMode, ServerSettings, Settings};
+use crate::vector::{Drawing, Pt};
 use crate::verify;
 use eh3d_serverclient as sc;
 use eh3d_serverclient::json::quote;
@@ -36,6 +38,12 @@ pub const APP: &str = "laser";
 pub const MAX_LINES: usize = 200_000;
 /// The most bytes of a program that are sent.
 pub const MAX_SEND_BYTES: usize = 16 << 20;
+/// The most points of all the paths of a vector job.
+pub const MAX_VECTOR_POINTS: usize = 400_000;
+/// The longest test fire this program asks for, in seconds (the machine of the server has a limit of its own, lower).
+pub const TEST_FIRE_MAX_S: f64 = 10.0;
+/// The shortest test fire, in seconds.
+pub const TEST_FIRE_MIN_S: f64 = 0.01;
 /// The variable that can hold the token when the settings file does not (a file is easier to leave lying around than the environment of a session).
 pub const TOKEN_ENV: &str = "PHOENIX_LASER_SERVER_TOKEN";
 
@@ -212,6 +220,240 @@ pub fn job_request(machine: &str, name: &str, gcode: &str) -> String {
     )
 }
 
+/// One path of a vector job: the layer it belongs to, its points in millimetres of the machine and whether it closes on itself.
+#[derive(Debug, Clone, PartialEq)]
+pub struct VectorPath {
+    pub layer: String,
+    pub points: Vec<Pt>,
+    pub closed: bool,
+}
+
+/// What the machine does with the paths of a layer.
+#[derive(Debug, Clone, PartialEq)]
+pub struct VectorOp {
+    pub layer: String,
+    /// `cut` or `engrave`.
+    pub mode: &'static str,
+    pub power_pct: f64,
+    pub speed_mm_min: f64,
+    pub passes: u32,
+}
+
+/// A drawing as the `vector` request of the laser plugin takes it: paths and, for each layer, an operation.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct VectorJob {
+    pub paths: Vec<VectorPath>,
+    pub ops: Vec<VectorOp>,
+}
+
+impl VectorJob {
+    /// The points of all the paths.
+    pub fn points(&self) -> usize {
+        self.paths.iter().map(|p| p.points.len()).sum()
+    }
+}
+
+/// The paths and the operations of a drawing, from the layers of the settings (a layer that is skipped is left out). The kerf, the tabs and the hatch of a layer are not sent: the plugin of the server
+/// makes its own program from the shapes, so a note says so for each layer that asked for one. A drawing with nothing to cut or engrave, a point that is not a number or too many points are errors.
+pub fn vector_job(drawing: &Drawing, s: &Settings) -> Result<(VectorJob, Vec<String>), String> {
+    s.validate()?;
+    let mut job = VectorJob::default();
+    let mut notes = Vec::new();
+    for (layer, points, closed) in cut::placed_paths(drawing, s) {
+        if points.len() < 2 {
+            continue;
+        }
+        if points.iter().any(|p| !p.0.is_finite() || !p.1.is_finite()) {
+            return Err(format!("layer {layer}: a point is not a number"));
+        }
+        if job.points() + points.len() > MAX_VECTOR_POINTS {
+            return Err(format!(
+                "the drawing has more than {MAX_VECTOR_POINTS} points: it is not sent"
+            ));
+        }
+        if !job.ops.iter().any(|o| o.layer == layer) {
+            let p = s.params_for(&layer);
+            let mode = match p.mode {
+                LayerMode::Cut => "cut",
+                LayerMode::Engrave => "engrave",
+                LayerMode::Skip => continue,
+            };
+            if p.kerf_mm != 0.0 || p.tabs > 0 || (mode == "engrave" && p.hatch_spacing_mm > 0.0) {
+                notes.push(format!(
+                    "layer {}: the server makes its own program from the shapes, so the kerf, the tabs and the hatch of the layer are not applied (write the program with `phoenix-laser vector` and send that program to apply them)",
+                    cut::comment_text(&layer)
+                ));
+            }
+            job.ops.push(VectorOp {
+                layer: layer.clone(),
+                mode,
+                power_pct: p.power_percent,
+                speed_mm_min: p.speed_mm_min,
+                passes: p.passes,
+            });
+        }
+        job.paths.push(VectorPath {
+            layer,
+            points,
+            closed,
+        });
+    }
+    if job.paths.is_empty() {
+        return Err(
+            "there is nothing to cut or engrave: every layer is skipped or the drawing is empty"
+                .to_string(),
+        );
+    }
+    Ok((job, notes))
+}
+
+/// What a vector job is checked against before it leaves, as a program is: the limit of power and of speed of the machine of the settings and the bed. A job that does not pass is not sent.
+pub fn check_vector_before_send(job: &VectorJob, s: &Settings) -> Result<(), String> {
+    let m = &s.machine;
+    let mut problems: Vec<String> = Vec::new();
+    for o in &job.ops {
+        if o.power_pct > m.max_power_percent {
+            problems.push(format!(
+                "layer {} asks for {} % and the limit of the machine is {} %",
+                cut::comment_text(&o.layer),
+                o.power_pct,
+                m.max_power_percent
+            ));
+        }
+        if o.speed_mm_min > m.max_speed_mm_min {
+            problems.push(format!(
+                "layer {} asks for {} mm/min and the limit of the machine is {} mm/min",
+                cut::comment_text(&o.layer),
+                o.speed_mm_min,
+                m.max_speed_mm_min
+            ));
+        }
+    }
+    if let Some((bx, by)) = m.bed_mm {
+        let outside = job
+            .paths
+            .iter()
+            .flat_map(|p| p.points.iter())
+            .filter(|q| q.0 < 0.0 || q.1 < 0.0 || q.0 > bx || q.1 > by)
+            .count();
+        if outside > 0 {
+            problems.push(format!(
+                "{outside} points are outside of the bed ({bx} x {by} mm)"
+            ));
+        }
+    }
+    if job.points() > MAX_VECTOR_POINTS {
+        problems.push(format!("more than {MAX_VECTOR_POINTS} points"));
+    }
+    if problems.is_empty() {
+        Ok(())
+    } else {
+        Err(format!(
+            "the drawing does not pass the check and is not sent: {}",
+            problems.join("; ")
+        ))
+    }
+}
+
+/// A number as JSON writes it: the shortest text that reads back as the same number, with no exponent.
+fn number_text(v: f64) -> String {
+    format!("{v}")
+}
+
+/// The request that makes a `vector` job on a machine of the `laser` plugin.
+pub fn vector_request(machine: &str, name: &str, job: &VectorJob) -> String {
+    let paths: Vec<String> = job
+        .paths
+        .iter()
+        .map(|p| {
+            let points: Vec<String> = p
+                .points
+                .iter()
+                .map(|q| format!("[{},{}]", number_text(q.0), number_text(q.1)))
+                .collect();
+            format!(
+                "{{\"layer\":{},\"points\":[{}],\"closed\":{}}}",
+                quote(&p.layer),
+                points.join(","),
+                p.closed
+            )
+        })
+        .collect();
+    let ops: Vec<String> = job
+        .ops
+        .iter()
+        .map(|o| {
+            format!(
+                "{{\"layer\":{},\"mode\":{},\"power_pct\":{},\"speed\":{},\"passes\":{}}}",
+                quote(&o.layer),
+                quote(o.mode),
+                number_text(o.power_pct),
+                number_text(o.speed_mm_min),
+                o.passes
+            )
+        })
+        .collect();
+    format!(
+        "{{\"machine\":{},\"name\":{},\"app\":{},\"request\":{{\"kind\":\"vector\",\"paths\":[{}],\"operations\":[{}]}}}}",
+        quote(machine),
+        quote(name),
+        quote(APP),
+        paths.join(","),
+        ops.join(",")
+    )
+}
+
+/// What a test fire is checked against before it leaves: a power that is more than 0 and up to the limit of the machine of the settings, and a time from [`TEST_FIRE_MIN_S`] to
+/// [`TEST_FIRE_MAX_S`] seconds. The server holds the fire to the limits of its own machine as well (a lower one, by default).
+pub fn check_test_fire(power_pct: f64, seconds: f64, s: &Settings) -> Result<(), String> {
+    if !power_pct.is_finite() || power_pct <= 0.0 || power_pct > 100.0 {
+        return Err("the power of a test fire is a number above 0 and up to 100 percent".into());
+    }
+    if power_pct > s.machine.max_power_percent {
+        return Err(format!(
+            "{power_pct} % is over the limit of the machine of the settings ({} %): nothing is fired",
+            s.machine.max_power_percent
+        ));
+    }
+    if !seconds.is_finite() || !(TEST_FIRE_MIN_S..=TEST_FIRE_MAX_S).contains(&seconds) {
+        return Err(format!(
+            "the time of a test fire is a number from {TEST_FIRE_MIN_S} to {TEST_FIRE_MAX_S} seconds"
+        ));
+    }
+    Ok(())
+}
+
+/// The body of the request that fires the laser for a moment (`laser/test-fire`).
+pub fn test_fire_request(power_pct: f64, seconds: f64) -> String {
+    format!(
+        "{{\"power_pct\":{},\"seconds\":{}}}",
+        number_text(power_pct),
+        number_text(seconds)
+    )
+}
+
+/// What the server says of a test fire.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct FireInfo {
+    pub fired: bool,
+    pub power_pct: f64,
+    pub seconds: f64,
+}
+
+impl FireInfo {
+    pub fn from_json(v: &Json) -> FireInfo {
+        let num = |k: &str| match v.get(k) {
+            Some(Json::Num(n)) => *n,
+            _ => 0.0,
+        };
+        FireInfo {
+            fired: v.get("fired").and_then(Json::as_bool).unwrap_or(false),
+            power_pct: num("power_pct"),
+            seconds: num("seconds"),
+        }
+    }
+}
+
 /// What a refusal or a failure says to the person, in their language: the text of the code of the server, followed by the detail the server gave when the text does not already hold it.
 pub fn error_message(e: &sc::ClientError, lang: sc::Lang) -> String {
     let text = e.text(lang);
@@ -362,14 +604,24 @@ impl Conn {
     /// Makes the job on the machine and starts it; the answer is the job. A machine that an emergency stop holds is not sent a program (it would refuse it), and a job that the server kept but
     /// could not start is not left lying ready on it.
     pub fn send(&mut self, name: &str, gcode: &str) -> Result<JobInfo, Failure> {
+        let body = job_request(&self.machine, name, gcode);
+        self.send_body(&body)
+    }
+
+    /// As `send`, with a drawing as a `vector` job: the plugin of the server makes the program from the paths and holds it to the same limits as any other.
+    pub fn send_vector(&mut self, name: &str, job: &VectorJob) -> Result<JobInfo, Failure> {
+        let body = vector_request(&self.machine, name, job);
+        self.send_body(&body)
+    }
+
+    fn send_body(&mut self, body: &str) -> Result<JobInfo, Failure> {
         let machine = self.machine()?;
         if machine.latched {
             return Err(Failure::plain(
                 "an emergency stop holds the machine: an administrator has to release it before a program is sent",
             ));
         }
-        let body = job_request(&self.machine, name, gcode);
-        let made = self.json("POST", "/api/v1/work/jobs", Some(&body))?;
+        let made = self.json("POST", "/api/v1/work/jobs", Some(body))?;
         let id = made
             .get("id")
             .and_then(Json::as_str)
@@ -382,6 +634,18 @@ impl Conn {
                 Err(why)
             }
         }
+    }
+
+    /// Fires the laser for a moment at a low power, with no job (`laser/test-fire`: to find the focus). The server refuses it while a job runs, while an emergency stop holds the machine, with the
+    /// enclosure open or the air assist off, and above its own limit of a test fire. It is never sent twice.
+    pub fn test_fire(&mut self, power_pct: f64, seconds: f64) -> Result<FireInfo, Failure> {
+        let path = format!("{}/laser/test-fire", self.machine_path()?);
+        let body = test_fire_request(power_pct, seconds);
+        Ok(FireInfo::from_json(&self.json(
+            "POST",
+            &path,
+            Some(&body),
+        )?))
     }
 
     pub fn job(&mut self, id: &str) -> Result<JobInfo, Failure> {
@@ -619,6 +883,7 @@ pub mod sim {
         jobs: Vec<SimJob>,
         seen: Vec<String>,
         bodies: Vec<String>,
+        fires: Vec<(f64, f64)>,
     }
 
     /// The server in memory. Clones share the same state, so a test keeps one to look at and gives the other to the client.
@@ -659,6 +924,7 @@ pub mod sim {
                 jobs: Vec::new(),
                 seen: Vec::new(),
                 bodies: Vec::new(),
+                fires: Vec::new(),
             })))
         }
 
@@ -674,6 +940,11 @@ pub mod sim {
         /// The bodies of the requests the server saw.
         pub fn bodies(&self) -> Vec<String> {
             self.state().bodies.clone()
+        }
+
+        /// The test fires the server did, as (percent of power, seconds).
+        pub fn fires(&self) -> Vec<(f64, f64)> {
+            self.state().fires.clone()
         }
 
         /// Whether an emergency stop holds the machine.
@@ -736,6 +1007,44 @@ pub mod sim {
                     format!("{{\"released\":{was},\"estop_latched\":false}}"),
                 );
             }
+            if method == "POST" && path == format!("{own}/laser/test-fire") {
+                let number = |k: &str| match body.and_then(|b| Json::parse(b).ok()) {
+                    Some(v) => match v.get(k) {
+                        Some(Json::Num(n)) => Some(*n),
+                        _ => None,
+                    },
+                    None => None,
+                };
+                if st.latched {
+                    return refusal(409, "laser_estop_latched", "the machine is latched");
+                }
+                if st
+                    .jobs
+                    .iter()
+                    .any(|j| matches!(j.state, "running" | "paused"))
+                {
+                    return refusal(409, "machine_busy", "a job runs");
+                }
+                let (Some(pct), seconds) = (number("power_pct"), number("seconds").unwrap_or(0.05))
+                else {
+                    return refusal(422, "bad_plugin_request", "power_pct is a number");
+                };
+                if !(pct > 0.0 && pct <= 100.0) || !(0.01..=1.0).contains(&seconds) {
+                    return refusal(422, "bad_plugin_request", "out of range");
+                }
+                if pct > 1.0 {
+                    return refusal(
+                        422,
+                        "test_fire_refused",
+                        "a test fire may use 1 percent at the most (test_fire_max_pct)",
+                    );
+                }
+                st.fires.push((pct, seconds));
+                return answer(
+                    200,
+                    format!("{{\"fired\":true,\"power_pct\":{pct},\"seconds\":{seconds}}}"),
+                );
+            }
             if method == "POST" && path == "/api/v1/work/jobs" {
                 let Some(request) = body.and_then(|b| Json::parse(b).ok()) else {
                     return refusal(400, "bad_request", "the body is not JSON");
@@ -746,25 +1055,59 @@ pub mod sim {
                 if st.latched {
                     return refusal(409, "laser_estop_latched", "the machine is latched");
                 }
-                let text = request
-                    .get("request")
-                    .and_then(|r| r.get("text"))
-                    .and_then(Json::as_str)
-                    .unwrap_or("");
-                if text.is_empty() {
-                    return refusal(
-                        400,
-                        "bad_request",
-                        "a gcode request has the program in `text`",
-                    );
-                }
+                let inner = request.get("request");
+                let total =
+                    if inner.and_then(|r| r.get("kind")).and_then(Json::as_str) == Some("vector") {
+                        let list = |k: &str| {
+                            inner
+                                .and_then(|r| r.get(k))
+                                .and_then(Json::as_array)
+                                .unwrap_or_default()
+                        };
+                        let (paths, ops) = (list("paths"), list("operations"));
+                        let covered = paths.iter().all(|p| {
+                            let layer = p.get("layer").and_then(Json::as_str);
+                            layer.is_some()
+                                && ops
+                                    .iter()
+                                    .any(|o| o.get("layer").and_then(Json::as_str) == layer)
+                        });
+                        if paths.is_empty() || ops.is_empty() || !covered {
+                            return refusal(
+                                422,
+                                "bad_operation",
+                                "every path has an operation for its layer",
+                            );
+                        }
+                        paths
+                            .iter()
+                            .map(|p| {
+                                p.get("points")
+                                    .and_then(Json::as_array)
+                                    .map_or(0, <[Json]>::len) as u64
+                            })
+                            .sum()
+                    } else {
+                        let text = inner
+                            .and_then(|r| r.get("text"))
+                            .and_then(Json::as_str)
+                            .unwrap_or("");
+                        if text.is_empty() {
+                            return refusal(
+                                400,
+                                "bad_request",
+                                "a gcode request has the program in `text`",
+                            );
+                        }
+                        text.lines().count() as u64
+                    };
                 let id = format!("w-{}", st.next);
                 st.next += 1;
                 let job = SimJob {
                     id,
                     state: "queued",
                     done: 0,
-                    total: text.lines().count() as u64,
+                    total,
                 };
                 let json = job_json(&machine, &job);
                 st.jobs.push(job);
@@ -1285,5 +1628,249 @@ mod tests {
             .unwrap_err();
         assert!(e.text.contains("parada de emergencia"), "{}", e.text);
         assert!(!e.needs_login);
+    }
+
+    const PLATE: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" width="40mm" height="30mm" viewBox="0 0 40 30">
+  <rect x="2" y="2" width="30" height="20" fill="none" stroke="#ff0000"/>
+  <path d="M5,25 L20,25" fill="none" stroke="#0000ff"/>
+  <path d="M1,1 L2,2" fill="none" stroke="#00ff00"/>
+</svg>"##;
+
+    fn plate_settings() -> Settings {
+        let mut s = Settings::default();
+        s.defaults.power_percent = 30.0;
+        s.defaults.speed_mm_min = 900.0;
+        s.layers.push((
+            "#0000ff".to_string(),
+            crate::vconfig::LayerParams {
+                mode: LayerMode::Engrave,
+                power_percent: 12.0,
+                speed_mm_min: 3000.0,
+                passes: 2,
+                ..crate::vconfig::LayerParams::default()
+            },
+        ));
+        s.layers.push((
+            "#00ff00".to_string(),
+            crate::vconfig::LayerParams {
+                mode: LayerMode::Skip,
+                ..crate::vconfig::LayerParams::default()
+            },
+        ));
+        s
+    }
+
+    fn plate() -> Drawing {
+        crate::svg::read_svg(PLATE.as_bytes(), &crate::vector::ReadOptions::default()).unwrap()
+    }
+
+    #[test]
+    fn a_drawing_becomes_a_vector_job_with_one_operation_for_each_layer_and_no_skipped_layer() {
+        let (job, notes) = vector_job(&plate(), &plate_settings()).unwrap();
+        // the engraved layer would be filled with lines by the program of this tool, and the server does not do that
+        assert_eq!(notes.len(), 1, "{notes:?}");
+        assert!(notes[0].contains("#0000ff") && notes[0].contains("hatch"));
+        let layers: Vec<&str> = job.ops.iter().map(|o| o.layer.as_str()).collect();
+        assert_eq!(layers.len(), 2, "{layers:?}");
+        assert!(layers.contains(&"#ff0000") && layers.contains(&"#0000ff"));
+        let blue = job.ops.iter().find(|o| o.layer == "#0000ff").unwrap();
+        assert_eq!(
+            (blue.mode, blue.power_pct, blue.speed_mm_min, blue.passes),
+            ("engrave", 12.0, 3000.0, 2)
+        );
+        let red = job.ops.iter().find(|o| o.layer == "#ff0000").unwrap();
+        assert_eq!((red.mode, red.power_pct, red.passes), ("cut", 30.0, 1));
+        // the rectangle is a closed path of four corners; the line is open
+        let rect = job.paths.iter().find(|p| p.layer == "#ff0000").unwrap();
+        assert!(rect.closed && rect.points.len() >= 4);
+        let line = job.paths.iter().find(|p| p.layer == "#0000ff").unwrap();
+        assert!(!line.closed && line.points.len() == 2);
+        // the machine has the y axis up and the lowest point of what is burnt at the origin: the line, the lowest, is at 0 and the rectangle starts 3 mm above it
+        assert!((line.points[0].1 - 0.0).abs() < 1e-6, "{:?}", line.points);
+        let low = rect.points.iter().map(|p| p.1).fold(f64::MAX, f64::min);
+        assert!((low - 3.0).abs() < 1e-6, "{low}");
+        assert!(!job.paths.iter().any(|p| p.layer == "#00ff00"));
+        assert!(check_vector_before_send(&job, &plate_settings()).is_ok());
+    }
+
+    #[test]
+    fn a_drawing_with_nothing_to_burn_or_a_layer_with_a_kerf_is_told() {
+        let mut all_skipped = plate_settings();
+        all_skipped.defaults.mode = LayerMode::Skip;
+        all_skipped.layers.clear();
+        let e = vector_job(&plate(), &all_skipped).unwrap_err();
+        assert!(e.contains("nothing to cut or engrave"), "{e}");
+        let mut kerf = plate_settings();
+        kerf.defaults.kerf_mm = 0.2;
+        kerf.defaults.tabs = 2;
+        let (_, notes) = vector_job(&plate(), &kerf).unwrap();
+        assert!(
+            notes
+                .iter()
+                .any(|n| n.contains("#ff0000") && n.contains("kerf")),
+            "{notes:?}"
+        );
+    }
+
+    #[test]
+    fn a_vector_job_is_checked_against_the_limits_of_the_machine_before_it_leaves() {
+        let (job, _) = vector_job(&plate(), &plate_settings()).unwrap();
+        let mut weak = plate_settings();
+        weak.machine.max_power_percent = 20.0;
+        let e = check_vector_before_send(&job, &weak).unwrap_err();
+        assert!(
+            e.contains("#ff0000") && e.contains("30 %") && e.contains("not sent"),
+            "{e}"
+        );
+        let mut slow = plate_settings();
+        slow.machine.max_speed_mm_min = 1000.0;
+        let e = check_vector_before_send(&job, &slow).unwrap_err();
+        assert!(e.contains("3000 mm/min"), "{e}");
+        let mut small = plate_settings();
+        small.machine.bed_mm = Some((10.0, 10.0));
+        let e = check_vector_before_send(&job, &small).unwrap_err();
+        assert!(e.contains("outside of the bed"), "{e}");
+        let mut big = job.clone();
+        big.paths[0].points = vec![(0.0, 0.0); MAX_VECTOR_POINTS + 1];
+        assert!(check_vector_before_send(&big, &plate_settings()).is_err());
+    }
+
+    #[test]
+    fn the_vector_request_names_the_machine_the_layers_and_the_points_and_escapes_the_names() {
+        let job = VectorJob {
+            paths: vec![VectorPath {
+                layer: "a \"b\"".to_string(),
+                points: vec![(0.0, 0.0), (10.5, -2.25), (3.0, 4.0)],
+                closed: true,
+            }],
+            ops: vec![VectorOp {
+                layer: "a \"b\"".to_string(),
+                mode: "cut",
+                power_pct: 40.0,
+                speed_mm_min: 600.0,
+                passes: 3,
+            }],
+        };
+        let v = Json::parse(&vector_request("laser-1", "plate", &job)).expect("JSON");
+        assert_eq!(v.get("machine").and_then(Json::as_str), Some("laser-1"));
+        assert_eq!(v.get("app").and_then(Json::as_str), Some(APP));
+        let r = v.get("request").unwrap();
+        assert_eq!(r.get("kind").and_then(Json::as_str), Some("vector"));
+        let p = &r.get("paths").and_then(Json::as_array).unwrap()[0];
+        assert_eq!(p.get("layer").and_then(Json::as_str), Some("a \"b\""));
+        assert_eq!(p.get("closed").and_then(Json::as_bool), Some(true));
+        let pts = p.get("points").and_then(Json::as_array).unwrap();
+        assert_eq!(pts.len(), 3);
+        assert_eq!(
+            pts[1].as_array().unwrap(),
+            [Json::Num(10.5), Json::Num(-2.25)]
+        );
+        let o = &r.get("operations").and_then(Json::as_array).unwrap()[0];
+        assert_eq!(o.get("mode").and_then(Json::as_str), Some("cut"));
+        assert_eq!(o.get("passes").and_then(Json::as_u64), Some(3));
+        assert_eq!(o.get("speed"), Some(&Json::Num(600.0)));
+    }
+
+    #[test]
+    fn a_vector_job_is_sent_followed_and_refused_when_the_machine_is_latched() {
+        let sim = LaserSim::new("op", "adm");
+        let (job, _) = vector_job(&plate(), &plate_settings()).unwrap();
+        let mut c = conn(&sim, "op");
+        let started = c.send_vector("plate", &job).unwrap();
+        assert_eq!(started.state, "running");
+        assert_eq!(started.total, job.points() as u64);
+        let mut j = started;
+        for _ in 0..4 {
+            if j.finished() {
+                break;
+            }
+            j = c.job(&j.id).unwrap();
+        }
+        assert_eq!(j.state, "done");
+        // the body that left holds the layers
+        let body = sim
+            .bodies()
+            .into_iter()
+            .find(|b| b.contains("\"vector\""))
+            .unwrap();
+        assert!(body.contains("#ff0000") && body.contains("#0000ff"));
+        // a job whose layer has no operation is refused by the server in words
+        let mut bad = job.clone();
+        bad.ops.truncate(1);
+        let e = c.send_vector("bad", &bad).unwrap_err();
+        assert!(!e.text.is_empty() && !e.needs_login, "{}", e.text);
+        // a latched machine is not sent anything
+        sim.latch();
+        let before = sim.seen().len();
+        let e = c.send_vector("again", &job).unwrap_err();
+        assert!(e.text.contains("emergency stop"), "{}", e.text);
+        assert_eq!(sim.seen().len(), before + 1, "only the machine was asked");
+    }
+
+    #[test]
+    fn a_test_fire_is_checked_sent_once_and_refused_by_the_server_when_it_is_over_its_limit() {
+        let s = Settings::default();
+        assert!(check_test_fire(1.0, 0.1, &s).is_ok());
+        for (p, secs) in [
+            (0.0, 0.1),
+            (-1.0, 0.1),
+            (101.0, 0.1),
+            (f64::NAN, 0.1),
+            (1.0, 0.0),
+            (1.0, 0.005),
+            (1.0, 10.5),
+            (1.0, f64::INFINITY),
+        ] {
+            assert!(check_test_fire(p, secs, &s).is_err(), "{p} {secs}");
+        }
+        let mut weak = Settings::default();
+        weak.machine.max_power_percent = 5.0;
+        let e = check_test_fire(6.0, 0.1, &weak).unwrap_err();
+        assert!(e.contains("nothing is fired"), "{e}");
+        let v = Json::parse(&test_fire_request(1.5, 0.25)).unwrap();
+        assert_eq!(v.get("power_pct"), Some(&Json::Num(1.5)));
+        assert_eq!(v.get("seconds"), Some(&Json::Num(0.25)));
+        let sim = LaserSim::new("op", "adm");
+        let mut c = conn(&sim, "op");
+        let fired = c.test_fire(1.0, 0.2).unwrap();
+        assert_eq!(
+            fired,
+            FireInfo {
+                fired: true,
+                power_pct: 1.0,
+                seconds: 0.2
+            }
+        );
+        assert_eq!(sim.fires(), vec![(1.0, 0.2)]);
+        // above the limit of the machine of the server: refused in words, nothing fired
+        let e = c.test_fire(5.0, 0.2).unwrap_err();
+        assert!(!e.text.is_empty() && !e.needs_login);
+        assert_eq!(sim.fires().len(), 1);
+        // a latched machine refuses it, and so does a job that runs
+        sim.latch();
+        assert!(c
+            .test_fire(1.0, 0.2)
+            .unwrap_err()
+            .text
+            .contains("emergency stop"));
+        assert_eq!(sim.fires().len(), 1);
+        // the request is never repeated: one POST for each call
+        let posts = sim
+            .seen()
+            .iter()
+            .filter(|r| r.ends_with("/laser/test-fire"))
+            .count();
+        assert_eq!(posts, 3);
+    }
+
+    #[test]
+    fn a_test_fire_is_refused_while_a_job_runs() {
+        let sim = LaserSim::new("op", "adm");
+        let mut c = conn(&sim, "op");
+        let job = c.send("x", PROGRAM).unwrap();
+        assert_eq!(job.state, "running");
+        let e = c.test_fire(1.0, 0.1).unwrap_err();
+        assert!(!e.text.is_empty());
+        assert!(sim.fires().is_empty());
     }
 }

@@ -129,6 +129,15 @@ fn place(drawing: &Drawing, s: &Settings) -> Vec<(String, Contour)> {
         .collect()
 }
 
+/// The shapes of the layers that are not skipped as a list of paths for the server (`layer`, the points in millimetres of the machine with the y axis up, and whether the path is closed), placed
+/// as the settings say. The kerf, the tabs and the hatch of the settings are not applied: the server makes its own program from the paths.
+pub fn placed_paths(drawing: &Drawing, s: &Settings) -> Vec<(String, Vec<Pt>, bool)> {
+    place(drawing, s)
+        .into_iter()
+        .map(|(key, c)| (key, c.pts, c.closed))
+        .collect()
+}
+
 // ---------------------------------------------------------------- tabs
 
 /// The point at the length `t` along a path (a closed ring also goes back to its first point) and the index of the segment it is on.
