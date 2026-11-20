@@ -2,7 +2,7 @@
   "repo": "EH3D-PHOENIX-LASER",
   "ecosystem": "eh3d",
   "tagline": "An image or a drawing, dots or contours, and the G-code of a laser.",
-  "description": "EH3D-PHOENIX-LASER is a Rust library and command line that turn an image into dots by dithering and write the G-code of a laser that burns line by line with dynamic power, and that read SVG and DXF drawings and write the G-code that cuts their contours and engraves their shapes, layer by layer, with the settings of each layer in a file. Built with the gui feature it also has a window (egui) that opens a picture or a drawing, shows the path of the laser, sets the power and the feed and exports the G-code. It also burns a name or a mark with a font of strokes of its own and some data as a QR code or a barcode.",
+  "description": "EH3D-PHOENIX-LASER is a Rust library and command line that turn an image into dots by dithering and write the G-code of a laser that burns line by line with dynamic power, and that read SVG and DXF drawings and write the G-code that cuts their contours and engraves their shapes, layer by layer, with the settings of each layer in a file. Built with the gui feature it also has a window (egui) that opens a picture or a drawing, shows the path of the laser, sets the power and the feed and exports the G-code. It also burns a name or a mark with a font of strokes of its own and some data as a QR code or a barcode, and it can send a program to the laser machine of the EH3D server.",
   "columns": [
     "WHO USES IT",
     "THIS REPOSITORY",
@@ -33,27 +33,16 @@
       "id": "image",
       "column": 1,
       "level": "tested",
-      "title": "engrave a picture",
+      "title": "engrave and calibrate",
       "lines": [
-        "PNG and PGM to grey levels,",
-        "dots, and G-code with dynamic",
-        "power and overscan"
+        "PNG and PGM to dots, G-code",
+        "with dynamic power and",
+        "overscan, and a power grid"
       ],
       "code": [
         "src/lib.rs::pub use eh3d_image as image",
         "src/dither.rs::pub fn dither",
-        "src/raster.rs::pub fn engrave"
-      ]
-    },
-    {
-      "id": "cal",
-      "column": 1,
-      "level": "tested",
-      "title": "calibrate",
-      "lines": [
-        "power against feed grid"
-      ],
-      "code": [
+        "src/raster.rs::pub fn engrave",
         "src/calibrate.rs::pub fn grid"
       ]
     },
@@ -105,6 +94,21 @@
       ]
     },
     {
+      "id": "server",
+      "column": 1,
+      "level": "tested",
+      "title": "send to the server",
+      "lines": [
+        "a checked program goes to the",
+        "laser machine as a job, followed,",
+        "held and stopped (emergency stop)"
+      ],
+      "code": [
+        "src/server.rs::pub fn check_before_send",
+        "src/server.rs::pub struct Conn"
+      ]
+    },
+    {
       "id": "window",
       "column": 1,
       "level": "untested",
@@ -127,11 +131,13 @@
       "level": "external",
       "title": "eh3d-image",
       "lines": [
-        "the PNG and PGM reader of",
+        "the PNG and PGM reader and the",
+        "client of the server, of",
         "EH3D-COMMON (a sibling)"
       ],
       "code": [
-        "Cargo.toml::eh3d-image"
+        "Cargo.toml::eh3d-image",
+        "Cargo.toml::eh3d-serverclient"
       ]
     },
     {
@@ -142,6 +148,16 @@
       "lines": [
         "runs the file; nothing here",
         "has run on one"
+      ]
+    },
+    {
+      "id": "ehserver",
+      "column": 2,
+      "level": "external",
+      "title": "EH3D-SERVER",
+      "lines": [
+        "its laser plugin (a simulator)",
+        "holds the limits and the stop"
       ]
     }
   ],
@@ -154,7 +170,7 @@
     },
     {
       "from": "person",
-      "to": "cal",
+      "to": "image",
       "level": "tested"
     },
     {
@@ -198,6 +214,22 @@
     {
       "from": "text",
       "to": "laser",
+      "level": "tested"
+    },
+    {
+      "from": "person",
+      "to": "server",
+      "label": "server",
+      "level": "tested"
+    },
+    {
+      "from": "server",
+      "to": "common",
+      "level": "tested"
+    },
+    {
+      "from": "server",
+      "to": "ehserver",
       "level": "tested"
     }
   ],

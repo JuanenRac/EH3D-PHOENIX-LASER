@@ -25,6 +25,7 @@ pub mod preview;
 pub mod qr;
 pub mod raster;
 pub mod safety;
+pub mod server;
 pub mod shot;
 pub mod svg;
 pub mod text;

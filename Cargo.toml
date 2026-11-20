@@ -26,6 +26,8 @@ gui = ["dep:eframe", "dep:png"]
 eh3d-image = { version = ">=0.0.1", path = "../EH3D-COMMON/crates/image" }
 # the one way a number is written in G-code and the standard header of a G-code file, shared with the other programs that write G-code
 eh3d-parser-gcode = { version = ">=0.0.7", path = "../EH3D-CORE-LIBS/crates/eh3d-parser-gcode" }
+# the one client every program of the suite uses to talk to the EH3D server: login, retries, errors by code in eight languages, a token that is never printed
+eh3d-serverclient = { version = ">=0.0.1", path = "../EH3D-COMMON/crates/serverclient" }
 
 # the window
 eframe = { version = "0.37.0", default-features = false, features = ["glow", "default_fonts"], optional = true }

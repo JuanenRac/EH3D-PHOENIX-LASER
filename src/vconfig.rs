@@ -748,6 +748,97 @@ impl MarksSettings {
     }
 }
 
+/// The EH3D server this program can send programs to (`[server]`): its address, the token of this program, the id of its laser machine and the limits of the link, with the keys and ranges every
+/// program of the suite reads. Nothing is sent while the address is empty. The token is kept as text in the settings file (or in the variable `PHOENIX_LASER_SERVER_TOKEN`) and never shows in a
+/// `Debug` or in a message.
+#[derive(Clone, PartialEq, Eq)]
+pub struct ServerSettings {
+    /// `host:port` of the server; empty means no server.
+    pub server_address: String,
+    pub server_token: String,
+    /// The id of the laser machine on the server: letters, digits, `_` and `-`, up to 64.
+    pub server_machine: String,
+    /// The seconds one try may take (1 to 120).
+    pub server_timeout_s: u64,
+    /// The tries more after a failure on the network (0 to 5); a request that makes something is never sent twice.
+    pub server_retries: u32,
+    /// Look for the server on the local network. Off by default: the program asks nothing of the network unless the person turns it on, and it has no resolver of its own yet.
+    pub server_mdns: bool,
+}
+
+impl Default for ServerSettings {
+    fn default() -> Self {
+        ServerSettings {
+            server_address: String::new(),
+            server_token: String::new(),
+            server_machine: String::new(),
+            server_timeout_s: 15,
+            server_retries: 2,
+            server_mdns: false,
+        }
+    }
+}
+
+impl std::fmt::Debug for ServerSettings {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ServerSettings")
+            .field("server_address", &self.server_address)
+            .field(
+                "server_token",
+                &if self.server_token.is_empty() {
+                    ""
+                } else {
+                    "***"
+                },
+            )
+            .field("server_machine", &self.server_machine)
+            .field("server_timeout_s", &self.server_timeout_s)
+            .field("server_retries", &self.server_retries)
+            .field("server_mdns", &self.server_mdns)
+            .finish()
+    }
+}
+
+impl ServerSettings {
+    /// Is there a server to talk to?
+    pub fn is_configured(&self) -> bool {
+        !self.server_address.trim().is_empty()
+    }
+
+    pub fn validate(&self) -> Result<(), String> {
+        let bad = |c: char| c.is_whitespace() || c.is_control();
+        if self.server_address.chars().any(bad) {
+            return Err("server_address must not hold a space or a control character".to_string());
+        }
+        if self.server_token.chars().any(bad) {
+            return Err("server_token must not hold a space or a control character".to_string());
+        }
+        let m = &self.server_machine;
+        if !m.is_empty()
+            && !((1..=64).contains(&m.len())
+                && m.bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-'))
+        {
+            return Err(format!(
+                "server_machine is '{m}': it must be letters, digits, _ and -, up to 64"
+            ));
+        }
+        if !(1..=120).contains(&self.server_timeout_s) {
+            return Err(format!(
+                "server_timeout_s is {}: it must be from 1 to 120",
+                self.server_timeout_s
+            ));
+        }
+        if self.server_retries > 5 {
+            return Err(format!(
+                "server_retries is {}: it must be from 0 to 5",
+                self.server_retries
+            ));
+        }
+        Ok(())
+    }
+}
+
 /// Where the rows of a text of several lines start (`phoenix-laser text --align`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TextAlign {
@@ -992,6 +1083,8 @@ pub struct Settings {
     pub barcode: BarcodeSettings,
     /// The positioning marks (`phoenix-laser marks`).
     pub marks: MarksSettings,
+    /// The EH3D server the programs can be sent to (`phoenix-laser server`).
+    pub server: ServerSettings,
     /// The tone curve of a picture before it becomes dots (`phoenix-laser engrave` and the window).
     pub tone: Tone,
     pub defaults: LayerParams,
@@ -1027,6 +1120,7 @@ impl Default for Settings {
             qr: QrSettings::default(),
             barcode: BarcodeSettings::default(),
             marks: MarksSettings::default(),
+            server: ServerSettings::default(),
             tone: Tone::default(),
             defaults: LayerParams::default(),
             layers: Vec::new(),
@@ -1130,6 +1224,7 @@ impl Settings {
         self.qr.validate()?;
         self.barcode.validate()?;
         self.marks.validate()?;
+        self.server.validate()?;
         self.tone.validate()?;
         self.defaults.validate(m.max_passes)?;
         if self.defaults.mode != LayerMode::Skip {
@@ -1370,6 +1465,15 @@ fn set_global(s: &mut Settings, section: &str, key: &str, value: &str) -> Result
         }
         ("barcode", "max_minutes") => s.barcode.max_minutes = number(value)?,
         ("barcode", "mirror") => s.barcode.mirror = switch(value)?,
+        ("server", "server_address") => s.server.server_address = value.trim().to_string(),
+        ("server", "server_token") => s.server.server_token = value.trim().to_string(),
+        ("server", "server_machine") => s.server.server_machine = value.trim().to_string(),
+        ("server", "server_timeout_s") => s.server.server_timeout_s = whole(value)?,
+        ("server", "server_retries") => {
+            s.server.server_retries = u32::try_from(whole(value)?)
+                .map_err(|_| "server_retries is too large".to_string())?
+        }
+        ("server", "server_mdns") => s.server.server_mdns = switch(value)?,
         ("text", "max_minutes") => s.text.max_minutes = number(value)?,
         ("text", "mirror") => s.text.mirror = switch(value)?,
         ("text", "align") => {
@@ -1448,7 +1552,7 @@ pub fn parse(text: &str) -> Result<Settings, String> {
             let (word, rest) = head.split_once(char::is_whitespace).unwrap_or((head, ""));
             let word = word.to_ascii_lowercase();
             section = match word.as_str() {
-                "limits" | "read" | "order" | "offset" | "hatch" | "machine" | "frame" | "focus" | "trace" | "tone" | "verify" | "calibrate" | "text" | "qr" | "barcode" | "marks" | "defaults" if rest.trim().is_empty() => word,
+                "limits" | "read" | "order" | "offset" | "hatch" | "machine" | "frame" | "focus" | "trace" | "tone" | "verify" | "calibrate" | "text" | "qr" | "barcode" | "marks" | "server" | "defaults" if rest.trim().is_empty() => word,
                 "layer" if !rest.trim().is_empty() => {
                     named.push(rest.trim().to_lowercase());
                     format!("layer {}", rest.trim().to_lowercase())
@@ -1457,7 +1561,7 @@ pub fn parse(text: &str) -> Result<Settings, String> {
                     named_profiles.push(rest.trim().to_lowercase());
                     format!("profile {}", rest.trim().to_lowercase())
                 }
-                _ => return Err(format!("line {line}: '[{head}]' is not a section (limits, read, order, offset, hatch, machine, frame, focus, trace, tone, verify, calibrate, text, qr, barcode, marks, defaults, layer NAME or profile NAME)")),
+                _ => return Err(format!("line {line}: '[{head}]' is not a section (limits, read, order, offset, hatch, machine, frame, focus, trace, tone, verify, calibrate, text, qr, barcode, marks, server, defaults, layer NAME or profile NAME)")),
             };
             continue;
         }
@@ -2214,6 +2318,57 @@ mod tests {
         )))
         .unwrap();
         assert_eq!(example.marks, MarksSettings::default());
+    }
+
+    #[test]
+    fn the_server_settings_are_read_checked_and_the_token_never_shows() {
+        assert_eq!(Settings::default().server, ServerSettings::default());
+        assert!(!ServerSettings::default().is_configured());
+        let s = parse(
+            "[server]\nserver_address = 192.168.0.180:18200\nserver_token = abc123\nserver_machine = laser-1\nserver_timeout_s = 30\nserver_retries = 4\nserver_mdns = on\n",
+        )
+        .unwrap();
+        assert_eq!(
+            s.server,
+            ServerSettings {
+                server_address: "192.168.0.180:18200".to_string(),
+                server_token: "abc123".to_string(),
+                server_machine: "laser-1".to_string(),
+                server_timeout_s: 30,
+                server_retries: 4,
+                server_mdns: true,
+            }
+        );
+        assert!(s.server.is_configured());
+        for shown in [format!("{:?}", s.server), format!("{s:?}")] {
+            assert!(!shown.contains("abc123"), "{shown}");
+            assert!(shown.contains("***"), "{shown}");
+        }
+        assert!(format!("{:?}", ServerSettings::default()).contains("server_token: \"\""));
+        for bad in [
+            "server_address = a b",
+            "server_token = a b",
+            "server_machine = a/b",
+            "server_machine = ../x",
+            "server_machine = a.b",
+            "server_timeout_s = 0",
+            "server_timeout_s = 121",
+            "server_timeout_s = 1.5",
+            "server_retries = 6",
+            "server_retries = -1",
+            "server_mdns = maybe",
+            "server_port = 5",
+        ] {
+            assert!(parse(&format!("[server]\n{bad}\n")).is_err(), "{bad}");
+        }
+        // a comment after a value is not part of it, and the keys of other sections are not accepted here
+        assert!(parse("[machine]\nserver_address = x\n").is_err());
+        let example = load(std::path::Path::new(&format!(
+            "{}/examples/plate.cfg",
+            env!("CARGO_MANIFEST_DIR")
+        )))
+        .unwrap();
+        assert_eq!(example.server, ServerSettings::default());
     }
 
     #[test]

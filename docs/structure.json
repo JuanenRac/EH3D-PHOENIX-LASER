@@ -223,6 +223,19 @@
           }
         },
         {
+          "name": "server.rs",
+          "desc": {
+            "en": "the way to the EH3D server: check, send, follow, hold, emergency stop",
+            "es": "el camino al servidor de EH3D: comprobar, enviar, seguir, parada de emergencia",
+            "de": "der Weg zum EH3D-Server: prüfen, senden, verfolgen, Not-Halt",
+            "fr": "le chemin vers le serveur EH3D : vérifier, envoyer, suivre, arrêt d'urgence",
+            "it": "la strada verso il server EH3D: verificare, inviare, seguire, arresto di emergenza",
+            "ja": "EH3D サーバーへの経路：検査、送信、追跡、非常停止",
+            "zh": "通往 EH3D 服务器的途径：检查、发送、跟踪、紧急停止",
+            "pt": "o caminho para o servidor EH3D: verificar, enviar, seguir, paragem de emergência"
+          }
+        },
+        {
           "name": "shot.rs",
           "desc": {
             "en": "the picture mode of the window (--shot): its arguments, read and checked without a screen",
@@ -539,6 +552,19 @@
             "ja": "図面からの切断のテスト：コマンド、サンプル、悪意あるファイル、G-code の確認",
             "zh": "图纸切割测试：命令、示例、恶意文件和 G-code 检查",
             "pt": "testes do corte a partir de desenhos: comandos, exemplos, ficheiros hostis e a verificação do G-code"
+          }
+        },
+        {
+          "name": "server_cli.rs",
+          "desc": {
+            "en": "the server command against a stand-in of the laser plugin",
+            "es": "el comando server contra un doble del plugin láser",
+            "de": "der Befehl server gegen einen Ersatz des Laser-Plugins",
+            "fr": "la commande server contre un double du plugin laser",
+            "it": "il comando server contro un sostituto del plugin laser",
+            "ja": "レーザープラグインの代役に対する server コマンド",
+            "zh": "针对激光插件替身的 server 命令",
+            "pt": "o comando server contra um substituto do plugin laser"
           }
         },
         {

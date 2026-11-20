@@ -338,6 +338,23 @@ The keys of `[marks]` are `arm_mm`, `margin_mm`, `power_percent`, `speed_mm_min`
 
 In the window, the marks mode has boxes for the size of the rectangle (50 x 50 mm until they are changed), one box for each key and a switch for `centre_cross`; the lower left corner of the rectangle is the origin of the machine, and the marks are refused for the same reasons as by the command.
 
+### `[server]`
+
+The way to the EH3D server (`phoenix-laser server`): a G-code program goes to the `laser` plugin of EH3D-SERVER as a job, and the job is followed, held, let go on and stopped. The link is the shared client of the suite (`eh3d-serverclient` of EH3D-COMMON), so the keys have the names and the ranges every program of the suite reads. Nothing is sent while `server_address` is empty.
+
+| Key | Default | Meaning |
+|---|---|---|
+| `server_address` | empty | `host:port` of the server (for example `192.168.0.180:18200`); empty means there is no server; no space or control character |
+| `server_token` | empty | the token of this program; it is never printed, and the variable `PHOENIX_LASER_SERVER_TOKEN` is used when the file does not give one; no space or control character |
+| `server_machine` | empty | the id of the laser machine on the server: letters, digits, `_` and `-`, up to 64 |
+| `server_timeout_s` | 15 | the seconds one try may take, from 1 to 120 |
+| `server_retries` | 2 | the tries more after a failure on the network, from 0 to 5; a request that makes something is never sent twice |
+| `server_mdns` | off | `on` looks for the server on the local network; the program has no resolver of its own yet, so `on` finds nothing |
+
+The keys of `[server]` are `server_address`, `server_token`, `server_machine`, `server_timeout_s`, `server_retries` and `server_mdns`. `--address HOST:PORT` and `--machine ID` of the command win over the file.
+
+The token travels in the clear over plain HTTP: use it on a network you trust or through a tunnel; the program says so when the address is not a private one. `send` checks the program against the limits of `[machine]` (the limit of power and of speed, the bed) as `verify` does, and a program that fails, or one of more than 200000 lines, is not sent; the server holds the job to its own limits too. `stop` is the emergency stop of the laser machine: the job ends at once and the machine is latched, so that no program is taken until an administrator runs `release`; a machine that says it is latched is not sent a program. Nothing here has run against a real laser, and the `laser` plugin of the server is a simulator so far.
+
 ### `[defaults]` and `[layer NAME]`
 
 | Key | Default | Range | Meaning |

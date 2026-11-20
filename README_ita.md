@@ -17,7 +17,7 @@
 
 ---
 
-**Verifica di onestà - cosa funziona oggi:** una libreria Rust e un programma a riga di comando (`phoenix-laser`) con 624 test che girano su un computer: trasforma un'immagine in punti con la retinatura e scrive il G-code di un laser che brucia riga per riga con potenza dinamica ed extracorsa, legge disegni SVG e DXF e scrive il G-code che ne taglia i contorni (prima quelli interni, con la larghezza del fascio, ponticelli e più passate) e ne incide le forme con linee, con le impostazioni di ogni livello in un file, e una griglia di prova potenza contro avanzamento. Ha una finestra (compilata con `--features gui`) che apre un'immagine o un disegno, mostra il percorso del laser, permette di cambiare le impostazioni ed esporta il G-code, ma la finestra non è ancora stata vista su uno schermo; non è stato provato su una macchina e non è stato verificato con una raccolta di file reali.
+**Verifica di onestà - cosa funziona oggi:** una libreria Rust e un programma a riga di comando (`phoenix-laser`) con 645 test che girano su un computer: trasforma un'immagine in punti con la retinatura e scrive il G-code di un laser che brucia riga per riga con potenza dinamica ed extracorsa, legge disegni SVG e DXF e scrive il G-code che ne taglia i contorni (prima quelli interni, con la larghezza del fascio, ponticelli e più passate) e ne incide le forme con linee, con le impostazioni di ogni livello in un file, e una griglia di prova potenza contro avanzamento. Ha una finestra (compilata con `--features gui`) che apre un'immagine o un disegno, mostra il percorso del laser, permette di cambiare le impostazioni ed esporta il G-code, ma la finestra non è ancora stata vista su uno schermo; non è stato provato su una macchina e non è stato verificato con una raccolta di file reali. Può anche inviare un programma al plugin laser del server EH3D e seguire, fermare o arrestare il lavoro (`phoenix-laser server`), provato solo contro un sostituto del server. Può anche inviare un programma al plugin laser del server EH3D e seguire, fermare o arrestare il lavoro (`phoenix-laser server`), provato solo contro un sostituto del server.
 
 ---
 
@@ -30,7 +30,7 @@
 |---|---|
 | Versione | `0.1.2` |
 | Maturità | Funzionale |
-| Test | 624 |
+| Test | 645 |
 | Stack tecnologico | Rust |
 | Su hardware reale | Non provato: nulla di questo ha girato su una macchina |
 
@@ -46,7 +46,7 @@ Ogni riga è una parte di questo repository e il semaforo dice a che punto è og
 |---|---|---|
 | Nucleo | 🟡 | trasforma un'immagine in punti con la retinatura e scrive il G-code di un laser che brucia riga per riga con potenza dinamica ed extracorsa, legge disegni SVG e DXF e li taglia o li incide per livello (contorni ordinati, larghezza del fascio, ponticelli, passate, tratteggio), e una griglia di prova potenza contro avanzamento; provato su un computer con input normali e danneggiati, non con una raccolta di file reali. |
 | Riga di comando | 🟡 | `phoenix-laser` (`engrave`, `calibrate`, `info`, `cut`, `vector`, `layers`) esegue le stesse funzioni della libreria e stampa il risultato; ogni errore torna come messaggio e codice di uscita diverso da zero. |
-| Test | 🟡 | 624 test passano (`cargo test`), con casi normali, casi limite e input danneggiati. |
+| Test | 🟡 | 645 test passano (`cargo test`), con casi normali, casi limite e input danneggiati. |
 | Sicurezza | 🟡 | Rust sicuro e semplice (`forbid(unsafe_code)`): nulla va in panico con i file ricevuti e un valore errato è un errore con il suo motivo; nessuna revisione indipendente. |
 | Finestra | 🟠 | Scritta (egui, `--features gui`): aprire o trascinare un'immagine o un disegno SVG o DXF, vedere il percorso del laser (il taglio in un colore, lo spostamento attenuato), modificare la tabella dei livelli, una griglia di calibrazione, zoom e spostamento, stimare il tempo, esportare; la sua logica è testata, ma non è ancora stata compilata né vista su uno schermo. |
 | Hardware reale | 🔴 | Non provato: nulla di questo è stato eseguito su una macchina. |
@@ -90,6 +90,7 @@ Ogni riga è una parte di questo repository e il semaforo dice a che punto è og
 * **La verifica del programma nella finestra** (`src/window.rs`, `[verify]` nel file delle impostazioni): un programma G-code aperto per essere visto è verificato anche da `phoenix-laser verify` con i limiti della finestra e il piano del file delle impostazioni, e il pannello laterale dice se è superata (con l'inizio del suo SHA-256) o cosa non va; una casella tiene l'extracorsa consentita oltre il piano a laser spento (0 per impostazione predefinita, fino a 100 mm), e un programma che incide fuori dal piano non supera la verifica qualunque cosa dica la casella.
 * **Il controllo di un programma** (`src/verify.rs`): `phoenix-laser verify PROGRAMMA.nc` legge un programma G-code (di questo programma o di un altro) come testo, non lo esegue mai, e dà lo SHA-256 del file esatto, ciò che fa e un verdetto: passa solo sotto il limite di potenza e di velocità della macchina, dentro il piano (il lavoro fuori fallisce; `--overscan-mm` o `overscan_mm` in `[verify]` lascia che la testa superi il piano di quella distanza con il laser spento, come l'overscan di un altro programma, e bruciare fuori dal piano fallisce sempre), con il laser spento in ogni movimento rapido e un avanzamento in ogni movimento che brucia. `--json` dà il rapporto che un altro programma può conservare accanto a un'autorizzazione legata a quell'hash, con il profilo macchina, lo SHA-256 del file delle impostazioni da cui vengono i limiti e i nomi dei controlli fatti, e il codice di uscita è 1 quando fallisce.
 * **Una verifica legata al programma che è stato autorizzato** (`src/verify.rs`): `phoenix-laser verify PROGRAMMA.nc --expect-sha256 HASH` fa fallire il programma quando il suo SHA-256 non è quello di 64 cifre esadecimali indicato, e dice quale ha, così un programma cambiato dopo essere stato guardato non viene eseguito per errore; il fallimento compare anche nel rapporto JSON.
+* **Invio al server EH3D** (`src/server.rs`, `[server]` nel file delle impostazioni): `phoenix-laser server send PROGRAMMA.nc` invia un programma G-code come lavoro del plugin `laser` di EH3D-SERVER, con il client condiviso della suite (`eh3d-serverclient` di EH3D-COMMON: le chiavi `server_address`, `server_token`, `server_machine`, `server_timeout_s`, `server_retries` e `server_mdns`, tentativi ripetuti con pause crescenti, una richiesta che crea qualcosa non viene mai inviata due volte e i rifiuti del server sono detti con il loro codice nella lingua del sistema). Prima di partire, il programma viene verificato rispetto ai limiti della macchina delle impostazioni (il limite di potenza e di velocità, il piano) e uno che non passa non viene inviato; `--follow` resta finché il lavoro termina; `status`, `job`, `pause` e `resume` chiedono della macchina e del lavoro e lo fermano o lo lasciano proseguire; `stop` è l'ARRESTO DI EMERGENZA della macchina laser: il lavoro termina subito e la macchina viene bloccata, così non accetta alcun programma e non gliene viene inviato nessuno finché un amministratore non esegue `release`. Il token non viene mai stampato (può stare nella variabile `PHOENIX_LASER_SERVER_TOKEN`) e viaggia in chiaro su HTTP semplice. I comandi locali non vengono toccati. Provato contro un sostituto del plugin laser, in memoria e su un socket di questo computer; il plugin del server è a sua volta un simulatore, e nulla di tutto ciò è stato eseguito con un laser vero.
 * **Dithering ordinato** (`src/dither.rs`): `--dither bayer` (anche nella finestra) decide ogni punto in base al suo posto e al suo grigio con una matrice di Bayer 8 x 8, quindi il motivo è regolare e lo stesso grigio brucia sempre gli stessi punti; i test verificano che ogni livello della matrice compaia una volta e che la scurezza di un grigio si conservi.
 * **La curva dei toni** (`src/tone.rs`): prima di fare i punti i grigi si possono stirare su tutta la gamma (`--auto-level`), cambiare di contrasto e luminosità, curvare con un gamma o invertire, con un'unica tabella di 256 voci; con i valori predefiniti l'immagine non cambia affatto.
 * **Un G-code verificato:** il programma di un disegno viene verificato riga per riga prima di essere consegnato: nessun laser acceso durante un movimento rapido o senza velocità, nessuna `S` oltre la piena potenza, nessun movimento fuori dal piano, `M5` alla fine; il file non viene mai scritto sopra il disegno né sopra le impostazioni da cui deriva.
@@ -144,6 +145,7 @@ Queste immagini sono scattate dal programma stesso con `--shot` (vedi Avvio rapi
 | Un testo troppo lungo, alto o forte, o che brucerebbe fuori dal piano | si accettano solo i caratteri del carattere tipografico (una lettera che non ha viene rifiutata, mai saltata), il numero di caratteri, l'altezza, la potenza e la velocità restano entro limiti che le impostazioni possono restringere, il lavoro fuori dal piano è rifiutato invece di essere tagliato, e il testo non viene mai scritto in un commento del programma |
 | Dati che non entrano nel codice QR, un simbolo troppo grande, denso o forte, o che brucerebbe fuori dal piano | la versione, il numero di byte, la dimensione, il numero di movimenti di incisione, la potenza e la velocità restano entro limiti che le impostazioni possono restringere, e ciò che li supera è rifiutato invece di essere tagliato o ridotto; i dati non vengono mai scritti in un commento del programma |
 | Il file di uscita scelto sopra il disegno o le impostazioni da cui deriva | rifiutato, nella finestra e nei comandi |
+| Un programma inviato a un server, un token che potrebbe essere visto, o una macchina fermata e poi riavviata | il programma viene verificato rispetto ai limiti della macchina prima di partire e uno che non passa non viene inviato; il token non viene mai stampato (né in un messaggio né in un `Debug`), viene dal file delle impostazioni o dall'ambiente e viaggia in chiaro su HTTP semplice, quindi è per una rete fidata o un tunnel (il programma lo dice quando l'indirizzo è pubblico); l'arresto è quello di emergenza, che blocca la macchina finché un amministratore non la sblocca, e a una macchina bloccata non si invia alcun programma |
 
 **Cosa non è difeso:** un risultato prodotto senza errori non è un risultato verificato. Nulla qui conosce i limiti di una macchina e il programma non ha avuto revisione indipendente. Segnalate una vulnerabilità in privato (vedi [SECURITY.md](SECURITY.md)).
 
@@ -174,6 +176,8 @@ phoenix-laser frame OUT.nc --size W,H | --gcode PROGRAM.nc [--origin X,Y] [--mar
               [--pilot P --confirm-laser-on] [--max-power P] [--max-speed MM/MIN] [--config FILE] [--profile NAME]
 phoenix-laser verify PROGRAM.nc [--config FILE] [--profile NAME] [--smax N] [--max-power P] [--max-speed MM/MIN] [--bed X,Y] [--overscan-mm MM] [--accel 1000] [--expect-sha256 HASH] [--json]
 phoenix-laser preview PROGRAM.nc [OUT.svg] [--accel 1000] [--rapid 6000] [--smax N] [--laser-watts W] [--bed X,Y] [--width-px 900] [--config FILE] [--profile NAME]
+phoenix-laser server status|release [--address HOST:PORT] [--machine ID] [--config FILE] [--profile NAME]
+phoenix-laser server send PROGRAM.nc [--name TEXT] [--follow] | job|pause|resume|stop JOB [--address HOST:PORT] [--machine ID] [--config FILE] [--profile NAME]
 phoenix-laser [gui] [FILE]                       the window (a build with --features gui); with no arguments it opens
 ```
 
@@ -200,7 +204,7 @@ Per fare un'immagine della finestra senza aprirla a mano, eseguila con `--shot F
 
 ## 🧪 Test
 
-La suite ha 624 test (`cargo test`, eseguiti su Windows e Linux nella CI). Verificano i casi normali, i casi limite e gli input danneggiati: file vuoti, spazzatura e file tagliati non causano mai un panico. La CI esegue anche `cargo fmt --check`, `cargo clippy` con gli avvisi come errori e `python -I tools/ci_validate.py`.
+La suite ha 645 test (`cargo test`, eseguiti su Windows e Linux nella CI). Verificano i casi normali, i casi limite e gli input danneggiati: file vuoti, spazzatura e file tagliati non causano mai un panico. La CI esegue anche `cargo fmt --check`, `cargo clippy` con gli avvisi come errori e `python -I tools/ci_validate.py`.
 
 ## 🏗️ Compilazione e rilascio
 
@@ -237,6 +241,7 @@ EH3D-PHOENIX-LASER/
 │   ├── gcode_out.rs                             l'unico modo di scrivere un numero G-code e l'intestazione standard
 │   ├── raster.rs                                una parte della logica
 │   ├── safety.rs                                il limite di potenza e le regole che tengono spento il laser mentre si mostra il lavoro
+│   ├── server.rs                                la strada verso il server EH3D: verificare, inviare, seguire, arresto di emergenza
 │   ├── shot.rs                                  la modalità immagine della finestra (--shot): i suoi argomenti, letti e verificati senza schermo
 │   ├── vector.rs                                un disegno letto: forme in mm, livelli, limiti e geometria di base
 │   ├── verify.rs                                il controllo di un programma: il suo SHA-256, ciò che fa e un verdetto rispetto ai limiti della macchina
@@ -262,6 +267,7 @@ EH3D-PHOENIX-LASER/
 │   ├── readme.rs                                test che eseguono ciò che promettono il README e gli script run
 │   ├── strict.rs                                test della riga di comando: opzioni e parole che non conosce
 │   ├── vector.rs                                test del taglio da disegni: comandi, esempi, file ostili e verifica del G-code
+│   ├── server_cli.rs                            il comando server contro un sostituto del plugin laser
 │   └── window_cli.rs                            test che una compilazione senza la funzione gui resti una riga di comando
 ├── examples/
 │   ├── gradient.pgm                             un esempio per provare il programma

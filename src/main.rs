@@ -16,11 +16,13 @@ use eh3d_phoenix_laser::energy::describe;
 use eh3d_phoenix_laser::frame::{self, Frame};
 use eh3d_phoenix_laser::gcode_out::{header, sha256_hex, Header};
 use eh3d_phoenix_laser::image::from_bytes;
+use eh3d_phoenix_laser::lang::Lang;
 use eh3d_phoenix_laser::materials::{self, Material};
 use eh3d_phoenix_laser::preview;
 use eh3d_phoenix_laser::qr;
 use eh3d_phoenix_laser::raster::{engrave, overscan_for, Params};
 use eh3d_phoenix_laser::safety;
+use eh3d_phoenix_laser::server::{self, Order};
 use eh3d_phoenix_laser::svg::read_svg;
 use eh3d_phoenix_laser::text as laser_text;
 use eh3d_phoenix_laser::tone::Tone;
@@ -61,6 +63,8 @@ const HELP: &str = "phoenix-laser: laser engraving from an image
                 [--max-power P] [--max-speed MM/MIN] [--config FILE] [--profile NAME]
   phoenix-laser marks OUT.nc --size W,H [--origin X,Y] [--arm-mm 5] [--margin-mm 0] [--power 10] [--feed 1000] [--passes 1] [--centre-cross|--no-centre-cross] [--bed X,Y] [--smax N]
                 [--max-power P] [--max-speed MM/MIN] [--config FILE] [--profile NAME]
+  phoenix-laser server status|release [--address HOST:PORT] [--machine ID] [--config FILE] [--profile NAME]
+  phoenix-laser server send PROGRAM.nc [--name TEXT] [--follow] | job|pause|resume|stop JOB [--address HOST:PORT] [--machine ID] [--config FILE] [--profile NAME]
   phoenix-laser frame OUT.nc --size W,H | --gcode PROGRAM.nc [--origin X,Y] [--margin MM] [--feed 3000] [--laps 1] [--bed X,Y] [--smax N]
                 [--pilot P --confirm-laser-on] [--max-power P] [--max-speed MM/MIN] [--config FILE] [--profile NAME]
   phoenix-laser preview PROGRAM.nc [OUT.svg] [--accel 1000] [--rapid 6000] [--smax N] [--laser-watts W] [--bed X,Y] [--width-px 900] [--config FILE] [--profile NAME]
@@ -81,6 +85,7 @@ text burns TEXT with a font of strokes of the program (capitals, figures, space 
 qr burns DATA as a QR code of its own (versions 1 to 4, byte mode, with the level of error correction --ecc L, M, Q or H and the mask of the lowest penalty), filling each dark module with lines --line-mm apart (--invert fills the light ones instead, so the symbol is left bare in a burnt plate; --no-invert undoes invert = on of the settings; --border-modules N, only with --invert, also burns a border N modules wide around it, and the square counts as the symbol for --origin, the bed and max_size_mm; --overscan-mm runs the head up that far before each line and out past it with the laser off, and is refused when it would leave the bed): --mirror turns the symbol into its mirror image, to be burnt on the back of glass or acrylic; --module-mm is the side of a module and --origin X,Y the lower left corner; leave a light margin of four modules around the symbol on the material. --print also shows the symbol as text. Data of more than max_bytes bytes, a symbol that needs a version over max_version or is larger than max_size_mm, a fill of more than max_lines moves, a burning that would take more than --max-minutes (240 unless the file says another), a power or a speed over the limit, or work that would go outside of the bed (--bed X,Y or the machine of --config) is refused, never cut down; the [qr] section of --config holds the usual values.
 barcode burns DATA as a Code 128 barcode of its own (the characters from space to ~ in set B, and a text of an even number of figures in set C, which is half as wide), filling each bar with lines along its height --line-mm apart: --module-mm is the width of the narrowest bar, --height-mm the height of the bars, --mirror burns its mirror image (for the back of glass or acrylic) and --origin X,Y is the lower left corner; leave a light margin of ten modules at each side on the material. A byte that is not a printable character, more than max_chars characters, a barcode wider than max_width_mm, a fill of more than max_lines moves, a burning that would take more than --max-minutes (240 unless the file says another), a power or a speed over the limit, or work that would go outside of the bed (--bed X,Y or the machine of --config) is refused, never cut down; the [barcode] section of --config holds the usual values.
 marks burns positioning marks round the rectangle --size W,H whose lower left corner is --origin X,Y: an L at each corner, on the edges of the rectangle or --margin-mm outside of them, with arms --arm-mm long, and a cross in the middle with --centre-cross, so that the material can be put back in the same place. Unlike frame, which keeps the laser off, the marks are burnt, at a low power (--power, 10 % unless the file says another): a power or a speed over the limit, an arm longer than half a side of the rectangle the marks go round, or marks that would go outside of the bed (--bed X,Y or the machine of --config) are refused, never cut down; the [marks] section of --config holds the usual values.
+server works with the EH3D server (the [server] section of --config holds server_address, server_token, server_machine, server_timeout_s, server_retries and server_mdns; the token may also be in the variable PHOENIX_LASER_SERVER_TOKEN, and it is never printed): status says whether the server is there and whether an emergency stop holds the laser machine; send reads a G-code program, checks it against the limits of the machine of --config (the limit of power and of speed, the bed: a program that fails is not sent) and sends it as a job of the laser machine, which the server holds to its own limits, and --follow stays until the job ends (the job goes on without it when it is left); job, pause and resume ask after a job and hold it or let it go on; stop is the EMERGENCY STOP: the job ends at once and the machine is latched, so that no program is taken until an administrator runs release. The token travels in the clear over plain HTTP: use it on a network you trust or through a tunnel.
 frame writes a program that traces the rectangle of the work with the laser OFF, to see where it will land: --size W,H from the corner --origin, or the box of what burns in --gcode PROGRAM.nc (its real place). --margin widens it. A --pilot power (a percent, at most max_pilot_percent of [frame], 5 unless the file says another, and at most the limit of power) turns the laser on weakly and only with --confirm-laser-on; the [frame] section of --config holds the usual values.
 preview reads a G-code program (this program's or another's) and says what it would do: moves, burnt and travelled length, the box, the powers, a time that counts the corners (--accel in mm/s2), with --laser-watts the energy that the program burns (the power of each move as a part of the full power --smax, over the time it burns) and its mean power, and what looks dangerous (the laser on during a rapid move, a burning move with no feed, S above --smax, work outside --bed, no end); with OUT.svg it also draws the path. It only reads text.
 verify reads a G-code program as text (it never runs it) and says its SHA-256, what it does and whether it passes: under the limit of power and of speed, inside the bed (--overscan-mm lets the head go that far past the bed with the laser off, as the overscan of another program does; burning outside the bed always fails, and [verify] overscan_mm of --config sets the same), with the laser off during every rapid move and a feed on every burning move; --expect-sha256 HASH ties the check to a program that was authorised: when the SHA-256 of the file is not that one (64 hex digits) the program fails, so a program that was changed after it was looked at is not run by mistake; --json gives the report for another program to keep, and the exit code is 1 when it fails.
@@ -854,6 +859,209 @@ fn barcode_job(mut args: Vec<String>) -> Result<(), String> {
     Ok(())
 }
 
+/// What the person is told when a call to the server fails.
+fn told(f: server::Failure) -> String {
+    f.text
+}
+
+/// `server`: the way to the EH3D server. The token comes from the settings file or from `PHOENIX_LASER_SERVER_TOKEN` and is never printed; a program is checked against the limits of the machine of
+/// the settings before it is sent, and the stop is the emergency stop of the laser machine, which latches it.
+fn server_job(mut args: Vec<String>) -> Result<(), String> {
+    let config = flag(&mut args, "--config")?;
+    let mut settings = match &config {
+        Some(path) => vconfig::load(Path::new(path))?,
+        None => Settings::default(),
+    };
+    take_profile(&mut args, &mut settings, config.is_some())?;
+    if let Some(v) = flag(&mut args, "--address")? {
+        settings.server.server_address = v.trim().to_string();
+    }
+    if let Some(v) = flag(&mut args, "--machine")? {
+        settings.server.server_machine = v.trim().to_string();
+    }
+    settings.server.validate()?;
+    let name = flag(&mut args, "--name")?;
+    let follow = switch(&mut args, "--follow");
+    if args.is_empty() {
+        return Err(
+            "server needs status, send, job, pause, resume, stop or release (see help)".into(),
+        );
+    }
+    let sub = args.remove(0);
+    let words = match sub.as_str() {
+        "status" | "release" => 0,
+        "send" | "job" | "pause" | "resume" | "stop" => 1,
+        other => {
+            return Err(format!(
+                "{other}: not a server command (status, send, job, pause, resume, stop, release)"
+            ))
+        }
+    };
+    finish(&args, words)?;
+    if args.len() < words {
+        return Err(format!(
+            "server {sub} needs {}",
+            if sub == "send" {
+                "a G-code program"
+            } else {
+                "the id of a job"
+            }
+        ));
+    }
+    if (follow || name.is_some()) && sub != "send" {
+        return Err("--follow and --name are for send".into());
+    }
+    let s = settings.server.clone();
+    if !s.is_configured() {
+        return Err("server_address is empty: give it in [server] of the settings file (--config) or with --address HOST:PORT".into());
+    }
+    if s.server_machine.is_empty() {
+        return Err("server_machine is empty: give the id of the laser machine in [server] of the settings file or with --machine ID".into());
+    }
+    let client = server::Client::from_settings(&s, Lang::from_env())
+        .ok_or("the address or the machine of the server cannot be used")?;
+    if sub != "status" && !client.has_token() {
+        return Err(format!(
+            "server_token is empty: give it in [server] of the settings file or in the variable {}",
+            server::TOKEN_ENV
+        ));
+    }
+    if client.token_in_clear() {
+        eprintln!(
+            "note: the token travels in the clear over plain HTTP to {}: use it on a network you trust or through a tunnel",
+            s.server_address
+        );
+    }
+    let mut conn = client.connect();
+    let latch_words = "the machine is latched by the emergency stop: an administrator has to release it (phoenix-laser server release)";
+    match sub.as_str() {
+        "status" => {
+            let h = conn.health().map_err(told)?;
+            println!(
+                "server {}: {} {} ({})",
+                s.server_address, h.name, h.version, h.status
+            );
+            if client.has_token() {
+                let m = conn.machine().map_err(told)?;
+                println!(
+                    "machine {}: {}, {}{}",
+                    s.server_machine,
+                    m.state,
+                    if m.latched {
+                        latch_words
+                    } else {
+                        "not latched"
+                    },
+                    if m.beam_on { ", the beam is on" } else { "" }
+                );
+            } else {
+                println!(
+                    "no token: the machine is not asked (server_token in [server] or the variable {})",
+                    server::TOKEN_ENV
+                );
+            }
+        }
+        "send" => {
+            let path = &args[0];
+            let meta = fs::metadata(path).map_err(|e| format!("{path}: {e}"))?;
+            if meta.len() > server::MAX_SEND_BYTES as u64 {
+                return Err(format!(
+                    "{path}: the program is larger than {} bytes: it is not sent",
+                    server::MAX_SEND_BYTES
+                ));
+            }
+            let bytes = fs::read(path).map_err(|e| format!("{path}: {e}"))?;
+            let gcode = String::from_utf8(bytes)
+                .map_err(|_| format!("{path}: the program is not UTF-8 text: it is not sent"))?;
+            server::check_before_send(&gcode, &settings)?;
+            let file_name = Path::new(path)
+                .file_name()
+                .map_or_else(|| path.clone(), |n| n.to_string_lossy().into_owned());
+            let job_name: String = name.unwrap_or(file_name).chars().take(80).collect();
+            let mut job = conn.send(&job_name, &gcode).map_err(told)?;
+            println!(
+                "job {} on {}: {}, {} of {} lines",
+                job.id, s.server_machine, job.state, job.done, job.total
+            );
+            if follow {
+                let mut last = u64::MAX;
+                while !job.finished() {
+                    std::thread::sleep(std::time::Duration::from_millis(server::POLL_MS));
+                    job = conn.job(&job.id).map_err(told)?;
+                    if job.percent() != last {
+                        last = job.percent();
+                        println!("job {}: {}, {} %", job.id, job.state, last);
+                    }
+                }
+                println!("job {}: {}", job.id, job.state);
+                if job.state != "done" {
+                    let latched = conn.machine().map(|m| m.latched).unwrap_or(false);
+                    let detail = if latched {
+                        latch_words.to_string()
+                    } else {
+                        job.message.clone()
+                    };
+                    return Err(format!(
+                        "the job ended as {}{}",
+                        job.state,
+                        if detail.is_empty() {
+                            String::new()
+                        } else {
+                            format!(": {detail}")
+                        }
+                    ));
+                }
+            }
+        }
+        "job" => {
+            let j = conn.job(&args[0]).map_err(told)?;
+            println!(
+                "job {}: {}, {} of {} lines ({} %){}",
+                j.id,
+                j.state,
+                j.done,
+                j.total,
+                j.percent(),
+                if j.message.is_empty() {
+                    String::new()
+                } else {
+                    format!(", {}", j.message)
+                }
+            );
+        }
+        "pause" | "resume" => {
+            let order = if sub == "pause" {
+                Order::Pause
+            } else {
+                Order::Resume
+            };
+            let j = conn.order(&args[0], order).map_err(told)?;
+            println!("job {}: {}", j.id, j.state);
+        }
+        "stop" => {
+            let j = conn.order(&args[0], Order::Stop).map_err(told)?;
+            println!("job {}: {}", j.id, j.state);
+            match conn.machine() {
+                Ok(m) if m.latched => println!("{latch_words}"),
+                Ok(_) => println!("the machine is not latched"),
+                Err(e) => eprintln!("note: the state of the machine could not be read: {e}"),
+            }
+        }
+        _ => {
+            let was = conn.release().map_err(told)?;
+            println!(
+                "{}",
+                if was {
+                    "the latch of the emergency stop was released"
+                } else {
+                    "the machine was not latched"
+                }
+            );
+        }
+    }
+    Ok(())
+}
+
 /// `qr`: some data burnt as a QR code, filling its dark modules.
 fn qr_job(mut args: Vec<String>) -> Result<(), String> {
     let config = flag(&mut args, "--config")?;
@@ -1264,6 +1472,7 @@ fn run(mut args: Vec<String>) -> Result<(), String> {
         "qr" => qr_job(args),
         "barcode" => barcode_job(args),
         "marks" => marks_job(args),
+        "server" => server_job(args),
         "cut" => drawing_job(args, LayerMode::Cut),
         "vector" => drawing_job(args, LayerMode::Engrave),
         "layers" => layers_job(args),

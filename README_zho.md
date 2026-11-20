@@ -17,7 +17,7 @@
 
 ---
 
-**诚实检查 - 当前真正能运行的内容：** 一个 Rust 库和一个命令行程序（`phoenix-laser`），有 624 个在计算机上运行的测试：用抖动把图像变成点，并写出逐行烧蚀、带动态功率和超程的激光 G 代码；读取 SVG 和 DXF 图纸，写出切割其轮廓的 G 代码（先内后外，考虑光束宽度、连接桥和多遍），并用线条雕刻其图形，各图层的设置放在一个文件里；还有功率对进给的测试网格。它有一个窗口（用 `--features gui` 构建），可打开图像或图纸、显示激光路径、修改设置并导出 G 代码，但窗口尚未在屏幕上查看过；也没有在机器上试过，没有用一批真实文件检查过。
+**诚实检查 - 当前真正能运行的内容：** 一个 Rust 库和一个命令行程序（`phoenix-laser`），有 645 个在计算机上运行的测试：用抖动把图像变成点，并写出逐行烧蚀、带动态功率和超程的激光 G 代码；读取 SVG 和 DXF 图纸，写出切割其轮廓的 G 代码（先内后外，考虑光束宽度、连接桥和多遍），并用线条雕刻其图形，各图层的设置放在一个文件里；还有功率对进给的测试网格。它有一个窗口（用 `--features gui` 构建），可打开图像或图纸、显示激光路径、修改设置并导出 G 代码，但窗口尚未在屏幕上查看过；也没有在机器上试过，没有用一批真实文件检查过。 它还可以把程序发送到 EH3D 服务器的激光插件，并跟踪、暂停或停止作业（`phoenix-laser server`），仅针对服务器的替身测试过。
 
 ---
 
@@ -30,7 +30,7 @@
 |---|---|
 | 版本 | `0.1.2` |
 | 成熟度 | 可用 |
-| 测试 | 624 |
+| 测试 | 645 |
 | 技术栈 | Rust |
 | 真实硬件 | 未试过：这里的任何内容都没有在机器上运行过 |
 
@@ -46,7 +46,7 @@
 |---|---|---|
 | 核心 | 🟡 | 用抖动把图像变成点，并写出逐行烧蚀、带动态功率和超程的激光 G 代码；读取 SVG 和 DXF 图纸并按图层切割或雕刻（轮廓排序、光束宽度、连接桥、遍数、填充）；还有功率对进给的测试网格；已在计算机上用正常和损坏的输入测试，没有用一批真实文件检查。 |
 | 命令行 | 🟡 | `phoenix-laser`（`engrave`、`calibrate`、`info`、`cut`、`vector`、`layers`）运行与库相同的函数并打印结果；每个错误都以消息和非零退出码返回。 |
-| 测试 | 🟡 | 624 个测试通过（`cargo test`），包含正常情况、边界情况和损坏的输入。 |
+| 测试 | 🟡 | 645 个测试通过（`cargo test`），包含正常情况、边界情况和损坏的输入。 |
 | 安全 | 🟡 | 纯安全 Rust（`forbid(unsafe_code)`）：处理收到的文件时不会 panic，错误的值会返回带原因的错误；没有独立审查。 |
 | 窗口 | 🟠 | 已编写（egui，`--features gui`）：打开或拖入图像或 SVG、DXF 图纸，查看激光路径（切割为单一颜色，空移变淡），编辑图层表，校准网格，缩放与平移，估算时间，导出；其逻辑已测试，但尚未构建，也没有在屏幕上查看过。 |
 | 真实硬件 | 🔴 | 未试过：这里的任何内容都没有在机器上运行过。 |
@@ -90,6 +90,7 @@
 * **窗口中的程序检查**（`src/window.rs`，设置文件中的 `[verify]`）：为查看而打开的 G-code 程序也会由 `phoenix-laser verify` 按窗口的限制和设置文件中的台面进行检查，侧栏会说明它是否通过（附 SHA-256 的开头）或哪里有问题；一个输入框保存关闭激光时允许超出台面的余程（默认 0，最多 100 mm），在台面之外烧刻的程序无论输入框如何设置都不会通过。
 * **程序检查**（`src/verify.rs`）：`phoenix-laser verify PROGRAM.nc` 将 G-code 程序（本程序或其他程序生成的）作为文本读取，从不执行，并给出该文件的 SHA-256、它的动作以及判定：只有在机器的功率和速度上限之下、位于工作台之内（工作台之外的加工算不通过；`--overscan-mm` 或 `[verify]` 中的 `overscan_mm` 允许机头在激光关闭时超出工作台这么远，就像其他程序的过扫描一样，而在工作台之外烧蚀始终不通过）、每次快速移动时激光关闭、每次烧蚀移动都有进给速度时才算通过。`--json` 输出报告，供其他程序与绑定到该哈希的授权一起保存（含机器配置、限制所依据的设置文件的 SHA-256 以及已执行检查的名称）；未通过时退出码为 1。
 * **与已授权程序绑定的检查**（`src/verify.rs`）：`phoenix-laser verify PROGRAM.nc --expect-sha256 HASH` 在程序的 SHA-256 不是给定的 64 位十六进制数时判其不通过，并说明它实际的值，因此在查看之后被改动的程序不会被误运行；该失败也出现在 JSON 报告中。
+* **发送到 EH3D 服务器**（`src/server.rs`，设置文件中的 `[server]`）：`phoenix-laser server send PROGRAM.nc` 通过套件共用的客户端（EH3D-COMMON 的 `eh3d-serverclient`：键 `server_address`、`server_token`、`server_machine`、`server_timeout_s`、`server_retries` 和 `server_mdns`，停顿逐渐加长的重试，创建内容的请求绝不发送两次，服务器的拒绝按代码以系统语言说明），把 G-code 程序作为 EH3D-SERVER 的 `laser` 插件的作业发送。发出之前，程序会按设置中机器的上限（功率和速度上限、工作台）检查，不合格的不会发送；`--follow` 一直等到作业结束；`status`、`job`、`pause` 和 `resume` 查询机器和作业并暂停或继续；`stop` 是激光机的紧急停止：作业立即结束，机器被锁定，在管理员运行 `release` 之前不接受、也不会被发送任何程序。令牌绝不打印（可以放在变量 `PHOENIX_LASER_SERVER_TOKEN` 中），并以明文经普通 HTTP 传输。本地命令不受影响。已针对激光插件的替身在内存中以及本机的套接字上测试；服务器的插件本身是模拟器，这里的一切都没有在真正的激光器上运行过。
 * **有序抖动**（`src/dither.rs`）：`--dither bayer`（窗口中也可选）用 8 x 8 的拜耳矩阵，仅凭每个点的位置和灰度决定它是否烧蚀，因此图案规则，相同的灰度总是烧同样的点；测试检查矩阵的每个级别各出现一次，并且灰度的深浅得以保持。
 * **色调曲线**（`src/tone.rs`）：生成点阵之前，可以把灰度拉伸到整个范围（`--auto-level`）、调整对比度和亮度、用伽马曲线弯曲或反相，只用一张 256 项的表；使用默认值时图像完全不变。
 * **经过检查的 G 代码：**图纸的程序在交出之前逐行检查：快速移动时或没有速度时激光不会开启，`S` 不会超过满功率，不会移动到床面之外，结尾是 `M5`；文件绝不会写在它所来自的图纸或设置之上。
@@ -144,6 +145,7 @@ EH3D-PHOENIX-LASER 是 EH3D Fabrication Suite 的一个程序。它以库和命�
 | 过长、过高、过强,或会烧到工作台之外的文字 | 只接受字体中有的字符(没有的字母会被拒绝,绝不跳过),字符数、高度、功率和速度保持在设置可以收窄的限制之内,超出工作台的作业会被拒绝而不是被裁剪,文字也绝不会写进程序的注释里 |
 | 放不进二维码的数据、过大、过密或过强的符号，或会烧到工作台之外的符号 | 版本、字节数、尺寸、烧刻移动次数、功率和速度保持在设置可以收窄的限制之内，超出的会被拒绝而不是被裁剪或缩小；数据也绝不会写进程序的注释里 |
 | 选在图纸或所依据的设置之上的输出文件 | 在窗口和命令中都会被拒绝 |
+| 发送到服务器的程序、可能被看到的令牌、或被停止后又重新启动的机器 | 程序在发出前按机器的上限检查，不合格的不会发送；令牌绝不打印（不会出现在消息或 `Debug` 中），来自设置文件或环境，并以明文经普通 HTTP 传输，因此只适合可信网络或隧道（地址是公网地址时程序会提示）；停止就是紧急停止，它会锁定机器，直到管理员解除，被锁定的机器不会被发送程序 |
 
 **没有防御的内容：** 无错误产生的结果不等于经过验证的结果。这里没有任何内容了解机器的极限，程序也没有经过独立审查。请私下报告漏洞（见 [SECURITY.md](SECURITY.md)）。
 
@@ -174,6 +176,8 @@ phoenix-laser frame OUT.nc --size W,H | --gcode PROGRAM.nc [--origin X,Y] [--mar
               [--pilot P --confirm-laser-on] [--max-power P] [--max-speed MM/MIN] [--config FILE] [--profile NAME]
 phoenix-laser verify PROGRAM.nc [--config FILE] [--profile NAME] [--smax N] [--max-power P] [--max-speed MM/MIN] [--bed X,Y] [--overscan-mm MM] [--accel 1000] [--expect-sha256 HASH] [--json]
 phoenix-laser preview PROGRAM.nc [OUT.svg] [--accel 1000] [--rapid 6000] [--smax N] [--laser-watts W] [--bed X,Y] [--width-px 900] [--config FILE] [--profile NAME]
+phoenix-laser server status|release [--address HOST:PORT] [--machine ID] [--config FILE] [--profile NAME]
+phoenix-laser server send PROGRAM.nc [--name TEXT] [--follow] | job|pause|resume|stop JOB [--address HOST:PORT] [--machine ID] [--config FILE] [--profile NAME]
 phoenix-laser [gui] [FILE]                       the window (a build with --features gui); with no arguments it opens
 ```
 
@@ -200,7 +204,7 @@ cargo run --release --features gui -- --shot screen.png examples/plate.svg   # a
 
 ## 🧪 测试
 
-测试套件有 624 个测试（`cargo test`，CI 在 Windows 和 Linux 上运行）。它们检查正常情况、边界情况和损坏的输入：空文件、乱码和被截断的文件绝不会 panic。CI 还运行 `cargo fmt --check`、把警告当作错误的 `cargo clippy` 以及 `python -I tools/ci_validate.py`。
+测试套件有 645 个测试（`cargo test`，CI 在 Windows 和 Linux 上运行）。它们检查正常情况、边界情况和损坏的输入：空文件、乱码和被截断的文件绝不会 panic。CI 还运行 `cargo fmt --check`、把警告当作错误的 `cargo clippy` 以及 `python -I tools/ci_validate.py`。
 
 ## 🏗️ 构建与发布
 
@@ -237,6 +241,7 @@ EH3D-PHOENIX-LASER/
 │   ├── gcode_out.rs                             G 代码数字的唯一写法和标准文件头
 │   ├── raster.rs                                逻辑的一部分
 │   ├── safety.rs                                功率上限，以及展示工作范围时保持激光关闭的规则
+│   ├── server.rs                                通往 EH3D 服务器的途径：检查、发送、跟踪、紧急停止
 │   ├── shot.rs                                  窗口的截图模式（--shot）：无需屏幕即可读取和检查其参数
 │   ├── vector.rs                                读入的图纸：毫米图形、图层、限制和基础几何
 │   ├── verify.rs                                程序检查：其 SHA-256、动作以及对照机器上限的判定
@@ -262,6 +267,7 @@ EH3D-PHOENIX-LASER/
 │   ├── readme.rs                                运行 README 和 run 脚本所承诺内容的测试
 │   ├── strict.rs                                命令行测试：它不认识的选项和词
 │   ├── vector.rs                                图纸切割测试：命令、示例、恶意文件和 G-code 检查
+│   ├── server_cli.rs                            针对激光插件替身的 server 命令
 │   └── window_cli.rs                            测试没有 gui 特性的构建仍然只是命令行
 ├── examples/
 │   ├── gradient.pgm                             试用的示例

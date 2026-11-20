@@ -17,7 +17,7 @@
 
 ---
 
-**Ehrlichkeitscheck - was heute wirklich läuft:** eine Rust-Bibliothek und ein Kommandozeilenprogramm (`phoenix-laser`) mit 624 Tests, die auf einem Computer laufen: wandelt ein Bild per Dithering in Punkte um und schreibt den G-Code eines Lasers, der Zeile für Zeile mit dynamischer Leistung und Überlauf brennt, liest SVG- und DXF-Zeichnungen und schreibt den G-Code, der ihre Konturen schneidet (die inneren zuerst, mit Strahlbreite, Stegen und mehreren Durchgängen) und ihre Formen mit Linien graviert, mit den Einstellungen jeder Ebene in einer Datei, sowie ein Testraster Leistung gegen Vorschub. Es hat ein Fenster (mit `--features gui` gebaut), das ein Bild oder eine Zeichnung öffnet, den Weg des Lasers zeigt, die Einstellungen ändern lässt und den G-Code exportiert, aber das Fenster wurde noch nicht auf einem Bildschirm angesehen; es wurde nicht an einer Maschine erprobt und nicht mit einer Sammlung echter Dateien geprüft.
+**Ehrlichkeitscheck - was heute wirklich läuft:** eine Rust-Bibliothek und ein Kommandozeilenprogramm (`phoenix-laser`) mit 645 Tests, die auf einem Computer laufen: wandelt ein Bild per Dithering in Punkte um und schreibt den G-Code eines Lasers, der Zeile für Zeile mit dynamischer Leistung und Überlauf brennt, liest SVG- und DXF-Zeichnungen und schreibt den G-Code, der ihre Konturen schneidet (die inneren zuerst, mit Strahlbreite, Stegen und mehreren Durchgängen) und ihre Formen mit Linien graviert, mit den Einstellungen jeder Ebene in einer Datei, sowie ein Testraster Leistung gegen Vorschub. Es hat ein Fenster (mit `--features gui` gebaut), das ein Bild oder eine Zeichnung öffnet, den Weg des Lasers zeigt, die Einstellungen ändern lässt und den G-Code exportiert, aber das Fenster wurde noch nicht auf einem Bildschirm angesehen; es wurde nicht an einer Maschine erprobt und nicht mit einer Sammlung echter Dateien geprüft. Es kann außerdem ein Programm an das Laser-Plugin des EH3D-Servers senden und den Auftrag verfolgen, anhalten oder stoppen (`phoenix-laser server`), nur gegen einen Ersatz des Servers getestet. Es kann außerdem ein Programm an das Laser-Plugin des EH3D-Servers senden und den Auftrag verfolgen, anhalten oder stoppen (`phoenix-laser server`), nur gegen einen Ersatz des Servers getestet.
 
 ---
 
@@ -30,7 +30,7 @@
 |---|---|
 | Version | `0.1.2` |
 | Reifegrad | Funktionsfähig |
-| Tests | 624 |
+| Tests | 645 |
 | Technologie-Stack | Rust |
 | Auf echter Hardware | Nicht erprobt: nichts davon lief an einer Maschine |
 
@@ -46,7 +46,7 @@ Jede Zeile ist ein Teil dieses Repositorys, und die Ampel sagt, wie weit er heut
 |---|---|---|
 | Kern | 🟡 | wandelt ein Bild per Dithering in Punkte um und schreibt den G-Code eines Lasers, der Zeile für Zeile mit dynamischer Leistung und Überlauf brennt, liest SVG- und DXF-Zeichnungen und schneidet oder graviert sie ebenenweise (geordnete Konturen, Strahlbreite, Stege, Durchgänge, Schraffur) sowie ein Testraster Leistung gegen Vorschub; auf einem Computer mit normalen und beschädigten Eingaben getestet, nicht mit einer Sammlung echter Dateien. |
 | Kommandozeile | 🟡 | `phoenix-laser` (`engrave`, `calibrate`, `info`, `cut`, `vector`, `layers`) führt dieselben Funktionen wie die Bibliothek aus und gibt das Ergebnis aus; jeder Fehler kommt als Meldung und mit einem Exit-Code ungleich null zurück. |
-| Tests | 🟡 | 624 Tests bestehen (`cargo test`), mit Normalfällen, Grenzfällen und beschädigten Eingaben. |
+| Tests | 🟡 | 645 Tests bestehen (`cargo test`), mit Normalfällen, Grenzfällen und beschädigten Eingaben. |
 | Sicherheit | 🟡 | Reines sicheres Rust (`forbid(unsafe_code)`): nichts gerät bei den übergebenen Dateien in Panik und ein schlechter Wert ist ein Fehler mit Begründung; keine unabhängige Prüfung. |
 | Fenster | 🟠 | Geschrieben (egui, `--features gui`): ein Bild oder eine SVG- oder DXF-Zeichnung öffnen oder ablegen, den Weg des Lasers sehen (der Schnitt in einer Farbe, der Leerweg abgeschwächt), die Ebenentabelle bearbeiten, ein Kalibrierraster, Zoom und Verschieben, die Zeit schätzen, exportieren; die Logik ist getestet, aber das Fenster wurde noch nicht gebaut oder auf einem Bildschirm angesehen. |
 | Echte Hardware | 🔴 | Nicht erprobt: nichts davon wurde an einer Maschine ausgeführt. |
@@ -90,6 +90,7 @@ Jede Zeile ist ein Teil dieses Repositorys, und die Ampel sagt, wie weit er heut
 * **Die Prüfung des Programms im Fenster** (`src/window.rs`, `[verify]` in der Einstellungsdatei): ein G-Code-Programm, das zum Ansehen geöffnet wird, wird auch von `phoenix-laser verify` mit den Grenzen des Fensters und dem Bett der Einstellungsdatei geprüft, und die Seitenleiste sagt, ob es besteht (mit dem Anfang seines SHA-256) oder was falsch ist; ein Feld hält den Überlauf, der mit ausgeschaltetem Laser über das Bett hinaus erlaubt ist (standardmäßig 0, bis 100 mm), und ein Programm, das außerhalb des Betts brennt, besteht nicht, was auch immer das Feld sagt.
 * **Die Prüfung eines Programms** (`src/verify.rs`): `phoenix-laser verify PROGRAMM.nc` liest ein G-Code-Programm (dieses oder ein fremdes) als Text, führt es nie aus und liefert den SHA-256 der genauen Datei, was sie tut und ein Urteil: Es besteht nur unter der Leistungs- und Geschwindigkeitsgrenze der Maschine, innerhalb des Tisches (Arbeit außerhalb fällt durch; `--overscan-mm` oder `overscan_mm` in `[verify]` erlaubt dem Kopf, mit ausgeschaltetem Laser so weit über den Tisch hinauszufahren, wie es der Überlauf eines anderen Programms tut, und Brennen außerhalb des Tisches fällt immer durch), mit ausgeschaltetem Laser bei jeder Eilbewegung und einem Vorschub bei jeder brennenden Bewegung. `--json` liefert den Bericht, den ein anderes Programm neben einer an diesen Hash gebundenen Freigabe aufbewahren kann, mit dem Maschinenprofil, dem SHA-256 der Einstellungsdatei, aus der die Grenzen stammen, und den Namen der durchgeführten Prüfungen, und der Exit-Code ist 1, wenn es durchfällt.
 * **Eine Prüfung, die an das genehmigte Programm gebunden ist** (`src/verify.rs`): `phoenix-laser verify PROGRAMM.nc --expect-sha256 HASH` lässt das Programm durchfallen, wenn sein SHA-256 nicht die angegebenen 64 Hexziffern sind, und nennt den, den es hat, sodass ein nach der Ansicht geändertes Programm nicht versehentlich ausgeführt wird; der Fehler steht auch im JSON-Bericht.
+* **Senden an den EH3D-Server** (`src/server.rs`, `[server]` in der Einstellungsdatei): `phoenix-laser server send PROGRAMM.nc` sendet ein G-Code-Programm als Auftrag des Plugins `laser` von EH3D-SERVER, über den gemeinsamen Client der Suite (`eh3d-serverclient` aus EH3D-COMMON: die Schlüssel `server_address`, `server_token`, `server_machine`, `server_timeout_s`, `server_retries` und `server_mdns`, Wiederholungen mit wachsenden Pausen, eine Anfrage, die etwas anlegt, wird nie zweimal gesendet, die Ablehnungen des Servers werden mit ihrem Code in der Sprache des Systems genannt). Bevor es hinausgeht, wird das Programm gegen die Grenzen der Maschine der Einstellungen geprüft (Grenze für Leistung und Geschwindigkeit, das Bett), und eines, das durchfällt, wird nicht gesendet; `--follow` bleibt, bis der Auftrag endet; `status`, `job`, `pause` und `resume` fragen nach Maschine und Auftrag und halten ihn an oder lassen ihn weiterlaufen; `stop` ist der NOT-HALT der Lasermaschine: der Auftrag endet sofort und die Maschine wird verriegelt, sodass sie kein Programm annimmt und ihr keines gesendet wird, bis ein Administrator `release` ausführt. Das Token wird nie ausgegeben (es kann in der Variablen `PHOENIX_LASER_SERVER_TOKEN` stehen) und läuft im Klartext über einfaches HTTP. Die lokalen Befehle bleiben unberührt. Getestet gegen einen Ersatz des Laser-Plugins, im Speicher und an einem Socket dieses Rechners; das Plugin des Servers ist selbst ein Simulator, und nichts davon ist mit einem echten Laser gelaufen.
 * **Geordnetes Dithering** (`src/dither.rs`): `--dither bayer` (auch im Fenster) entscheidet jeden Punkt nach seinem Ort und seinem Grau mit einer 8-x-8-Bayer-Matrix, das Muster ist also regelmäßig und dasselbe Grau brennt immer dieselben Punkte; die Tests prüfen, dass jede Stufe der Matrix einmal vorkommt und die Dunkelheit eines Grautons erhalten bleibt.
 * **Die Tonkurve** (`src/tone.rs`): Vor der Punkterzeugung lassen sich die Graustufen auf den vollen Bereich dehnen (`--auto-level`), Kontrast und Helligkeit ändern, mit einem Gamma krümmen oder invertieren, mit einer einzigen Tabelle von 256 Einträgen; mit den Standardwerten bleibt das Bild völlig unverändert.
 * **Ein geprüfter G-Code:** Das Programm einer Zeichnung wird vor der Ausgabe Zeile für Zeile geprüft: kein Laser an bei einer Eilbewegung oder ohne Geschwindigkeit, kein `S` über voller Leistung, keine Bewegung außerhalb des Bettes, `M5` am Ende; die Datei wird nie über die Zeichnung oder die Einstellungen geschrieben, aus denen sie stammt.
@@ -144,6 +145,7 @@ Diese Bilder nimmt das Programm selbst mit `--shot` auf (siehe Schnellstart).
 | Ein Text, der zu lang, zu hoch oder zu stark ist oder außerhalb des Bettes brennen würde | nur die Zeichen der Schrift werden angenommen (ein Buchstabe, den sie nicht hat, wird abgelehnt, nie übersprungen), Zeichenzahl, Höhe, Leistung und Geschwindigkeit bleiben zwischen Grenzen, die die Einstellungen enger ziehen können, Arbeit außerhalb des Bettes wird abgelehnt statt beschnitten, und der Text wird nie in einen Kommentar des Programms geschrieben |
 | Daten, die nicht in den QR-Code passen, ein Symbol, das zu groß, zu dicht oder zu stark ist, oder eines, das außerhalb des Bettes brennen würde | Version, Bytezahl, Größe, Zahl der Brennbewegungen, Leistung und Geschwindigkeit bleiben zwischen Grenzen, die die Einstellungen enger ziehen können, und was darüber liegt, wird abgelehnt, statt beschnitten oder verkleinert zu werden; die Daten werden nie in einen Kommentar des Programms geschrieben |
 | Die Ausgabedatei, über die Zeichnung oder die Einstellungen gewählt, aus denen sie entsteht | wird abgelehnt, im Fenster und in den Befehlen |
+| Ein an einen Server gesendetes Programm, ein Token, das gesehen werden könnte, oder eine Maschine, die angehalten und wieder gestartet wurde | das Programm wird vor dem Senden gegen die Grenzen der Maschine geprüft und eines, das durchfällt, wird nicht gesendet; das Token wird nie ausgegeben (nicht in einer Meldung, nicht in einem `Debug`), kommt aus der Einstellungsdatei oder der Umgebung und läuft im Klartext über einfaches HTTP, gilt also für ein vertrauenswürdiges Netz oder einen Tunnel (das Programm sagt es, wenn die Adresse öffentlich ist); der Halt ist der Not-Halt, der die Maschine verriegelt, bis ein Administrator sie freigibt, und einer verriegelten Maschine wird kein Programm gesendet |
 
 **Was nicht abgesichert ist:** Ein fehlerfrei erzeugtes Ergebnis ist kein geprüftes Ergebnis. Nichts hier kennt die Grenzen einer Maschine, und das Programm hatte keine unabhängige Prüfung. Eine Schwachstelle bitte privat melden (siehe [SECURITY.md](SECURITY.md)).
 
@@ -174,6 +176,8 @@ phoenix-laser frame OUT.nc --size W,H | --gcode PROGRAM.nc [--origin X,Y] [--mar
               [--pilot P --confirm-laser-on] [--max-power P] [--max-speed MM/MIN] [--config FILE] [--profile NAME]
 phoenix-laser verify PROGRAM.nc [--config FILE] [--profile NAME] [--smax N] [--max-power P] [--max-speed MM/MIN] [--bed X,Y] [--overscan-mm MM] [--accel 1000] [--expect-sha256 HASH] [--json]
 phoenix-laser preview PROGRAM.nc [OUT.svg] [--accel 1000] [--rapid 6000] [--smax N] [--laser-watts W] [--bed X,Y] [--width-px 900] [--config FILE] [--profile NAME]
+phoenix-laser server status|release [--address HOST:PORT] [--machine ID] [--config FILE] [--profile NAME]
+phoenix-laser server send PROGRAM.nc [--name TEXT] [--follow] | job|pause|resume|stop JOB [--address HOST:PORT] [--machine ID] [--config FILE] [--profile NAME]
 phoenix-laser [gui] [FILE]                       the window (a build with --features gui); with no arguments it opens
 ```
 
@@ -200,7 +204,7 @@ Um ein Bild des Fensters aufzunehmen, ohne es von Hand zu öffnen, starten Sie e
 
 ## 🧪 Tests
 
-Die Suite hat 624 Tests (`cargo test`, in der CI unter Windows und Linux). Sie prüfen Normalfälle, Grenzfälle und beschädigte Eingaben: leere Dateien, Datenmüll und abgeschnittene Dateien lösen nie eine Panik aus. Die CI führt außerdem `cargo fmt --check`, `cargo clippy` mit Warnungen als Fehlern und `python -I tools/ci_validate.py` aus.
+Die Suite hat 645 Tests (`cargo test`, in der CI unter Windows und Linux). Sie prüfen Normalfälle, Grenzfälle und beschädigte Eingaben: leere Dateien, Datenmüll und abgeschnittene Dateien lösen nie eine Panik aus. Die CI führt außerdem `cargo fmt --check`, `cargo clippy` mit Warnungen als Fehlern und `python -I tools/ci_validate.py` aus.
 
 ## 🏗️ Build und Veröffentlichung
 
@@ -237,6 +241,7 @@ EH3D-PHOENIX-LASER/
 │   ├── gcode_out.rs                             die einzige Schreibweise einer G-Code-Zahl und der Standardkopf
 │   ├── raster.rs                                ein Teil der Logik
 │   ├── safety.rs                                die Leistungsgrenze und die Regeln, die den Laser beim Zeigen der Arbeit aus lassen
+│   ├── server.rs                                der Weg zum EH3D-Server: prüfen, senden, verfolgen, Not-Halt
 │   ├── shot.rs                                  der Bildmodus des Fensters (--shot): seine Argumente, ohne Bildschirm gelesen und geprüft
 │   ├── vector.rs                                eine gelesene Zeichnung: Formen in mm, Ebenen, Grenzen und einfache Geometrie
 │   ├── verify.rs                                die Prüfung eines Programms: sein SHA-256, was es tut und ein Urteil gegen die Grenzen der Maschine
@@ -262,6 +267,7 @@ EH3D-PHOENIX-LASER/
 │   ├── readme.rs                                Tests, die ausführen, was README und run-Skripte versprechen
 │   ├── strict.rs                                Tests der Kommandozeile: Optionen und Wörter, die sie nicht kennt
 │   ├── vector.rs                                Tests des Schneidens aus Zeichnungen: Befehle, Beispiele, feindliche Dateien und die Prüfung des G-Codes
+│   ├── server_cli.rs                            der Befehl server gegen einen Ersatz des Laser-Plugins
 │   └── window_cli.rs                            Tests, dass ein Build ohne das Feature gui eine reine Kommandozeile bleibt
 ├── examples/
 │   ├── gradient.pgm                             ein Beispiel zum Ausprobieren
