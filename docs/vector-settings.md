@@ -96,6 +96,12 @@ the settings file it is made from.
 | `max_points` | 2000000 | the most points in all the shapes |
 | `max_curve_segments` | 2000 | the most pieces one curve is cut into |
 | `max_coordinate_mm` | 100000 | a point farther than this from the origin is a mistake of the file; its shape is left out |
+| `max_bitmaps` | 16 | the most pictures of an LBRN2 project that are read; the rest are left out with a note |
+| `max_bitmap_bytes` | 16777216 | the longest text (base64) one picture of an LBRN2 project may have; a longer one is refused with `PHOENIX-LASER-LBRN2-BITMAP-SIZE` |
+| `max_bitmap_pixels` | 20000000 | the most pixels one picture of an LBRN2 project may have; more is refused with `PHOENIX-LASER-LBRN2-BITMAP-PIXELS` |
+| `max_csv_bytes` | 1048576 | the largest CSV file of the variable text that is read |
+| `max_csv_rows` | 10000 | the most rows of a CSV file of the variable text (one program for each) |
+| `max_csv_columns` | 64 | the most columns of a CSV file of the variable text |
 
 ### `[read]`
 
@@ -104,6 +110,7 @@ the settings file it is made from.
 | `dpi` | 96 | pixels in an inch, from 1 to 2400 (an SVG whose size is in pixels) |
 | `tolerance_mm` | 0.01 | how far a flattened curve, or a round corner of the offset, may be from the true one, from 0.001 to 1 |
 | `dxf_unit_mm` | 1 | the millimetres of a unit of a DXF that does not say its unit |
+| `lbrn2_flip_y` | on | `on`: the y axis of an LBRN2 project points down like the one of an SVG, so the drawing is turned over when it is cut; `off`: it points up like the one of the machine. The direction was never confirmed with a real part, so the reading says so in its notes whichever it is |
 | `group_by` | auto | `auto`, `layer` or `color` |
 | `align` | bbox | `bbox`: the lower left corner of the work (the layers that are not skipped) is the origin, like a picture; `page`: an SVG keeps its page (the lower left corner of the page is the origin when the file has a size), a DXF keeps its own origin |
 
@@ -305,6 +312,12 @@ A line of text burnt with the font of strokes of the program (`phoenix-laser tex
 The keys of `[text]` are `height_mm`, `max_height_mm`, `spacing_percent`, `line_spacing_percent`, `power_percent`, `speed_mm_min`, `passes`, `max_chars`, `max_minutes`, `align` and `mirror`.
 
 In the window, the text mode has a box for the words and one box for each of these keys (a file of settings fills them); the text is worked out with the same function as the command, from the origin of the machine, and is refused for the same reasons, with the status line naming the box that is wrong. The bed is the one of the machine of the file.
+
+#### A series of texts: a counter and a CSV file
+
+`phoenix-laser text OUT.nc --text 'N{counter:4} {name}' --csv FILE.csv` writes one program for each row of the CSV file, named `OUT_001.nc`, `OUT_002.nc` and so on (three figures, more when there are more than 999). The text holds places: `{counter}` (or `{counter:5}` for five figures with zeros in front, up to 12), `{row}` (the number of the row, from 1) and `{NAME}` (the column of the file that has that name in its first row); `{{` and `}}` are the braces themselves. A place that names nothing, a column that is not there, `{counter}` with no counter and a text longer than 4096 characters are errors with the code `PHOENIX-LASER-VARTEXT-FIELD`; nothing is guessed. `--counter START[,STEP[,COUNT]]` gives the counter (the step is 1 when left out; the count is the number of rows of the file, and is needed when there is no file), and `--counter-project PROJECT.lbrn2` takes it from the variable text of an LBRN2 project, from its current value to its end. `--preview` shows the text of each row and writes nothing.
+
+The CSV file has the names of its columns in the first row; the separator is a comma (a semicolon when the first row has none), a field in double quotes may hold the separator, new lines and `""` for a quote, blank lines are skipped and a row with another number of fields than the first is an error (`PHOENIX-LASER-VARTEXT-CSV`, with the number of the row). Nothing in the file is ever run: a field is only text, and a character the font of strokes has not stops the series. The file is held to `max_csv_bytes`, `max_csv_rows` (also the longest series a counter may make) and `max_csv_columns` of `[limits]`, and a field of more than 1024 characters is refused. Every program is worked out and checked, with the limits of the machine and the bed of the settings, before the first file is written, so a row that cannot be burnt writes nothing; the header of each file names the CSV file and its SHA-256, and the series never writes over the CSV file, the settings or the project it is made from.
 
 ### `[qr]`
 

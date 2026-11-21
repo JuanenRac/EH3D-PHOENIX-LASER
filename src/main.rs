@@ -19,7 +19,7 @@ use eh3d_phoenix_laser::frame::{self, Frame};
 use eh3d_phoenix_laser::gcode_out::{header, sha256_hex, Header};
 use eh3d_phoenix_laser::image::from_bytes;
 use eh3d_phoenix_laser::lang::Lang;
-use eh3d_phoenix_laser::lbrn2::read_lbrn2;
+use eh3d_phoenix_laser::lbrn2::{read_lbrn2, read_project};
 use eh3d_phoenix_laser::materials::{self, Material};
 use eh3d_phoenix_laser::preview;
 use eh3d_phoenix_laser::qr;
@@ -32,8 +32,9 @@ use eh3d_phoenix_laser::svg::read_svg;
 use eh3d_phoenix_laser::text as laser_text;
 use eh3d_phoenix_laser::tone::Tone;
 use eh3d_phoenix_laser::trace;
+use eh3d_phoenix_laser::vartext;
 use eh3d_phoenix_laser::vconfig::{self, KerfSide, LayerMode, LayerParams, Settings};
-use eh3d_phoenix_laser::vector::Drawing;
+use eh3d_phoenix_laser::vector::{Drawing, ReadOptions};
 use eh3d_phoenix_laser::verify;
 use eh3d_phoenix_laser::window::{same_file, write_atomic, write_atomic_bytes};
 use std::env;
@@ -46,7 +47,7 @@ const MAX_PROGRAM_BYTES: u64 = 256 << 20;
 
 const HELP: &str = "phoenix-laser: laser engraving from an image
 
-  phoenix-laser engrave IMAGE OUT.nc --width-mm 50 [--dot-mm 0.1] [--feed 3000] [--power 50] [--smax 1000]
+  phoenix-laser engrave IMAGE|PROJECT.lbrn2 OUT.nc --width-mm 50 [--picture N] [--dot-mm 0.1] [--feed 3000] [--power 50] [--smax 1000]
                 [--dither fs|atkinson|threshold|bayer] [--threshold 128] [--overscan MM|auto] [--accel 1000] [--origin X,Y] [--dry-run]
                 [--gamma 1] [--contrast 0] [--brightness 0] [--invert] [--auto-level] [--max-power 100] [--max-speed MM/MIN] [--config FILE] [--profile NAME]
                 [--material NAME --materials FILE]
@@ -61,7 +62,7 @@ const HELP: &str = "phoenix-laser: laser engraving from an image
   phoenix-laser trace IMAGE OUT.nc --width-mm W [--threshold 128] [--invert] [--simplify MM] [--min-area MM2] [--engrave] [the options of cut]
   phoenix-laser materials FILE
   phoenix-laser focus OUT.nc --z-step MM [--z-start MM] [--steps 9] [--length 10] [--spacing 2] [--feed 1000] [--power 30 | --powers 10,20,30] [--smax 1000] [--max-power P] [--max-speed MM/MIN] [--config FILE] [--profile NAME]
-  phoenix-laser text OUT.nc --text TEXT [--height-mm 10] [--spacing 25] [--line-spacing 50] [--power 20] [--feed 1000] [--passes 1] [--max-minutes 240] [--align left|center|right] [--mirror] [--origin X,Y] [--bed X,Y] [--smax N]
+  phoenix-laser text OUT.nc --text TEXT [--csv FILE.csv] [--counter START[,STEP[,COUNT]] | --counter-project PROJECT.lbrn2] [--preview] [--height-mm 10] [--spacing 25] [--line-spacing 50] [--power 20] [--feed 1000] [--passes 1] [--max-minutes 240] [--align left|center|right] [--mirror] [--origin X,Y] [--bed X,Y] [--smax N]
                 [--max-power P] [--max-speed MM/MIN] [--config FILE] [--profile NAME]
   phoenix-laser qr OUT.nc --text DATA [--ecc L|M|Q|H] [--module-mm 1] [--line-mm 0.1] [--power 20] [--feed 1000] [--passes 1] [--max-minutes 240] [--invert] [--border-modules 0] [--overscan-mm 0] [--mirror] [--origin X,Y] [--bed X,Y] [--smax N] [--print]
                 [--max-power P] [--max-speed MM/MIN] [--config FILE] [--profile NAME]
@@ -84,7 +85,7 @@ const HELP: &str = "phoenix-laser: laser engraving from an image
   phoenix-laser [gui] [FILE]                     the window (a build with --features gui): with no arguments, with a file or with gui it opens; the commands above never open it
   phoenix-laser gui [FILE] --shot OUT.png [--size WxH] [--theme forge|dark|light] [--wait N] [--window NAME] [--lang CODE] [--replace]   a picture of the window (a build with --features gui)
 
-IMAGE is a PNG or a PGM file. --dry-run works the engraving out and counts it but writes nothing (OUT.nc may then be left out). --power is a percent of full power; --smax is the spindle value that is full power for the controller (GRBL: $30).
+IMAGE is a PNG or a PGM file, or an LBRN2 project that holds a picture (--picture N takes the Nth one, the first by default; --width-mm may then be left out and the width the project gives is used; the power and the speed of the layer of the picture are used when the command line gives none, and a value over the limit is refused, never lowered). --dry-run works the engraving out and counts it but writes nothing (OUT.nc may then be left out). --power is a percent of full power; --smax is the spindle value that is full power for the controller (GRBL: $30).
 The engraving is made of dots of --dot-mm on a side, so the image is scaled to --width-mm / --dot-mm dots wide.
 The tone options change the grey levels before the dots are made: --gamma (0.1 to 10, more than 1 lightens the middle greys), --contrast and --brightness (-100 to 100), --invert (black burns least) and --auto-level (the darkest level becomes black and the lightest white).
 DRAWING is an SVG, a DXF or an LBRN2 project file. cut follows the contours (the ones inside first), vector fills the closed shapes with lines and follows the open ones. Every layer (or colour, for an SVG) has its
@@ -94,7 +95,7 @@ convert reads a drawing (an SVG, a DXF or an LBRN2 project, with its curves cut 
 trace follows the outline of a picture (a PNG or a PGM of a logo, a silhouette or a stencil) instead of burning it dot by dot: grey levels under --threshold are ink (over it with --invert), the border is found with sub-pixel precision, simplified until no point is farther than --simplify mm from the line, and specks smaller than --min-area mm2 are dropped. The result is a layer called trace that is cut, or filled with lines with --engrave, with the settings of --config, the options of cut and every limit of the file ([trace] holds max_pixels, max_contours and max_segments).
 materials FILE lists the materials of a library: a plain text file with a [material NAME] section for each material and way of working (see the documentation). --material NAME takes the power, the speed, the passes and the rest that the library says for it, before the other options, which win; the library is --materials FILE or the file named by PHOENIX_LASER_MATERIALS.
 focus writes a focus test: short lines side by side, each burnt with the head at another height (Z); the sharpest and thinnest line shows where the beam is in focus. --z-step has no default because which way is down depends on the machine: check it before running the program, which moves Z. --powers P1,P2,... (up to 10) makes a focus grid instead: the same lines once for each power, side by side with a column for each, so that the power that burns the thinnest line at the height of the focus can be read off. The usual values live in the [focus] section of --config.
-text burns TEXT with a font of strokes of the program (capitals, figures, space and . , - + / : ! ? ( ) = _ '; lower case is burnt as capitals, a new line starts a row, and a character the font has not is refused): --height-mm is the height of a capital (at most max_height_mm, 100 unless the file says another), --spacing and --line-spacing are the gaps between letters and rows as a percent of the height, --align left, center or right sets where the rows of a text of several lines start, --passes burns the whole text that many times (a burning that would take more than --max-minutes, 240 unless the file says another, is refused), --mirror burns its mirror image (for the back of glass or acrylic), and --origin X,Y is the lower left corner. A text of more than max_chars characters, a power or a speed over the limit, or work that would go outside of the bed (--bed X,Y or the machine of --config) is refused, never cut down; the [text] section of --config holds the usual values.
+text burns TEXT with a font of strokes of the program (capitals, figures, space and . , - + / : ! ? ( ) = _ '; lower case is burnt as capitals, a new line starts a row, and a character the font has not is refused): --height-mm is the height of a capital (at most max_height_mm, 100 unless the file says another), --spacing and --line-spacing are the gaps between letters and rows as a percent of the height, --align left, center or right sets where the rows of a text of several lines start, --passes burns the whole text that many times (a burning that would take more than --max-minutes, 240 unless the file says another, is refused), --mirror burns its mirror image (for the back of glass or acrylic), and --origin X,Y is the lower left corner. A text of more than max_chars characters, a power or a speed over the limit, or work that would go outside of the bed (--bed X,Y or the machine of --config) is refused, never cut down; the [text] section of --config holds the usual values. A series: with --csv FILE (the first row names the columns) or --counter START,STEP,COUNT (or --counter-project, the counter of an LBRN2 project from its current value to its end), TEXT may hold {counter}, {counter:5} (five figures), {row} and {NAME} (a column of the CSV file), {{ and }} for the braces; one program is written for each row (OUT_001.nc, OUT_002.nc...), all of them checked before the first is written, and --preview only shows the text of each row. Nothing in a CSV file is ever run; max_csv_bytes, max_csv_rows and max_csv_columns of [limits] hold it.
 qr burns DATA as a QR code of its own (versions 1 to 4, byte mode, with the level of error correction --ecc L, M, Q or H and the mask of the lowest penalty), filling each dark module with lines --line-mm apart (--invert fills the light ones instead, so the symbol is left bare in a burnt plate; --no-invert undoes invert = on of the settings; --border-modules N, only with --invert, also burns a border N modules wide around it, and the square counts as the symbol for --origin, the bed and max_size_mm; --overscan-mm runs the head up that far before each line and out past it with the laser off, and is refused when it would leave the bed): --mirror turns the symbol into its mirror image, to be burnt on the back of glass or acrylic; --module-mm is the side of a module and --origin X,Y the lower left corner; leave a light margin of four modules around the symbol on the material. --print also shows the symbol as text. Data of more than max_bytes bytes, a symbol that needs a version over max_version or is larger than max_size_mm, a fill of more than max_lines moves, a burning that would take more than --max-minutes (240 unless the file says another), a power or a speed over the limit, or work that would go outside of the bed (--bed X,Y or the machine of --config) is refused, never cut down; the [qr] section of --config holds the usual values.
 barcode burns DATA as a Code 128 barcode of its own (the characters from space to ~ in set B, and a text of an even number of figures in set C, which is half as wide), filling each bar with lines along its height --line-mm apart: --module-mm is the width of the narrowest bar, --height-mm the height of the bars, --mirror burns its mirror image (for the back of glass or acrylic) and --origin X,Y is the lower left corner; leave a light margin of ten modules at each side on the material. A byte that is not a printable character, more than max_chars characters, a barcode wider than max_width_mm, a fill of more than max_lines moves, a burning that would take more than --max-minutes (240 unless the file says another), a power or a speed over the limit, or work that would go outside of the bed (--bed X,Y or the machine of --config) is refused, never cut down; the [barcode] section of --config holds the usual values.
 marks burns positioning marks round the rectangle --size W,H whose lower left corner is --origin X,Y: an L at each corner, on the edges of the rectangle or --margin-mm outside of them, with arms --arm-mm long, and a cross in the middle with --centre-cross, so that the material can be put back in the same place. Unlike frame, which keeps the laser off, the marks are burnt, at a low power (--power, 10 % unless the file says another): a power or a speed over the limit, an arm longer than half a side of the rectangle the marks go round, or marks that would go outside of the bed (--bed X,Y or the machine of --config) are refused, never cut down; the [marks] section of --config holds the usual values.
@@ -162,6 +163,8 @@ struct MachineLimits {
     config: Option<String>,
     /// The test grid made from a material and its figures (the defaults when there is no file).
     calibrate: vconfig::CalibrateSettings,
+    /// How a drawing or a project is read (the defaults when there is no file).
+    read: ReadOptions,
 }
 
 /// The limits and the spindle value that `--config`, `--profile`, `--max-power` and `--max-speed` give to `engrave` and `calibrate`: the file is read as a whole (so it is checked), and
@@ -178,6 +181,7 @@ fn machine_limits(args: &mut Vec<String>) -> Result<MachineLimits, String> {
     let s_max = config.as_ref().map(|_| s.machine.s_max);
     let tone = s.tone;
     let calibrate = s.calibrate;
+    let read = s.read;
     if let Some(v) = flag(args, "--max-power")? {
         max_power = num(&v, "--max-power")?;
     }
@@ -193,6 +197,7 @@ fn machine_limits(args: &mut Vec<String>) -> Result<MachineLimits, String> {
         tone,
         config,
         calibrate,
+        read,
     })
 }
 
@@ -726,7 +731,22 @@ fn text_job(mut args: Vec<String>) -> Result<(), String> {
     take_profile(&mut args, &mut settings, config.is_some())?;
     let mut machine = settings.machine;
     let mut t = settings.text;
+    let read_options = settings.read;
     let words = flag(&mut args, "--text")?.ok_or("text needs --text TEXT")?;
+    // a series: one program for each row of a CSV file or each value of a counter
+    let csv_path = flag(&mut args, "--csv")?;
+    let counter_spec = flag(&mut args, "--counter")?;
+    let counter_project = flag(&mut args, "--counter-project")?;
+    let preview = switch(&mut args, "--preview");
+    let series = csv_path.is_some() || counter_spec.is_some() || counter_project.is_some();
+    if counter_spec.is_some() && counter_project.is_some() {
+        return Err("--counter and --counter-project cannot be given together".into());
+    }
+    if !series && preview {
+        return Err(
+            "--preview shows a series: it needs --csv, --counter or --counter-project".into(),
+        );
+    }
     if let Some(v) = flag(&mut args, "--height-mm")? {
         t.height_mm = num(&v, "--height-mm")?;
     }
@@ -777,6 +797,27 @@ fn text_job(mut args: Vec<String>) -> Result<(), String> {
     }
     mirror_flags(&mut args, &mut t.mirror)?;
     finish(&args, 1)?;
+    let m = laser_text::Machine {
+        s_max: machine.s_max,
+        max_power_percent: machine.max_power_percent,
+        max_speed_mm_min: machine.max_speed_mm_min,
+        bed_mm: machine.bed_mm,
+    };
+    if series {
+        return text_series(
+            &args,
+            &words,
+            &SeriesInput {
+                csv: csv_path.as_deref(),
+                counter: counter_spec.as_deref(),
+                counter_project: counter_project.as_deref(),
+                config: config.as_deref(),
+                preview,
+            },
+            &read_options,
+            (&machine, &t, &m),
+        );
+    }
     let out = args.first().ok_or("text needs an output file")?;
     if config
         .as_deref()
@@ -786,12 +827,6 @@ fn text_job(mut args: Vec<String>) -> Result<(), String> {
             "{out}: the output would be written over the settings it is made from"
         ));
     }
-    let m = laser_text::Machine {
-        s_max: machine.s_max,
-        max_power_percent: machine.max_power_percent,
-        max_speed_mm_min: machine.max_speed_mm_min,
-        bed_mm: machine.bed_mm,
-    };
     let (gcode, l) = laser_text::program(&words, machine.origin, &t, &m)?;
     let head = header(&Header {
         generator: "phoenix-laser",
@@ -806,6 +841,158 @@ fn text_job(mut args: Vec<String>) -> Result<(), String> {
         l.width_mm,
         l.height_mm,
         l.strokes.len(),
+        t.power_percent,
+        t.speed_mm_min
+    );
+    Ok(())
+}
+
+/// What a series of `text` is made from.
+struct SeriesInput<'a> {
+    csv: Option<&'a str>,
+    counter: Option<&'a str>,
+    counter_project: Option<&'a str>,
+    config: Option<&'a str>,
+    preview: bool,
+}
+
+/// `--counter START[,STEP[,COUNT]]`: the first value, the step (1) and how many values (the rows of the CSV file when there is one).
+fn counter_from_spec(spec: &str, rows: Option<usize>) -> Result<vartext::Counter, String> {
+    let parts: Vec<&str> = spec.split(',').map(str::trim).collect();
+    if parts.is_empty() || parts.len() > 3 || parts.iter().any(|p| p.is_empty()) {
+        return Err("--counter needs START[,STEP[,COUNT]]".into());
+    }
+    let whole_number = |t: &str, what: &str| {
+        t.parse::<i64>()
+            .map_err(|_| format!("{what} is '{t}': it must be a whole number"))
+    };
+    let start = whole_number(parts[0], "the start of --counter")?;
+    let step = match parts.get(1) {
+        Some(t) => whole_number(t, "the step of --counter")?,
+        None => 1,
+    };
+    let count = match parts.get(2) {
+        Some(t) => usize::try_from(whole_number(t, "the count of --counter")?)
+            .map_err(|_| "the count of --counter is not negative".to_string())?,
+        None => {
+            rows.ok_or("--counter needs a count (START,STEP,COUNT) when there is no CSV file")?
+        }
+    };
+    vartext::Counter::new(start, step, count)
+}
+
+/// The series of `text`: the text of every row is worked out and every program is checked before the first one is written.
+fn text_series(
+    args: &[String],
+    template: &str,
+    input: &SeriesInput,
+    read: &ReadOptions,
+    parts: (
+        &vconfig::Machine,
+        &vconfig::TextSettings,
+        &laser_text::Machine,
+    ),
+) -> Result<(), String> {
+    let (machine, t, m) = parts;
+    let lim = read.limits;
+    let (csv, csv_bytes) = match input.csv {
+        Some(path) => {
+            let meta = fs::metadata(path).map_err(|e| format!("{path}: {e}"))?;
+            if meta.len() > lim.max_csv_bytes as u64 {
+                return Err(format!(
+                    "{path}: {}: the file is larger than {} bytes (max_csv_bytes)",
+                    vartext::CODE_CSV,
+                    lim.max_csv_bytes
+                ));
+            }
+            let bytes = fs::read(path).map_err(|e| format!("{path}: {e}"))?;
+            let text = String::from_utf8(bytes.clone()).map_err(|_| {
+                format!("{path}: {}: the file is not UTF-8 text", vartext::CODE_CSV)
+            })?;
+            (
+                Some(vartext::parse_csv(&text, &lim).map_err(|e| format!("{path}: {e}"))?),
+                Some((path, bytes)),
+            )
+        }
+        None => (None, None),
+    };
+    let rows = csv.as_ref().map(|c| c.rows.len());
+    let counter = match (input.counter, input.counter_project) {
+        (Some(spec), _) => Some(counter_from_spec(spec, rows)?),
+        (None, Some(path)) => {
+            let bytes = fs::read(path).map_err(|e| format!("{path}: {e}"))?;
+            let project = read_project(&bytes, read).map_err(|e| format!("{path}: {e}"))?;
+            let vt = project
+                .variable_text
+                .ok_or_else(|| format!("{path}: the project has no variable text"))?;
+            Some(vt.counter().map_err(|e| format!("{path}: {e}"))?)
+        }
+        (None, None) => None,
+    };
+    let texts = vartext::plan(template, csv.as_ref(), counter.as_ref(), &lim)?;
+    if input.preview {
+        for (i, text) in texts.iter().enumerate() {
+            println!("row {}: {}", i + 1, text.replace('\n', " / "));
+        }
+        println!("{} rows, nothing written", texts.len());
+        return Ok(());
+    }
+    let out = args.first().ok_or("text needs an output file")?;
+    let out_path = Path::new(out);
+    if input
+        .config
+        .into_iter()
+        .chain(input.csv)
+        .chain(input.counter_project)
+        .any(|c| same_file(Path::new(c), out_path))
+    {
+        return Err(format!(
+            "{out}: the output would be written over a file it is made from"
+        ));
+    }
+    let width = texts.len().to_string().len().max(3);
+    let stem = out_path
+        .file_stem()
+        .map_or_else(|| "text".to_string(), |s| s.to_string_lossy().into_owned());
+    let ext = out_path
+        .extension()
+        .map(|e| format!(".{}", e.to_string_lossy()))
+        .unwrap_or_default();
+    let mut programs: Vec<(std::path::PathBuf, String)> = Vec::new();
+    for (i, text) in texts.iter().enumerate() {
+        let (gcode, _) = laser_text::program(text, machine.origin, t, m)
+            .map_err(|e| format!("row {}: {e}", i + 1))?;
+        let file = out_path.with_file_name(format!("{stem}_{:0width$}{ext}", i + 1));
+        programs.push((file, gcode));
+    }
+    let tools = format!(
+        "laser, S 0-{}, text with a font of strokes, one program for each row",
+        machine.s_max
+    );
+    let source = csv_bytes.as_ref().map(|(path, bytes)| {
+        let name = Path::new(path)
+            .file_name()
+            .map_or((*path).to_string(), |n| n.to_string_lossy().into_owned());
+        (name, sha256_hex(bytes))
+    });
+    for (file, gcode) in &programs {
+        let head = header(&Header {
+            generator: "phoenix-laser",
+            version: env!("CARGO_PKG_VERSION"),
+            source: source.as_ref().map(|(n, h)| (n.as_str(), h.clone())),
+            tools: &tools,
+        });
+        write_atomic(file, &format!("{head}{gcode}"))?;
+    }
+    println!(
+        "{} programs written next to {out}, from {} to {}, at {} % and {} mm/min",
+        programs.len(),
+        programs
+            .first()
+            .map_or(String::new(), |p| p.0.display().to_string()),
+        programs
+            .last()
+            .map_or(String::new(), |p| p.0.display().to_string()),
         t.power_percent,
         t.speed_mm_min
     );
@@ -1733,10 +1920,13 @@ fn run(mut args: Vec<String>) -> Result<(), String> {
     }
     match cmd.as_str() {
         "engrave" => {
-            let width = flag(&mut args, "--width-mm")?
+            let width_given = flag(&mut args, "--width-mm")?
                 .map(|v| num(&v, "--width-mm"))
+                .transpose()?;
+            let picture_no = flag(&mut args, "--picture")?
+                .map(|v| whole(&v, "--picture"))
                 .transpose()?
-                .ok_or("--width-mm is needed")?;
+                .unwrap_or(1);
             let limits = machine_limits(&mut args)?;
             let (max_power, config) = (limits.max_power, limits.config.clone());
             let material = take_material(&mut args)?;
@@ -1753,11 +1943,14 @@ fn run(mut args: Vec<String>) -> Result<(), String> {
             if let Some(v) = flag(&mut args, "--dot-mm")? {
                 p.pixel_mm = num(&v, "--dot-mm")?;
             }
+            let (mut feed_given, mut power_given) = (false, false);
             if let Some(v) = flag(&mut args, "--feed")? {
                 p.feed_mm_min = num(&v, "--feed")?;
+                feed_given = true;
             }
             if let Some(v) = flag(&mut args, "--power")? {
                 p.power_percent = num(&v, "--power")?;
+                power_given = true;
             }
             if let Some(v) = flag(&mut args, "--smax")? {
                 p.s_max = whole(&v, "--smax")?;
@@ -1815,7 +2008,49 @@ fn run(mut args: Vec<String>) -> Result<(), String> {
                 ));
             }
             let bytes = fs::read(&args[0]).map_err(|e| format!("{}: {e}", args[0]))?;
-            let img = from_bytes(&bytes)?;
+            let is_project = Path::new(&args[0])
+                .extension()
+                .is_some_and(|e| e.eq_ignore_ascii_case("lbrn2"));
+            // the picture of an LBRN2 project: its grey levels, the size the project gives it and the layer that holds it
+            let (img, project_size) = if is_project {
+                let project =
+                    read_project(&bytes, &limits.read).map_err(|e| format!("{}: {e}", args[0]))?;
+                for note in &project.drawing.warnings {
+                    eprintln!("note: {note}");
+                }
+                let n = usize::try_from(picture_no).unwrap_or(0);
+                let Some(pic) = n.checked_sub(1).and_then(|i| project.pictures.get(i)) else {
+                    return Err(format!(
+                        "{}: the project has {} picture(s) that can be engraved and --picture {picture_no} is not one of them",
+                        args[0],
+                        project.pictures.len()
+                    ));
+                };
+                // the values of the layer of the picture are hints: the command line wins, and the limits still hold over them
+                if let Some(cut) = project.cut_settings.iter().find(|c| c.label() == pic.layer) {
+                    let hint = cut.hint();
+                    if !power_given {
+                        p.power_percent = hint.power_percent;
+                    }
+                    if !feed_given {
+                        p.feed_mm_min = hint.speed_mm_min;
+                    }
+                    eprintln!(
+                        "note: the power and the speed of the layer {} of the project are used when the command line gives none ({} %, {} mm/min): check them for this machine",
+                        pic.layer, p.power_percent, p.feed_mm_min
+                    );
+                    if let Some((m, _)) = &material {
+                        m.check_limits(Some(p.power_percent), Some(p.feed_mm_min))?;
+                    }
+                }
+                (pic.gray.clone(), Some((pic.width_mm, pic.height_mm)))
+            } else {
+                (from_bytes(&bytes)?, None)
+            };
+            let width = width_given
+                .or(project_size.map(|s| s.0))
+                .ok_or("--width-mm is needed")?;
+            let aspect = project_size.map_or(img.h as f64 / img.w as f64, |s| s.1 / s.0);
             if !(width.is_finite() && width > 0.0 && width <= 2000.0) {
                 return Err("--width-mm must be from 0 to 2000".into());
             }
@@ -1834,7 +2069,7 @@ fn run(mut args: Vec<String>) -> Result<(), String> {
                 ));
             }
             let w = (width / p.pixel_mm).round().max(1.0) as usize;
-            let h = ((w as f64) * img.h as f64 / img.w as f64).round().max(1.0) as usize;
+            let h = ((w as f64) * aspect).round().max(1.0) as usize;
             let dots = dither(&tone.apply(&img.resize(w, h)?)?, method);
             let e = engrave(&dots, &p)?;
             // a dry run works the engraving out and counts it, and writes nothing

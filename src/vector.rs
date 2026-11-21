@@ -119,6 +119,18 @@ pub struct Limits {
     pub max_curve_segments: usize,
     /// A point farther than this from the origin (mm) is a mistake of the file, not a drawing.
     pub max_coordinate_mm: f64,
+    /// The most pictures of a project that are read.
+    pub max_bitmaps: usize,
+    /// The longest text (base64) one picture of a project may have.
+    pub max_bitmap_bytes: usize,
+    /// The most pixels one picture of a project may have.
+    pub max_bitmap_pixels: usize,
+    /// The largest CSV file of the variable text that is read.
+    pub max_csv_bytes: usize,
+    /// The most rows of a CSV file of the variable text.
+    pub max_csv_rows: usize,
+    /// The most columns of a CSV file of the variable text.
+    pub max_csv_columns: usize,
 }
 
 impl Default for Limits {
@@ -131,6 +143,12 @@ impl Default for Limits {
             max_points: 2_000_000,
             max_curve_segments: 2_000,
             max_coordinate_mm: 100_000.0,
+            max_bitmaps: 16,
+            max_bitmap_bytes: 16 * 1024 * 1024,
+            max_bitmap_pixels: 20_000_000,
+            max_csv_bytes: 1024 * 1024,
+            max_csv_rows: 10_000,
+            max_csv_columns: 64,
         }
     }
 }
@@ -145,7 +163,13 @@ impl Limits {
             && (1..=100_000).contains(&self.max_curve_segments)
             && self.max_coordinate_mm.is_finite()
             && self.max_coordinate_mm > 0.0
-            && self.max_coordinate_mm <= 1.0e7;
+            && self.max_coordinate_mm <= 1.0e7
+            && (1..=1_000).contains(&self.max_bitmaps)
+            && (1..=1 << 30).contains(&self.max_bitmap_bytes)
+            && (1..=400_000_000).contains(&self.max_bitmap_pixels)
+            && (1..=1 << 30).contains(&self.max_csv_bytes)
+            && (1..=1_000_000).contains(&self.max_csv_rows)
+            && (1..=1_000).contains(&self.max_csv_columns);
         if ok {
             Ok(())
         } else {
@@ -164,6 +188,8 @@ pub struct ReadOptions {
     pub limits: Limits,
     /// The millimetres of a unit of a DXF file that does not say its unit.
     pub dxf_unit_mm: f64,
+    /// Whether the y axis of an LBRN2 project points down like the one of an SVG (on) or up like the one of the machine (off). The direction was not confirmed with a real part.
+    pub lbrn2_flip_y: bool,
 }
 
 impl Default for ReadOptions {
@@ -173,6 +199,7 @@ impl Default for ReadOptions {
             tolerance_mm: 0.01,
             limits: Limits::default(),
             dxf_unit_mm: 1.0,
+            lbrn2_flip_y: true,
         }
     }
 }

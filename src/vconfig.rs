@@ -1378,9 +1378,16 @@ fn set_global(s: &mut Settings, section: &str, key: &str, value: &str) -> Result
         ("limits", "max_points") => lim.max_points = to_usize(whole(value)?)?,
         ("limits", "max_curve_segments") => lim.max_curve_segments = to_usize(whole(value)?)?,
         ("limits", "max_coordinate_mm") => lim.max_coordinate_mm = number(value)?,
+        ("limits", "max_bitmaps") => lim.max_bitmaps = to_usize(whole(value)?)?,
+        ("limits", "max_bitmap_bytes") => lim.max_bitmap_bytes = to_usize(whole(value)?)?,
+        ("limits", "max_bitmap_pixels") => lim.max_bitmap_pixels = to_usize(whole(value)?)?,
+        ("limits", "max_csv_bytes") => lim.max_csv_bytes = to_usize(whole(value)?)?,
+        ("limits", "max_csv_rows") => lim.max_csv_rows = to_usize(whole(value)?)?,
+        ("limits", "max_csv_columns") => lim.max_csv_columns = to_usize(whole(value)?)?,
         ("read", "dpi") => s.read.dpi = number(value)?,
         ("read", "tolerance_mm") => s.read.tolerance_mm = number(value)?,
         ("read", "dxf_unit_mm") => s.read.dxf_unit_mm = number(value)?,
+        ("read", "lbrn2_flip_y") => s.read.lbrn2_flip_y = switch(value)?,
         ("read", "group_by") => {
             s.group_by = GroupBy::from_word(value)
                 .ok_or_else(|| format!("'{}' is not auto, layer or color", value.trim()))?

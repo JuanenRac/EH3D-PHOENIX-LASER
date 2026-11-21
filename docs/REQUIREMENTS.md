@@ -2,7 +2,7 @@
 
 This register is the single source of the state of each capability: `STATUS.md` and the README files cite it and never state a state that it does not. A state is one of `planned`, `prototype`, `implemented` and `validated`. `validated` means that a person has run the capability on a real machine and the evidence of the manifest says `bench` or `field`; nothing here is validated, because nothing of this program has run on a real laser, a real material or a real server: the G-code is checked by the program's own reader, the server is a stand-in, and the pictures for the marks are simulated.
 
-The register has 95 requirements: 85 implemented, 5 prototype, 5 planned and 0 validated. By progress: 85 done, 5 partial, 1 pending and 4 blocked. High coverage is not proof of correctness, so each row says how it is checked: the test that names it, and what it shows.
+The register has 105 requirements: 91 implemented, 9 prototype, 5 planned and 0 validated. By progress: 91 done, 9 partial, 1 pending and 4 blocked. High coverage is not proof of correctness, so each row says how it is checked: the test that names it, and what it shows.
 
 ## How to read the register
 
@@ -47,7 +47,7 @@ The check is `tests/reqs.rs`: it reads this table, finds each test and fails whe
 | PLAS-021 | A DXF circle, arc, ellipse and spline become shapes in millimetres. | implemented | done | host-test | `src/dxf::a_circle_is_a_closed_shape_of_the_right_size` | - |
 | PLAS-022 | A DXF insert draws its block at its place, scale and rotation. | implemented | done | host-test | `src/dxf::an_insert_draws_the_block_at_its_place_scale_and_rotation` | - |
 | PLAS-023 | A file cut at any place or made of garbage never panics the readers. | implemented | done | host-test | `src/dxf::a_file_cut_at_any_place_or_made_of_garbage_never_panics` | - |
-| PLAS-024 | LBRN2 projects are read: rectangles, paths, groups, transforms and the outline of a text become a drawing, and the layers fill the table. | prototype | partial | host-test | `tests/lbrn2::the_layers_are_read_with_their_type_number_name_and_every_value_as_written` | Measured on twelve real projects of one laser maker; a picture inside a project is not read, and the orientation of the y axis and the rounded corner of a rectangle are not confirmed on a machine. |
+| PLAS-024 | LBRN2 projects are read: rectangles, paths, groups, transforms and the outline of a text become a drawing, and the layers fill the table. | prototype | partial | host-test | `tests/lbrn2::the_layers_are_read_with_their_type_number_name_and_every_value_as_written` | Measured on twelve real projects of one laser maker; the orientation of the y axis and the rounded corner of a rectangle are not confirmed on a machine. |
 | PLAS-025 | A project is cut into a program that passes the check. | implemented | done | host-test | `tests/lbrn2::a_project_is_cut_into_a_program_that_passes_the_check` | - |
 | PLAS-026 | A declared entity of a project is never expanded and damaged projects never stop the program. | implemented | done | host-test | `tests/lbrn2::a_declared_entity_is_never_expanded` | - |
 | PLAS-027 | Curves are flattened within the tolerance. | implemented | done | host-test | `src/flatten::a_flattened_circle_keeps_every_point_on_the_circle_and_every_piece_within_the_tolerance` | - |
@@ -62,7 +62,7 @@ The check is `tests/reqs.rs`: it reads this table, finds each test and fails whe
 | PLAS-036 | A drawing goes from DXF to SVG and back without losing a shape. | implemented | done | host-test | `src/export::a_drawing_goes_from_dxf_to_svg_and_back_without_losing_a_shape` | - |
 | PLAS-037 | The same job twice gives the same program. | implemented | done | host-test | `tests/vector::the_same_job_twice_gives_the_same_program` | - |
 | PLAS-038 | Hostile drawings are refused without a panic. | implemented | done | host-test | `tests/vector::hostile_files_are_refused_without_a_panic` | - |
-| PLAS-039 | Read the pictures inside an LBRN2 project and the hatches, text and dimensions of a DXF. | planned | pending | none | `planned:readers::a_picture_inside_a_project_and_a_dxf_hatch_are_read` | Not written: they are skipped with a note today. |
+| PLAS-039 | Read the hatches, text and dimensions of a DXF. | planned | pending | none | `planned:readers::a_dxf_hatch_is_read` | Not written: they are skipped with a note today. |
 
 ## Text, codes, marks and the frame
 
@@ -134,3 +134,18 @@ The check is `tests/reqs.rs`: it reads this table, finds each test and fails whe
 | PLAS-093 | Every command of the help has its line in the eight READMEs. | implemented | done | host-test | `tests/readme::every_command_of_the_help_has_its_line_in_the_eight_readmes` | - |
 | PLAS-094 | A build without a window says so. | implemented | done | host-test | `tests/window_cli::the_gui_word_says_that_this_build_has_no_window` | - |
 | PLAS-095 | A person looks at the window on a screen and finds it usable at a laser. | planned | blocked | none | `planned:operator::an_operator_prepares_and_runs_a_job_with_the_window` | Needs a person at a screen, at a laser. |
+
+## LBRN2 pictures, the direction of the y axis, tabs and the variable text
+
+| ID | Requirement | State | Progress | Evidence | Test | Limits |
+|---|---|---|---|---|---|---|
+| PLAS-096 | A picture of an LBRN2 project (a PNG or a PGM in base64) is decoded within the limits and turned and mirrored as its transform places it. | implemented | done | host-test | `tests/lbrn2_more::the_transform_of_a_picture_scales_flips_and_turns_by_quarters` | - |
+| PLAS-097 | A picture over a limit of size, pixels or number, in another format, damaged or turned by something other than a quarter turn is refused with a stable code before it is unpacked. | implemented | done | host-test | `tests/lbrn2_more::the_limits_of_a_picture_refuse_it_before_it_is_unpacked` | - |
+| PLAS-098 | A project with a picture is engraved like the picture alone with the values of its layer, and those values never pass the limits. | implemented | done | host-test | `tests/lbrn2_more::a_project_with_a_picture_is_engraved_like_the_picture_alone_with_the_values_of_its_layer` | - |
+| PLAS-099 | The direction of the y axis of a project is a setting, and every reading says that it is not confirmed with a real part. | prototype | partial | host-test | `tests/lbrn2_more::the_y_axis_follows_the_setting_and_the_default_is_the_one_before` | The direction was never confirmed with a real part: a cut may come out as a mirror image. Only the setting and the note are tested. |
+| PLAS-100 | An ellipse and a polygon of a project are drawn from their radii and their number of sides. | prototype | partial | host-test | `tests/lbrn2_more::an_ellipse_is_drawn_with_its_two_radii_and_stays_within_the_tolerance` | No real project had either: they are written from the names of the attributes and tested on projects written for the tests. |
+| PLAS-101 | The tabs of a layer of a project become hints of the table of layers for a cut. | prototype | partial | host-test | `tests/lbrn2_more::the_tabs_of_a_layer_become_hints_for_a_cut_and_for_nothing_else` | Only a count and a size were seen in the real projects, always with the tabs off; the spacing and the manual tabs are not read. |
+| PLAS-102 | A CSV file of three rows gives three different programs of burnt text, with the counter and the columns in the places of the text. | implemented | done | host-test | `tests/vartext::text_writes_one_program_for_each_row_and_they_differ` | - |
+| PLAS-103 | A CSV file is never run, and a row that cannot be burnt stops the whole series before a file is written. | implemented | done | host-test | `tests/vartext::one_row_that_cannot_be_burnt_stops_the_series_before_any_file_is_written` | - |
+| PLAS-104 | The counter of the variable text of a project makes the series from its current value to its end. | prototype | partial | host-test | `tests/vartext::the_counter_of_a_project_gives_the_series_and_a_bad_counter_is_refused` | Read from the names of the five values; the text of a shape that names a column is not read. |
+| PLAS-105 | Damaged projects with pictures, ellipses, polygons, tabs and a counter are read or refused and never stop the program. | implemented | done | host-test | `tests/lbrn2_more::damaged_pictures_and_new_parts_are_read_or_refused_and_never_stop_the_program` | - |

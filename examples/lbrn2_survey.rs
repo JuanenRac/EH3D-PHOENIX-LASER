@@ -125,6 +125,29 @@ fn main() {
                     );
                 }
                 let _ = writeln!(report, "  shape types: {:?}", p.stats.shape_types);
+                for pic in &p.pictures {
+                    let _ = writeln!(
+                        report,
+                        "  picture: {} x {} pixels, {:.1} x {:.1} mm, layer {}",
+                        pic.gray.w, pic.gray.h, pic.width_mm, pic.height_mm, pic.layer
+                    );
+                }
+                if let Some(v) = &p.variable_text {
+                    let _ = writeln!(
+                        report,
+                        "  variable text: from {} to {} at {} by {}",
+                        v.start, v.end, v.current, v.increment
+                    );
+                }
+                let tabs: Vec<_> = p
+                    .cut_settings
+                    .iter()
+                    .filter(|c| c.tabs_enabled())
+                    .map(|c| (c.label(), c.tab_count(), c.tab_size_mm()))
+                    .collect();
+                if !tabs.is_empty() {
+                    let _ = writeln!(report, "  layers with tabs: {tabs:?}");
+                }
                 if !p.stats.skipped.is_empty() {
                     let _ = writeln!(report, "  left out: {:?}", p.stats.skipped);
                 }

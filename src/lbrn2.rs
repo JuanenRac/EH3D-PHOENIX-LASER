@@ -9,13 +9,19 @@
 //! may name the lists it uses (`VertID`, `PrimID`) and leave them out when an earlier path wrote them. A `Rect` is centred on its origin, a `Text` carries its letters as a `BackupPath`,
 //! a `Group` has `Children`.
 //!
-//! What is not read is said in the notes of the drawing and counted in [`Stats`]: pictures (`Bitmap`), shapes of a type that was never seen in the files this was measured on, and text
-//! that has no outline. The y axis of the file is taken as the one of an SVG (it points down), so the drawing is turned over like an SVG when it is cut; that was not confirmed against a
-//! machine.
+//! The pictures of a project (`Bitmap`) are decoded within the limits of `[limits]` and kept for engraving (see [`crate::lbrn2_pic`]); an `Ellipse` and a `Polygon` are drawn from what
+//! their documented attributes say (a prototype: no real project had one); the tabs of a layer (`tabsEnabled`, `tabCount`, `tabSize`) become hints of the table of layers; and the
+//! counter of the variable text of the project (`VariableText`) is read for the series of `text`.
+//!
+//! What is not read is said in the notes of the drawing and counted in [`Stats`]: pictures that are over a limit or in another format, shapes of a type that was never seen in the
+//! files this was measured on, and text that has no outline. The y axis of the file is taken as the one of an SVG (it points down) unless the setting `lbrn2_flip_y` says otherwise, so
+//! the drawing is turned over like an SVG when it is cut; the direction was not confirmed against a real part, and every reading says so in its notes.
 
 use crate::flatten;
+use crate::lbrn2_pic::{self, Picture};
+use crate::vartext::Counter;
 use crate::vconfig::{LayerMode, LayerParams};
-use crate::vector::{Collector, Drawing, Pt, ReadOptions, Source};
+use crate::vector::{Collector, Drawing, Limits, Pt, ReadOptions, Source};
 use std::collections::HashMap;
 use std::rc::Rc;
 
@@ -85,7 +91,12 @@ fn keeps_text(name: &str) -> bool {
 }
 
 /// Reads the text of the file into elements. The depth and the number of elements are held to the limits, no entity is expanded and an element is never read from a name that is not closed.
-fn parse_elements(text: &str, max_depth: usize, max_nodes: usize) -> Result<Elem, String> {
+fn parse_elements(
+    text: &str,
+    max_depth: usize,
+    max_nodes: usize,
+    keep_data: usize,
+) -> Result<Elem, String> {
     let bytes = text.as_bytes();
     let mut i = 0usize;
     let mut stack: Vec<Elem> = Vec::new();
@@ -143,7 +154,7 @@ fn parse_elements(text: &str, max_depth: usize, max_nodes: usize) -> Result<Elem
                 }
             }
         } else {
-            let (elem, empty, used) = start_tag(rest)?;
+            let (elem, empty, used) = start_tag(rest, keep_data)?;
             i += used;
             nodes += 1;
             if nodes > max_nodes {
@@ -176,7 +187,7 @@ fn parse_elements(text: &str, max_depth: usize, max_nodes: usize) -> Result<Elem
 }
 
 /// Reads a start tag at the start of `rest`: the element, whether it is empty (`<a/>`) and the bytes it takes.
-fn start_tag(rest: &str) -> Result<(Elem, bool, usize), String> {
+fn start_tag(rest: &str, keep_data: usize) -> Result<(Elem, bool, usize), String> {
     let bytes = rest.as_bytes();
     let mut j = 1;
     while j < bytes.len() && !bytes[j].is_ascii_whitespace() && bytes[j] != b'/' && bytes[j] != b'>'
@@ -237,13 +248,25 @@ fn start_tag(rest: &str) -> Result<(Elem, bool, usize), String> {
             return Err("a tag has too many attributes".to_string());
         }
         let raw = &rest[j..j + close];
-        // a picture or a preview is far too long to be of use here; its length is not an error
-        let value = if raw.len() > MAX_KEPT_ATTR {
-            String::new()
+        // the picture of a `Bitmap` is kept up to its own limit (it is base64 text, no entity in it); the length is noted so that a picture over the limit is told from one that is not there.
+        // Any other long value is a preview or a note, far too long to be of use here; its length is not an error
+        if elem.name == "Shape" && key == "Data" {
+            let len = raw.len();
+            let value = if len > keep_data {
+                String::new()
+            } else {
+                raw.to_string()
+            };
+            elem.attrs.push((key, value));
+            elem.attrs.push(("DataLen".to_string(), len.to_string()));
         } else {
-            crate::svg::decode(raw)
-        };
-        elem.attrs.push((key, value));
+            let value = if raw.len() > MAX_KEPT_ATTR {
+                String::new()
+            } else {
+                crate::svg::decode(raw)
+            };
+            elem.attrs.push((key, value));
+        }
         j += close + 1;
     }
 }
@@ -335,6 +358,23 @@ impl CutSetting {
         self.value("doOutput").is_none_or(|v| v != 0.0)
     }
 
+    /// Whether the layer leaves tabs in its cut (`tabsEnabled`, off when the file does not say).
+    pub fn tabs_enabled(&self) -> bool {
+        self.value("tabsEnabled").is_some_and(|v| v != 0.0)
+    }
+
+    /// How many tabs the layer leaves (`tabCount`, from 0 to 100; 0 when the file does not say).
+    pub fn tab_count(&self) -> u32 {
+        self.value("tabCount")
+            .filter(|v| (0.0..=100.0).contains(v))
+            .map_or(0, |v| v as u32)
+    }
+
+    /// The length of a tab in millimetres (`tabSize`).
+    pub fn tab_size_mm(&self) -> Option<f64> {
+        self.value("tabSize").filter(|v| (0.0..=100.0).contains(v))
+    }
+
     /// The name of the layer in the table: its name, or `C` and its number with two digits.
     pub fn label(&self) -> String {
         if self.name.trim().is_empty() {
@@ -355,6 +395,12 @@ impl CutSetting {
         } else {
             LayerMode::Engrave
         };
+        // the tabs belong to a cut; a layer that engraves has none
+        let tabs = if mode == LayerMode::Cut && self.tabs_enabled() {
+            self.tab_count()
+        } else {
+            d.tabs
+        };
         LayerParams {
             mode,
             power_percent: self.max_power().unwrap_or(d.power_percent),
@@ -362,6 +408,12 @@ impl CutSetting {
             passes: self.passes(),
             hatch_spacing_mm: self.interval_mm().unwrap_or(d.hatch_spacing_mm),
             order: self.priority().unwrap_or(d.order),
+            tabs,
+            tab_width_mm: if tabs > 0 {
+                self.tab_size_mm().unwrap_or(d.tab_width_mm)
+            } else {
+                d.tab_width_mm
+            },
             ..d
         }
     }
@@ -386,6 +438,8 @@ pub struct Stats {
     pub beziers: usize,
     /// The paths that took their lists from an earlier path.
     pub shared_lists: usize,
+    /// The pictures that were decoded and kept for engraving.
+    pub pictures: usize,
     /// The shapes that were left out, by the reason.
     pub skipped: Vec<(String, usize)>,
     /// The elements that sit inside a `Shape` and that this reader does not know, by name.
@@ -412,10 +466,55 @@ pub struct Project {
     pub mirror: (bool, bool),
     /// The layers.
     pub cut_settings: Vec<CutSetting>,
+    /// The pictures, decoded and oriented, in the order of the file.
+    pub pictures: Vec<Picture>,
+    /// The counter of the variable text of the project, when it has one.
+    pub variable_text: Option<VariableText>,
     /// What was found.
     pub stats: Stats,
     /// The drawing: every outline that could be followed, in millimetres, with the layer of each.
     pub drawing: Drawing,
+}
+
+/// The counter of the variable text of a project (`VariableText`): the first value, the last, the one the project is at, the step and whether it moves on by itself.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct VariableText {
+    /// The first value (`Start`).
+    pub start: i64,
+    /// The last value (`End`).
+    pub end: i64,
+    /// The value the project is at (`Current`).
+    pub current: i64,
+    /// The step (`Increment`).
+    pub increment: i64,
+    /// Whether the counter moves on after each job (`AutoAdvance`).
+    pub auto_advance: bool,
+}
+
+impl VariableText {
+    /// The series from the current value to the end, for the `text` command.
+    pub fn counter(&self) -> Result<Counter, String> {
+        Counter::from_range(self.current, self.end, self.increment)
+    }
+}
+
+fn read_variable_text(root: &Elem) -> Option<VariableText> {
+    let block = root.kid("VariableText")?;
+    let get = |name: &str| {
+        block
+            .kid(name)
+            .and_then(|e| e.attr("Value"))
+            .and_then(|v| v.trim().parse::<f64>().ok())
+            .filter(|v| v.is_finite() && v.abs() <= 1.0e12)
+            .map(|v| v.round() as i64)
+    };
+    Some(VariableText {
+        start: get("Start")?,
+        end: get("End")?,
+        current: get("Current")?,
+        increment: get("Increment")?,
+        auto_advance: get("AutoAdvance").is_some_and(|v| v != 0),
+    })
 }
 
 impl Project {
@@ -594,6 +693,10 @@ struct Reader<'a> {
     tol: f64,
     max_curve: usize,
     max_vertices: usize,
+    /// The matrix every shape ends up under: the identity, or a turn of the y axis when the file's y axis points up.
+    base: Mat,
+    lim: Limits,
+    pictures: Vec<Picture>,
 }
 
 impl Reader<'_> {
@@ -679,12 +782,152 @@ impl Reader<'_> {
                 }
                 None => bump(&mut self.stats.skipped, "text without an outline"),
             },
-            "Bitmap" => bump(&mut self.stats.skipped, "picture"),
+            "Bitmap" => {
+                let Some(own) = self.matrix_of(e, "picture") else {
+                    return Ok(());
+                };
+                self.bitmap(e, &mul(parent, &own), &layer);
+            }
+            "Ellipse" => {
+                let Some(own) = self.matrix_of(e, "ellipse") else {
+                    return Ok(());
+                };
+                self.round_shape(e, &mul(parent, &own), &layer, false)?;
+            }
+            "Polygon" => {
+                let Some(own) = self.matrix_of(e, "polygon") else {
+                    return Ok(());
+                };
+                self.round_shape(e, &mul(parent, &own), &layer, true)?;
+            }
             other => {
                 bump(&mut self.stats.skipped, &format!("shape of type {other}"));
             }
         }
         Ok(())
+    }
+
+    /// A picture: decoded, turned as its matrix places it and kept; one that is over a limit, in another format or turned by something other than a quarter turn is left out with a note that
+    /// carries a stable code.
+    fn bitmap(&mut self, e: &Elem, m: &Mat, layer: &str) {
+        let refuse = |this: &mut Self, why: String, short: &str| {
+            this.col.warn(format!("a picture was not read: {why}"));
+            bump(&mut this.stats.skipped, short);
+        };
+        if self.pictures.len() >= self.lim.max_bitmaps {
+            let why = format!(
+                "{}: more than {} pictures (max_bitmaps)",
+                lbrn2_pic::CODE_COUNT,
+                self.lim.max_bitmaps
+            );
+            refuse(self, why, "picture over the limit of pictures");
+            return;
+        }
+        let (Some(w), Some(h)) = (e.number("W"), e.number("H")) else {
+            refuse(
+                self,
+                "it has no width and height".to_string(),
+                "picture without a size",
+            );
+            return;
+        };
+        if w <= 0.0 || h <= 0.0 {
+            refuse(
+                self,
+                "it has no width and height".to_string(),
+                "picture without a size",
+            );
+            return;
+        }
+        let declared = e
+            .attr("DataLen")
+            .and_then(|v| v.parse::<usize>().ok())
+            .unwrap_or(0);
+        let data = e.attr("Data").unwrap_or("");
+        if declared > self.lim.max_bitmap_bytes {
+            let why = format!(
+                "{}: the picture is {declared} characters long and the limit is {} (max_bitmap_bytes)",
+                lbrn2_pic::CODE_SIZE,
+                self.lim.max_bitmap_bytes
+            );
+            refuse(self, why, "picture over the size limit");
+            return;
+        }
+        if data.is_empty() {
+            refuse(self, "it holds no data".to_string(), "picture without data");
+            return;
+        }
+        let result =
+            lbrn2_pic::decode_picture(data, &self.lim).and_then(|g| lbrn2_pic::orient(&g, m, w, h));
+        match result {
+            Ok((gray, width_mm, height_mm)) => {
+                self.stats.pictures += 1;
+                self.pictures.push(Picture {
+                    layer: layer.to_string(),
+                    width_mm,
+                    height_mm,
+                    gray,
+                });
+            }
+            Err(why) => {
+                let short = if why.starts_with(lbrn2_pic::CODE_PIXELS) {
+                    "picture over the pixel limit"
+                } else if why.starts_with(lbrn2_pic::CODE_FORMAT) {
+                    "picture in a format that is not read"
+                } else if why.starts_with(lbrn2_pic::CODE_ROTATED) {
+                    "picture turned by something other than a quarter turn"
+                } else {
+                    "picture that could not be decoded"
+                };
+                refuse(self, why, short);
+            }
+        }
+    }
+
+    /// An `Ellipse` (`Rx`, `Ry`) or a `Polygon` (`N` sides on the ellipse of `Rx`, `Ry`, a vertex pointing up), centred on its origin. Neither was in the real projects this was measured
+    /// on: both are written from the names of the attributes alone, so they are a prototype.
+    fn round_shape(&mut self, e: &Elem, m: &Mat, layer: &str, polygon: bool) -> Result<(), String> {
+        let name = if polygon { "polygon" } else { "ellipse" };
+        let (rx, ry) = match (e.number("Rx"), e.number("Ry"), e.number("R")) {
+            (Some(x), Some(y), _) => (x, y),
+            (None, None, Some(r)) => (r, r),
+            _ => (0.0, 0.0),
+        };
+        if rx <= 0.0 || ry <= 0.0 {
+            self.col
+                .warn(format!("a {name} without a size was skipped"));
+            bump(&mut self.stats.skipped, &format!("{name} without a size"));
+            return Ok(());
+        }
+        let local: Vec<Pt> = if polygon {
+            let sides = e.number("N").filter(|n| (3.0..=1000.0).contains(n));
+            let Some(n) = sides.map(|n| n.round() as usize) else {
+                self.col
+                    .warn("a polygon whose number of sides is not from 3 to 1000 was skipped");
+                bump(&mut self.stats.skipped, "polygon without a number of sides");
+                return Ok(());
+            };
+            (0..n)
+                .map(|k| {
+                    let t =
+                        -std::f64::consts::FRAC_PI_2 + std::f64::consts::TAU * k as f64 / n as f64;
+                    (rx * t.cos(), ry * t.sin())
+                })
+                .collect()
+        } else {
+            let pieces =
+                flatten::arc_pieces(rx.max(ry), std::f64::consts::TAU, self.tol, self.max_curve)
+                    .max(8);
+            (0..pieces)
+                .map(|k| {
+                    let t = std::f64::consts::TAU * k as f64 / pieces as f64;
+                    (rx * t.cos(), ry * t.sin())
+                })
+                .collect()
+        };
+        let pts: Vec<Pt> = local.into_iter().map(|p| apply(m, p)).collect();
+        self.stats.read_shapes += 1;
+        self.col.push(layer, None, pts, true)
     }
 
     /// The lists of a path: its own, or the ones an earlier path wrote under the same number.
@@ -961,7 +1204,12 @@ pub fn read_project(bytes: &[u8], opts: &ReadOptions) -> Result<Project, String>
     }
     let text = String::from_utf8_lossy(bytes);
     let text = text.strip_prefix('\u{feff}').unwrap_or(&text);
-    let root = parse_elements(text, limits.max_depth, limits.max_nodes)?;
+    let root = parse_elements(
+        text,
+        limits.max_depth,
+        limits.max_nodes,
+        limits.max_bitmap_bytes,
+    )?;
     if root.name != "LightBurnProject" {
         return Err("this is not a project file: there is no LightBurnProject element".to_string());
     }
@@ -976,18 +1224,41 @@ pub fn read_project(bytes: &[u8], opts: &ReadOptions) -> Result<Project, String>
         tol: opts.tolerance_mm,
         max_curve: limits.max_curve_segments,
         max_vertices: limits.max_points,
+        // an SVG has its y axis down and the cut turns it over; a file whose y axis points up is turned here so that the cut leaves it as it is
+        base: if opts.lbrn2_flip_y {
+            IDENTITY
+        } else {
+            [1.0, 0.0, 0.0, -1.0, 0.0, 0.0]
+        },
+        lim: limits,
+        pictures: Vec::new(),
     };
-    reader.walk(&root.kids, &IDENTITY)?;
+    let base = reader.base;
+    reader.walk(&root.kids, &base)?;
     let mut stats = std::mem::take(&mut reader.stats);
     stats.elements = count_elements(&root);
     for (what, n) in &stats.skipped {
         reader.col.warn(format!("{n} {what} not read"));
+    }
+    if stats.pictures > 0 {
+        reader.col.warn(format!(
+            "{} picture(s) of the project are kept for engraving (engrave FILE.lbrn2); they are not part of the cut",
+            stats.pictures
+        ));
+    }
+    if stats.read_shapes > 0 || stats.pictures > 0 {
+        reader.col.warn(format!(
+            "the direction of the y axis of an LBRN2 project is not confirmed with a real part: it is taken as pointing {} (lbrn2_flip_y = {}); look at the preview before cutting, a mirror image means the setting is the other one",
+            if opts.lbrn2_flip_y { "down, like an SVG" } else { "up, like the machine" },
+            if opts.lbrn2_flip_y { "on" } else { "off" }
+        ));
     }
     if !cuts.is_empty() {
         reader.col.warn(
             "the power, the speed and the passes of the layers are the ones the project gives: check them for this machine",
         );
     }
+    let pictures = std::mem::take(&mut reader.pictures);
     let drawing = reader.col.finish();
     Ok(Project {
         app_version: root.attr("AppVersion").unwrap_or("").to_string(),
@@ -995,6 +1266,8 @@ pub fn read_project(bytes: &[u8], opts: &ReadOptions) -> Result<Project, String>
         format_version: root.attr("FormatVersion").unwrap_or("").to_string(),
         mirror: (flag(root.attr("MirrorX")), flag(root.attr("MirrorY"))),
         cut_settings: cuts,
+        pictures,
+        variable_text: read_variable_text(&root),
         stats,
         drawing,
     })
@@ -1018,7 +1291,7 @@ pub fn read_lbrn2(bytes: &[u8], opts: &ReadOptions) -> Result<Drawing, String> {
 // ---------------------------------------------------------------- what a file holds and what the reader uses of it
 
 /// The elements this reader uses.
-pub const READ_ELEMENTS: [&str; 18] = [
+pub const READ_ELEMENTS: [&str; 27] = [
     "LightBurnProject",
     "CutSetting",
     "CutSetting_Img",
@@ -1037,10 +1310,19 @@ pub const READ_ELEMENTS: [&str; 18] = [
     "PrimList",
     "Children",
     "BackupPath",
+    "tabsEnabled",
+    "tabCount",
+    "tabSize",
+    "VariableText",
+    "Start",
+    "End",
+    "Current",
+    "Increment",
+    "AutoAdvance",
 ];
 
 /// The attributes this reader uses, as `element.attribute`.
-pub const READ_ATTRIBUTES: [&str; 23] = [
+pub const READ_ATTRIBUTES: [&str; 36] = [
     "LightBurnProject.AppVersion",
     "LightBurnProject.DeviceName",
     "LightBurnProject.FormatVersion",
@@ -1064,6 +1346,19 @@ pub const READ_ATTRIBUTES: [&str; 23] = [
     "Shape.W",
     "Shape.H",
     "Shape.Cr",
+    "Shape.Data",
+    "Shape.Rx",
+    "Shape.Ry",
+    "Shape.R",
+    "Shape.N",
+    "tabsEnabled.Value",
+    "tabCount.Value",
+    "tabSize.Value",
+    "Start.Value",
+    "End.Value",
+    "Current.Value",
+    "Increment.Value",
+    "AutoAdvance.Value",
 ];
 
 /// The elements and the attributes of a file with how many times each appears, to see what a reader leaves out.
@@ -1105,12 +1400,17 @@ pub fn inventory(bytes: &[u8], opts: &ReadOptions) -> Result<Inventory, String> 
     }
     let text = String::from_utf8_lossy(bytes);
     let text = text.strip_prefix('\u{feff}').unwrap_or(&text);
-    let root = parse_elements(text, limits.max_depth, limits.max_nodes)?;
+    let root = parse_elements(
+        text,
+        limits.max_depth,
+        limits.max_nodes,
+        limits.max_bitmap_bytes,
+    )?;
     let mut inv = Inventory::default();
     let mut stack = vec![&root];
     while let Some(e) = stack.pop() {
         bump(&mut inv.elements, &e.name);
-        for (k, _) in &e.attrs {
+        for (k, _) in e.attrs.iter().filter(|(k, _)| k != "DataLen") {
             bump(&mut inv.attributes, &format!("{}.{k}", e.name));
         }
         stack.extend(e.kids.iter().rev());

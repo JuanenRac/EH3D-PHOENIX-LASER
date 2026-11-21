@@ -405,6 +405,32 @@
           }
         },
         {
+          "name": "lbrn2_pic.rs",
+          "desc": {
+            "en": "the pictures of an LBRN2 project: base64, PNG, limits, turned as placed",
+            "es": "las imágenes de un proyecto LBRN2: base64, PNG, límites y giro según su colocación",
+            "de": "die Bilder eines LBRN2-Projekts: Base64, PNG, Grenzen, wie platziert gedreht",
+            "fr": "les images d'un projet LBRN2 : base64, PNG, limites, tournées comme placées",
+            "it": "le immagini di un progetto LBRN2: base64, PNG, limiti, ruotate come posizionate",
+            "ja": "LBRN2プロジェクトの画像：base64、PNG、上限、配置どおりの向き",
+            "zh": "LBRN2 工程中的图片：base64、PNG、限制，按摆放方向转动",
+            "pt": "as imagens de um projeto LBRN2: base64, PNG, limites, rodadas como colocadas"
+          }
+        },
+        {
+          "name": "vartext.rs",
+          "desc": {
+            "en": "the variable text: a counter and the columns of a CSV file, one text per row",
+            "es": "el texto variable: un contador y las columnas de un CSV, un texto por fila",
+            "de": "der variable Text: ein Zähler und die Spalten einer CSV-Datei, ein Text je Zeile",
+            "fr": "le texte variable : un compteur et les colonnes d'un CSV, un texte par ligne",
+            "it": "il testo variabile: un contatore e le colonne di un CSV, un testo per riga",
+            "ja": "可変テキスト：カウンターとCSVの列、1行につき1つのテキスト",
+            "zh": "可变文字：计数器和 CSV 的列，每行一个文字",
+            "pt": "o texto variável: um contador e as colunas de um CSV, um texto por linha"
+          }
+        },
+        {
           "name": "export.rs",
           "desc": {
             "en": "a drawing written again as a plain SVG or DXF",
@@ -682,6 +708,32 @@
             "ja": "LBRN2リーダーのテスト：自作プロジェクト、悪意あるファイル、ファズ",
             "zh": "LBRN2 读取器测试：自编工程、恶意文件和模糊测试",
             "pt": "testes do leitor LBRN2 com projetos escritos aqui, ficheiros hostis e fuzz"
+          }
+        },
+        {
+          "name": "lbrn2_more.rs",
+          "desc": {
+            "en": "tests of LBRN2 pictures, the y axis, ellipse, polygon, tabs and fuzz",
+            "es": "pruebas de las imágenes LBRN2, el eje y, elipse, polígono, puentes y fuzz",
+            "de": "Tests der LBRN2-Bilder, der y-Achse, Ellipse, Vieleck, Stege und Fuzz",
+            "fr": "tests des images LBRN2, de l'axe y, ellipse, polygone, ponts et fuzz",
+            "it": "test delle immagini LBRN2, dell'asse y, ellisse, poligono, ponti e fuzz",
+            "ja": "LBRN2の画像、y軸、楕円、多角形、ブリッジ、ファズのテスト",
+            "zh": "LBRN2 图片、y 轴、椭圆、多边形、连接桥和模糊测试",
+            "pt": "testes das imagens LBRN2, do eixo y, elipse, polígono, pontes e fuzz"
+          }
+        },
+        {
+          "name": "vartext.rs",
+          "desc": {
+            "en": "tests of the variable text: CSV files, counters, places, series and fuzz",
+            "es": "pruebas del texto variable: CSV, contadores, huecos, series y fuzz",
+            "de": "Tests des variablen Textes: CSV, Zähler, Platzhalter, Serien und Fuzz",
+            "fr": "tests du texte variable : CSV, compteurs, emplacements, séries et fuzz",
+            "it": "test del testo variabile: CSV, contatori, segnaposto, serie e fuzz",
+            "ja": "可変テキストのテスト：CSV、カウンター、置換位置、連番、ファズ",
+            "zh": "可变文字测试：CSV、计数器、占位、系列和模糊测试",
+            "pt": "testes do texto variável: CSV, contadores, lugares, séries e fuzz"
           }
         },
         {

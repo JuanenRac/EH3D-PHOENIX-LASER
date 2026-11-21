@@ -547,7 +547,8 @@ fn a_text_is_drawn_from_its_backup_path_with_the_transform_of_that_path_only() {
 }
 
 #[test]
-fn a_picture_and_a_shape_of_a_type_not_seen_are_left_out_with_a_note_and_the_rest_is_read() {
+fn a_picture_that_cannot_be_decoded_and_a_shape_of_a_type_not_seen_are_left_out_with_a_note_and_the_rest_is_read(
+) {
     let bitmap = "    <Shape Type=\"Bitmap\" CutIndex=\"0\" W=\"10\" H=\"10\" File=\"x.png\" Data=\"iVBORw0KGgo=\"><XForm>1 0 0 1 0 0</XForm></Shape>\n";
     let odd = "    <Shape Type=\"Spiral\" CutIndex=\"0\" Turns=\"3\"><XForm>1 0 0 1 0 0</XForm></Shape>\n";
     let ok = rect(0, 6.0, 6.0, IDENT);
@@ -557,11 +558,12 @@ fn a_picture_and_a_shape_of_a_type_not_seen_are_left_out_with_a_note_and_the_res
     )
     .unwrap();
     assert_eq!(p.drawing.shapes.len(), 1);
+    // eight bytes that begin like a PNG are no picture
     assert!(p
         .stats
         .skipped
         .iter()
-        .any(|(k, n)| k == "picture" && *n == 1));
+        .any(|(k, n)| k == "picture that could not be decoded" && *n == 1));
     assert!(p
         .stats
         .skipped
@@ -571,7 +573,8 @@ fn a_picture_and_a_shape_of_a_type_not_seen_are_left_out_with_a_note_and_the_res
         .drawing
         .warnings
         .iter()
-        .any(|w| w.contains("1 picture not read")));
+        .any(|w| w.contains("1 picture that could not be decoded not read")));
+    assert!(p.pictures.is_empty());
     let types: Vec<&str> = p
         .stats
         .shape_types
@@ -586,7 +589,13 @@ fn a_picture_with_a_very_long_data_attribute_is_not_kept_in_memory_but_is_counte
     let big = "A".repeat(200_000);
     let bitmap = format!("    <Shape Type=\"Bitmap\" CutIndex=\"0\" W=\"10\" H=\"10\" Data=\"{big}\"><XForm>1 0 0 1 0 0</XForm></Shape>\n");
     let p = read_project(project("", &bitmap).as_bytes(), &OPTS()).unwrap();
-    assert!(p.stats.skipped.iter().any(|(k, _)| k == "picture"));
+    // it is text of zeros once decoded: not a picture in a format that is read
+    assert!(p
+        .stats
+        .skipped
+        .iter()
+        .any(|(k, _)| k.starts_with("picture")));
+    assert!(p.pictures.is_empty());
     let inv = inventory(project("", &bitmap).as_bytes(), &OPTS()).unwrap();
     assert!(inv
         .attributes
@@ -840,9 +849,11 @@ fn the_inventory_counts_every_element_and_attribute_and_names_the_ones_the_reade
         .iter()
         .map(|(k, _)| k.as_str())
         .collect();
-    for left_out in ["Thumbnail", "VariableText", "Start", "Notes", "dotTime"] {
+    for left_out in ["Thumbnail", "Notes", "dotTime"] {
         assert!(unread.contains(&left_out), "{left_out} in {unread:?}");
     }
+    // the counter of the variable text is read now
+    assert!(!unread.contains(&"VariableText") && !unread.contains(&"Start"));
     assert!(!unread.contains(&"maxPower") && !unread.contains(&"Shape"));
     let attrs: Vec<&str> = inv
         .unread_attributes()
