@@ -299,6 +299,12 @@ pub fn vector_job(drawing: &Drawing, s: &Settings) -> Result<(VectorJob, Vec<Str
                     cut::comment_text(&layer)
                 ));
             }
+            if crate::sublayers::of(s, &layer).next().is_some() {
+                notes.push(format!(
+                    "layer {}: the server makes its own program from the shapes, so the sub-layers of the layer are not sent as operations of their own (write the program with `phoenix-laser vector` and send that program to apply them)",
+                    cut::comment_text(&layer)
+                ));
+            }
             job.ops.push(VectorOp {
                 layer: layer.clone(),
                 mode,

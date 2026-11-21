@@ -17,7 +17,7 @@ key = value
 key = value
 ```
 
-Sections: `[limits]`, `[read]`, `[order]`, `[offset]`, `[hatch]`, `[machine]`, `[frame]`, `[focus]`, `[trace]`, `[tone]`, `[verify]`, `[calibrate]`, `[text]`, `[qr]`, `[send]`, `[interlocks]`, `[defaults]`, one `[layer NAME]` for each layer or colour, one `[profile NAME]` for each machine and one `[zone NAME]` for each forbidden zone of the bed. `[defaults]` is what a layer gets that the file
+Sections: `[limits]`, `[read]`, `[order]`, `[offset]`, `[hatch]`, `[machine]`, `[frame]`, `[focus]`, `[trace]`, `[tone]`, `[verify]`, `[calibrate]`, `[text]`, `[qr]`, `[send]`, `[interlocks]`, `[job]`, `[live]`, `[defaults]`, one `[layer NAME]` for each layer or colour, one `[sublayer LAYER/LABEL]` for each extra pass over a layer, one `[profile NAME]` for each machine and one `[zone NAME]` for each forbidden zone of the bed. `[defaults]` is what a layer gets that the file
 does not name, and also what every `[layer NAME]` starts from (wherever in the file `[defaults]` is written). The switches are `on` and `off`.
 
 The window keeps the arrangement of its panels in the same file, as lines that start with `dock.` (for example `dock.version=1`). The reader of the settings leaves those lines alone wherever they are, the window writes them back without touching any other line, and a line that is not a setting and does not start with `dock.` is still an error.
@@ -48,7 +48,7 @@ A project of LBRN2 kind (`.lbrn2`) is read too: see [lbrn2.md](lbrn2.md). What i
 
 ## Order of the work
 
-1. The layers that are `engrave` are done first, then the ones that are `cut`; inside each kind by their `order` (the lowest first) and then by name.
+1. The layers that are `engrave` are done first, then the ones that are `cut`; inside each kind by their `order` (the lowest first) and then by name. A layer with sub-layers is done as several operations: the layer itself and then its sub-layers, each one placed by the same rule, so a fill (engrave) goes before an outline (cut) of the same layer, and two passes of the same kind and order keep the order of the file.
 2. Open paths whose ends are closer than `join_tolerance_mm` are joined into one path; one that comes back to its start becomes a closed contour.
 3. A contour that lies inside another one is cut before it (a hole before the piece it is a hole of), and among the orders that respect this the head travels as little as possible with the laser
    off: the nearest next contour, then a 2-opt improvement that never breaks the rule. A closed contour is entered at the vertex nearest to the head; an open one from its nearer end.
@@ -413,6 +413,30 @@ In the window, the section for the server shows the panel that every program of 
 
 The token travels in the clear over plain HTTP: use it on a network you trust or through a tunnel; the program says so when the address is not a private one. `send` checks the program against the limits of `[machine]` (the limit of power and of speed, the bed) as `verify` does, and a program that fails, or one of more than 200000 lines, is not sent; the server holds the job to its own limits too. `stop` is the emergency stop of the laser machine: the job ends at once and the machine is latched, so that no program is taken until an administrator runs `release`; a machine that says it is latched is not sent a program. Nothing here has run against a real laser, and the `laser` plugin of the server is a simulator so far.
 
+### `[job]`: where the work starts and how long it takes
+
+The work is placed by one of the nine points of its box, and that point goes to the origin of the machine (`origin_x` and `origin_y` of `[machine]`). With `align = page` in `[read]` the drawing is not moved at all (an absolute start: the coordinates are the ones it was drawn with, plus the origin) and `anchor` has no effect. The acceleration is the one the time of the work counts at every corner; the time is given as a range, from every move at its own feed with no braking at all to the time of the preview of the program, which brakes at every corner (the passes are in both, because the program holds each of them).
+
+| Key | Default | Meaning |
+|---|---|---|
+| `anchor` | bottom_left | the point of the box of the work that goes to the origin: `bottom_left`, `bottom`, `bottom_right`, `left`, `center`, `right`, `top_left`, `top` or `top_right` |
+| `accel_mm_s2` | 1000 | the acceleration of the head for the time of the work, from 1 to 100000 mm/s2 |
+
+The keys of `[job]` are `anchor` and `accel_mm_s2`.
+
+### `[live]`: the range of the live adjustment
+
+While a job runs, the power and the speed can be adjusted as a percent of what the program has. The adjustment is only a calculation here, held by the range below, by the limit of power and of speed of `[machine]`, by the limit sent to the server (`[send]`) and, for the low power of the pilot, by `max_pilot_percent` of `[frame]`; the lowest limit wins, and a value that was held is told with the limit that held it. Nothing is sent to a machine. By default the adjustment can lower a value to a tenth and never raise it.
+
+| Key | Default | Meaning |
+|---|---|---|
+| `power_min_percent` | 10 | the lowest percent of the power of the program that can be asked, from 1 to 200 and no more than `power_max_percent` |
+| `power_max_percent` | 100 | the highest percent of the power of the program that can be asked, from 1 to 200; the limits of the machine and of the server still hold over it |
+| `speed_min_percent` | 10 | the lowest percent of the speed of the program, from 1 to 200 and no more than `speed_max_percent` |
+| `speed_max_percent` | 100 | the highest percent of the speed of the program, from 1 to 200; the limit of speed of the machine still holds over it |
+
+The keys of `[live]` are `power_min_percent`, `power_max_percent`, `speed_min_percent` and `speed_max_percent`.
+
 ### `[defaults]` and `[layer NAME]`
 
 | Key | Default | Range | Meaning |
@@ -430,6 +454,10 @@ The token travels in the clear over plain HTTP: use it on a network you trust or
 | `hatch_spacing` | 0.1 | 0.01 to 5 | mm between the lines |
 | `hatch_cross` | off | `on`, `off` | fill a second time with lines at right angles to the first ones (`hatch_angle` + 90 degrees), in every pass; the limit of lines holds over each set |
 | `order` | 0 | any whole number | the layers of a kind are done from the lowest |
+
+### `[sublayer LAYER/LABEL]`: an extra pass over a layer
+
+A layer can be worked more than once with other settings: a fill and then an outline, a light mark and then a deep cut. Each extra pass is a `[sublayer LAYER/LABEL]` section, where `LAYER` is a layer that has its own `[layer LAYER]` section and `LABEL` is 1 to 40 letters, figures, `-` or `_` that tell the passes of the layer apart (a layer that is itself named with a slash is split at its last slash). A sub-layer works the same shapes as its layer, starts from the settings of the layer (wherever in the file the layer is written) and changes what it says, with the same keys and ranges as the table above. A layer has at most 8 sub-layers and a file at most 512. Every sub-layer is held by the limits of `[machine]` like a layer is (a sub-layer that is `skip` is not), and an error names the sub-layer, as `sublayer red/outline`. The program writes each pass under a comment `; layer red/outline: ...`. A layer that is `skip` is skipped with all its sub-layers, and a drawing sent to the server as a vector job carries the layers only (a note says the sub-layers are not sent).
 
 ## Not tried
 

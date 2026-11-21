@@ -6,11 +6,11 @@ EH3D-PHOENIX-LASER works on a computer: the command line engraves pictures, cuts
 
 ## Recent work
 
-The window became the docking frame of the suite with four workspaces for tasks, the reader of LBRN2 projects was added with the layers of a project filling the table of layers, a tool that reads a folder of projects and says what the reader leaves out was added, and the common database of materials now gives starting points that are shown as untried. The README files, this page and the register of requirements agree on what exists and what is missing; the register is the one that says it.
+The window became the docking frame of the suite with four workspaces for tasks, the reader of LBRN2 projects was added with the layers of a project filling the table of layers, a tool that reads a folder of projects and says what the reader leaves out was added, and the common database of materials now gives starting points that are shown as untried. A layer can now be worked in several passes with their own settings (sub-layers), the work can be placed by any of nine points of its box, framed with the laser off and timed as a range, the presets of a material can be assigned or linked to a layer, and the live adjustment of power and speed is a calculation held by four limits. The README files, this page and the register of requirements agree on what exists and what is missing; the register is the one that says it.
 
 ## Capabilities
 
-The official state of each capability is in `REQUIREMENTS.md`. The register has 105 requirements: 91 implemented, 9 prototype, 5 planned and 0 validated. By progress: 91 done, 9 partial, 1 pending and 4 blocked. This page never states a state that `REQUIREMENTS.md` does not.
+The official state of each capability is in `REQUIREMENTS.md`. The register has 117 requirements: 101 implemented, 11 prototype, 5 planned and 0 validated. By progress: 101 done, 11 partial, 1 pending and 4 blocked. This page never states a state that `REQUIREMENTS.md` does not.
 
 ## Open questions
 
@@ -26,7 +26,7 @@ The official state of each capability is in `REQUIREMENTS.md`. The register has 
 
 ## Known technical debt and omitted tests
 
-* 895 tests (`#[test]` lines of `src/` and `tests/`; nine of them keep this register true), all on a computer, with fixed seeds where chance is involved.
+* 950 tests (`#[test]` lines of `src/` and `tests/`; nine of them keep this register true), all on a computer, with fixed seeds where chance is involved.
 * Nothing has been burnt: the checks read the program as text and the server is a stand-in.
 * The window has not been looked at on a screen by a person.
 * The QR code and the barcode are read back by readers of the program's own; no scanner has read a burnt symbol.

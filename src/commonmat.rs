@@ -173,11 +173,54 @@ mod real {
         }
         answer
     }
+
+    /// The second figures that other sources give for the same case: listed apart and never returned by `lookup`.
+    pub fn alternatives(
+        id: &str,
+        kind: Kind,
+        what: What,
+        watts: f64,
+        thickness_mm: f64,
+    ) -> Vec<Found> {
+        let Some(db) = database() else {
+            return Vec::new();
+        };
+        let Some(w) = db.get(id) else {
+            return Vec::new();
+        };
+        let process = LaserProcess {
+            kind: match kind {
+                Kind::Diode => LaserKind::Diode,
+                Kind::Co2 => LaserKind::Co2,
+            },
+            mode: match what {
+                What::Cut => LaserMode::Cut,
+                What::Engrave => LaserMode::Engrave,
+            },
+        };
+        w.laser_alternatives(process)
+            .into_iter()
+            .filter(|p| (p.power_w - watts).abs() < 1e-6)
+            .filter(|p| {
+                what == What::Engrave
+                    || p.thickness_mm
+                        .is_some_and(|t| (t - thickness_mm).abs() < 1e-6)
+            })
+            .map(|p| Found {
+                power_percent: p.power_pct,
+                speed_mm_min: p.speed_mm_min,
+                passes: p.passes,
+                air_assist: p.air_assist,
+                interpolated: false,
+                verified: p.verified,
+            })
+            .collect()
+    }
 }
 
 #[cfg(not(feature = "common-machining"))]
 mod real {
-    use super::{Answer, Entry, Kind, What};
+    use super::{Answer, Entry, Found, Kind, What};
     use crate::lang::Lang;
 
     pub fn available() -> bool {
@@ -207,6 +250,16 @@ mod real {
             reasons: Vec::new(),
         }
     }
+
+    pub fn alternatives(
+        _id: &str,
+        _kind: Kind,
+        _what: What,
+        _watts: f64,
+        _thickness_mm: f64,
+    ) -> Vec<Found> {
+        Vec::new()
+    }
 }
 
 /// Whether this build has the database.
@@ -234,6 +287,12 @@ pub fn lookup(
     lang: Lang,
 ) -> Answer {
     real::lookup(id, kind, what, watts, thickness_mm, lang)
+}
+
+/// The second figures that other sources give for the same case (the points of the database marked as alternatives), apart from the starting point: they are listed and never used for it.
+/// Empty in a build without the database.
+pub fn alternatives(id: &str, kind: Kind, what: What, watts: f64, thickness_mm: f64) -> Vec<Found> {
+    real::alternatives(id, kind, what, watts, thickness_mm)
 }
 
 #[cfg(test)]

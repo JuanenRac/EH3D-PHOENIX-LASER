@@ -103,7 +103,10 @@ fn place(drawing: &Drawing, s: &Settings) -> Vec<(String, Contour)> {
         (Align::Page, Some(h), true) => (0.0, h),
         (Align::Page, _, false) => (0.0, 0.0),
         _ => match bounds_of(used.iter().flat_map(|sh| sh.pts.iter().map(|&p| flip(p)))) {
-            Some((lo, _)) => (-lo.0, -lo.1),
+            Some((lo, hi)) => {
+                let a = s.job.anchor.point(lo, hi);
+                (-a.0, -a.1)
+            }
             None => (0.0, 0.0),
         },
     };
@@ -502,8 +505,23 @@ fn visits_for(
 
 struct Layer<'a> {
     key: &'a str,
+    /// The label of the sub-layer; empty for the layer itself.
+    label: String,
+    /// The place of the operation among those of its layer (0 for the layer).
+    seq: usize,
     params: LayerParams,
     contours: Vec<Contour>,
+}
+
+impl Layer<'_> {
+    /// The name of the operation as the program writes it: the layer, or `layer/label` for a sub-layer.
+    fn name(&self) -> String {
+        if self.label.is_empty() {
+            self.key.to_string()
+        } else {
+            format!("{}/{}", self.key, self.label)
+        }
+    }
 }
 
 /// Cuts the contours of a layer.
@@ -519,13 +537,13 @@ fn cut_layer(out: &mut Out, layer: &Layer, notes: &mut Vec<String>) -> Result<us
     if p.kerf_mm > 0.0 && p.kerf_side != KerfSide::None {
         let parents = containers(&items, s.containment_max_items);
         if parents.is_none() {
-            note(notes, format!("layer {}: too many closed contours to tell holes from pieces: the beam goes to one side only", comment_text(layer.key)));
+            note(notes, format!("layer {}: too many closed contours to tell holes from pieces: the beam goes to one side only", comment_text(&layer.name())));
         }
         let half = p.kerf_mm / 2.0;
         let mut moved: Vec<Contour> = Vec::with_capacity(items.len());
         for (i, c) in items.iter().enumerate() {
             if !c.closed {
-                note(notes, format!("layer {}: open paths are cut on the line (the width of the beam is not taken into account)", comment_text(layer.key)));
+                note(notes, format!("layer {}: open paths are cut on the line (the width of the beam is not taken into account)", comment_text(&layer.name())));
                 moved.push(c.clone());
                 continue;
             }
@@ -536,8 +554,8 @@ fn cut_layer(out: &mut Out, layer: &Layer, notes: &mut Vec<String>) -> Result<us
             };
             match offset_ring(&c.pts, d, s.read.tolerance_mm, s.offset_max_points) {
                 Ok(rings) if !rings.is_empty() => moved.extend(rings.into_iter().map(|pts| Contour { pts, closed: true })),
-                Ok(_) => note(notes, format!("layer {}: a contour is too small or too narrow for the width of the beam and was not cut", comment_text(layer.key))),
-                Err(e) => note(notes, format!("layer {}: a contour was not cut: {e}", comment_text(layer.key))),
+                Ok(_) => note(notes, format!("layer {}: a contour is too small or too narrow for the width of the beam and was not cut", comment_text(&layer.name()))),
+                Err(e) => note(notes, format!("layer {}: a contour was not cut: {e}", comment_text(&layer.name()))),
             }
         }
         items = moved;
@@ -551,7 +569,7 @@ fn cut_layer(out: &mut Out, layer: &Layer, notes: &mut Vec<String>) -> Result<us
             notes,
             format!(
                 "layer {}: too many closed contours to cut inside ones first",
-                comment_text(layer.key)
+                comment_text(&layer.name())
             ),
         );
     }
@@ -575,7 +593,7 @@ fn cut_layer(out: &mut Out, layer: &Layer, notes: &mut Vec<String>) -> Result<us
                     notes,
                     format!(
                         "layer {}: a contour is too short for {} tabs of {} mm: it is cut whole",
-                        comment_text(layer.key),
+                        comment_text(&layer.name()),
                         p.tabs,
                         p.tab_width_mm
                     ),
@@ -718,17 +736,24 @@ pub fn plan(drawing: &Drawing, s: &Settings) -> Result<Plan, String> {
                 .to_string(),
         );
     }
-    let mut work: Vec<Layer> = groups
-        .iter()
-        .map(|(key, contours)| Layer {
-            key,
-            params: s.params_for(key),
-            contours: contours.clone(),
-        })
-        .collect();
+    let mut work: Vec<Layer> = Vec::new();
+    for (key, contours) in &groups {
+        for (seq, op) in crate::sublayers::operations_of(s, key)
+            .into_iter()
+            .enumerate()
+        {
+            work.push(Layer {
+                key,
+                label: op.label,
+                seq,
+                params: op.params,
+                contours: contours.clone(),
+            });
+        }
+    }
     work.sort_by(|a, b| {
-        let rank = |l: &Layer| usize::from(l.params.mode == LayerMode::Cut);
-        (rank(a), a.params.order, a.key).cmp(&(rank(b), b.params.order, b.key))
+        crate::sublayers::order_key(&a.params, a.key, a.seq)
+            .cmp(&crate::sublayers::order_key(&b.params, b.key, b.seq))
     });
     let mut out = Out {
         g: String::from("G21\nG90\nM4 S0\n"),
@@ -744,7 +769,7 @@ pub fn plan(drawing: &Drawing, s: &Settings) -> Result<Plan, String> {
         let p = &layer.params;
         out.line(&format!(
             "; layer {}: {}, {} %, {} mm/min, {} pass(es)",
-            comment_text(layer.key),
+            comment_text(&layer.name()),
             p.mode.word(),
             n(p.power_percent)?,
             n(p.speed_mm_min)?,

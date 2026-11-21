@@ -6,6 +6,9 @@
 //! colour); a line that starts with `#` or `;` is a note. A key that is not known is an error that names its line: a typing mistake never changes nothing silently.
 
 use crate::guard::{Interlocks, Zone, ZoneKind, MAX_ZONES};
+use crate::job::{Anchor, JobSettings};
+use crate::live::LiveSettings;
+use crate::sublayers::{SubLayer, MAX_SUBLAYERS};
 use crate::tone::Tone;
 use crate::vector::{GroupBy, Limits, Pt, ReadOptions};
 use std::path::Path;
@@ -1132,6 +1135,12 @@ pub struct Settings {
     pub zones: Vec<Zone>,
     /// The emergency stop, the enclosure and the air assist as the file says them (`[interlocks]`).
     pub interlocks: Interlocks,
+    /// The extra passes over the layers (`[sublayer LAYER/LABEL]`): each starts from the settings of its layer.
+    pub sublayers: Vec<SubLayer>,
+    /// Where the work starts and the acceleration its time is worked out with (`[job]`).
+    pub job: JobSettings,
+    /// The range of the live adjustment of the power and of the speed (`[live]`).
+    pub live: LiveSettings,
     /// The tone curve of a picture before it becomes dots (`phoenix-laser engrave` and the window).
     pub tone: Tone,
     pub defaults: LayerParams,
@@ -1171,6 +1180,9 @@ impl Default for Settings {
             send: SendSettings::default(),
             zones: Vec::new(),
             interlocks: Interlocks::default(),
+            sublayers: Vec::new(),
+            job: JobSettings::default(),
+            live: LiveSettings::default(),
             tone: Tone::default(),
             defaults: LayerParams::default(),
             layers: Vec::new(),
@@ -1276,6 +1288,8 @@ impl Settings {
         self.marks.validate()?;
         self.server.validate()?;
         self.send.validate()?;
+        self.job.validate()?;
+        self.live.validate()?;
         if self.zones.len() > MAX_ZONES {
             return Err(format!("the settings describe more than {MAX_ZONES} zones"));
         }
@@ -1305,6 +1319,7 @@ impl Settings {
                     .map_err(|e| format!("layer {name}: {e}"))?;
             }
         }
+        crate::sublayers::validate(self)?;
         Ok(())
     }
 }
@@ -1578,6 +1593,19 @@ fn set_global(s: &mut Settings, section: &str, key: &str, value: &str) -> Result
         ("frame", "margin_mm") => s.frame.margin_mm = number(value)?,
         ("frame", "pilot_percent") => s.frame.pilot_percent = number(value)?,
         ("frame", "max_pilot_percent") => s.frame.max_pilot_percent = number(value)?,
+        ("job", "anchor") => {
+            s.job.anchor = Anchor::from_word(value).ok_or_else(|| {
+                format!(
+                    "'{}' is not bottom_left, bottom, bottom_right, left, center, right, top_left, top or top_right",
+                    value.trim()
+                )
+            })?
+        }
+        ("job", "accel_mm_s2") => s.job.accel_mm_s2 = number(value)?,
+        ("live", "power_min_percent") => s.live.power_min_percent = number(value)?,
+        ("live", "power_max_percent") => s.live.power_max_percent = number(value)?,
+        ("live", "speed_min_percent") => s.live.speed_min_percent = number(value)?,
+        ("live", "speed_max_percent") => s.live.speed_max_percent = number(value)?,
         ("machine", "max_power_percent") => s.machine.max_power_percent = number(value)?,
         ("machine", "max_speed_mm_min") => s.machine.max_speed_mm_min = number(value)?,
         ("machine", "profile") => s.profile = Some(value.trim().to_lowercase()),
@@ -1621,6 +1649,34 @@ fn set_zone(z: &mut Zone, key: &str, value: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// The place of the sub-layer that a section names (`LAYER/LABEL`), made from the settings of its layer when it is new. The layer must have a section of its own.
+fn sublayer_at(s: &mut Settings, name: &str) -> Result<usize, String> {
+    let (layer, label) = crate::sublayers::split_name(name)
+        .map_err(|e| format!("[sublayer {}]: {e}", name.trim()))?;
+    if let Some(i) = s
+        .sublayers
+        .iter()
+        .position(|x| x.layer == layer && x.label == label)
+    {
+        return Ok(i);
+    }
+    if s.sublayers.len() >= MAX_SUBLAYERS {
+        return Err(format!("more than {MAX_SUBLAYERS} sub-layers"));
+    }
+    if !s.layers.iter().any(|(n, _)| *n == layer) {
+        return Err(format!(
+            "[sublayer {layer}/{label}]: the layer '{layer}' has no [layer {layer}] section"
+        ));
+    }
+    let params = s.params_for(&layer);
+    s.sublayers.push(SubLayer {
+        layer,
+        label,
+        params,
+    });
+    Ok(s.sublayers.len() - 1)
+}
+
 /// The start of every key the frame of the window writes in the settings file; the reader leaves these lines alone.
 pub const DOCK_KEY_PREFIX: &str = "dock.";
 
@@ -1636,6 +1692,7 @@ pub fn parse(text: &str) -> Result<Settings, String> {
     let mut named: Vec<String> = Vec::new();
     let mut named_profiles: Vec<String> = Vec::new();
     let mut named_zones: Vec<String> = Vec::new();
+    let mut named_subs: Vec<String> = Vec::new();
     let mut section = String::new();
     for (n, raw) in text.lines().enumerate() {
         let line = n + 1;
@@ -1657,7 +1714,7 @@ pub fn parse(text: &str) -> Result<Settings, String> {
             let (word, rest) = head.split_once(char::is_whitespace).unwrap_or((head, ""));
             let word = word.to_ascii_lowercase();
             section = match word.as_str() {
-                "limits" | "read" | "order" | "offset" | "hatch" | "machine" | "frame" | "focus" | "trace" | "tone" | "verify" | "calibrate" | "text" | "qr" | "barcode" | "marks" | "server" | "send" | "interlocks" | "defaults" if rest.trim().is_empty() => word,
+                "limits" | "read" | "order" | "offset" | "hatch" | "machine" | "frame" | "focus" | "trace" | "tone" | "verify" | "calibrate" | "text" | "qr" | "barcode" | "marks" | "server" | "send" | "interlocks" | "job" | "live" | "defaults" if rest.trim().is_empty() => word,
                 "layer" if !rest.trim().is_empty() => {
                     named.push(rest.trim().to_lowercase());
                     format!("layer {}", rest.trim().to_lowercase())
@@ -1670,7 +1727,11 @@ pub fn parse(text: &str) -> Result<Settings, String> {
                     named_zones.push(rest.trim().to_lowercase());
                     format!("zone {}", rest.trim().to_lowercase())
                 }
-                _ => return Err(format!("line {line}: '[{head}]' is not a section (limits, read, order, offset, hatch, machine, frame, focus, trace, tone, verify, calibrate, text, qr, barcode, marks, server, send, interlocks, defaults, layer NAME, profile NAME or zone NAME)")),
+                "sublayer" if !rest.trim().is_empty() => {
+                    named_subs.push(rest.trim().to_lowercase());
+                    format!("sublayer {}", rest.trim().to_lowercase())
+                }
+                _ => return Err(format!("line {line}: '[{head}]' is not a section (limits, read, order, offset, hatch, machine, frame, focus, trace, tone, verify, calibrate, text, qr, barcode, marks, server, send, interlocks, job, live, defaults, layer NAME, sublayer LAYER/LABEL, profile NAME or zone NAME)")),
             };
             continue;
         }
@@ -1694,7 +1755,7 @@ pub fn parse(text: &str) -> Result<Settings, String> {
         set_layer(&mut s.defaults, e.key, e.value).map_err(|m| format!("line {}: {m}", e.line))?;
     }
     for e in &entries {
-        if e.section == "defaults" {
+        if e.section == "defaults" || e.section.starts_with("sublayer ") {
             continue;
         }
         if let Some(name) = e.section.strip_prefix("profile ") {
@@ -1787,6 +1848,19 @@ pub fn parse(text: &str) -> Result<Settings, String> {
             }
             s.layers.push((name, s.defaults));
         }
+    }
+    // the extra passes start from the layer they work, so they are read when every layer is known
+    for e in entries
+        .iter()
+        .filter(|e| e.section.starts_with("sublayer "))
+    {
+        let at = sublayer_at(&mut s, &e.section["sublayer ".len()..])
+            .map_err(|m| format!("line {}: {m}", e.line))?;
+        set_layer(&mut s.sublayers[at].params, e.key, e.value)
+            .map_err(|m| format!("line {}: {m}", e.line))?;
+    }
+    for name in named_subs {
+        sublayer_at(&mut s, &name)?;
     }
     s.validate()?;
     Ok(s)

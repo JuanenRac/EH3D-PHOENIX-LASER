@@ -594,6 +594,24 @@ fn layers_job(mut args: Vec<String>) -> Result<(), String> {
                 t.seconds, t.burn_seconds
             );
         }
+        for sub in eh3d_phoenix_laser::sublayers::of(&settings, &l.key) {
+            println!(
+                "  + {}/{}: {} at {} % and {} mm/min, {} pass(es)",
+                sub.layer,
+                sub.label,
+                sub.params.mode.word(),
+                sub.params.power_percent,
+                sub.params.speed_mm_min,
+                sub.params.passes
+            );
+            let name = cut::comment_text(&format!("{}/{}", l.key.to_lowercase(), sub.label));
+            if let Some(t) = times.iter().find(|t| t.key == name) {
+                println!(
+                    "    time: about {:.1} s with the head braking at every corner, {:.1} s of it burning",
+                    t.seconds, t.burn_seconds
+                );
+            }
+        }
     }
     if !times.is_empty() {
         println!(

@@ -36,7 +36,7 @@ impl Kind {
 /// One setting.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Entry {
-    /// The section of the file (`machine`, `zone`...); `layer` stands for `[defaults]` and `[layer NAME]`, `profile` for `[profile NAME]`, `zone` for `[zone NAME]` and `material` for the
+    /// The section of the file (`machine`, `zone`...); `layer` stands for `[defaults]`, `[layer NAME]` and `[sublayer LAYER/LABEL]`, `profile` for `[profile NAME]`, `zone` for `[zone NAME]` and `material` for the
     /// sections of a library of materials.
     pub section: &'static str,
     pub key: &'static str,
@@ -1006,6 +1006,48 @@ pub static ENTRIES: &[Entry] = &[
         key: "max_pilot_percent",
         kind: Kind::Number,
         default: "5",
+        safety: true,
+    },
+    Entry {
+        section: "job",
+        key: "anchor",
+        kind: Kind::Word,
+        default: "bottom_left",
+        safety: false,
+    },
+    Entry {
+        section: "job",
+        key: "accel_mm_s2",
+        kind: Kind::Number,
+        default: "1000",
+        safety: false,
+    },
+    Entry {
+        section: "live",
+        key: "power_min_percent",
+        kind: Kind::Number,
+        default: "10",
+        safety: false,
+    },
+    Entry {
+        section: "live",
+        key: "power_max_percent",
+        kind: Kind::Number,
+        default: "100",
+        safety: true,
+    },
+    Entry {
+        section: "live",
+        key: "speed_min_percent",
+        kind: Kind::Number,
+        default: "10",
+        safety: false,
+    },
+    Entry {
+        section: "live",
+        key: "speed_max_percent",
+        kind: Kind::Number,
+        default: "100",
         safety: true,
     },
     Entry {

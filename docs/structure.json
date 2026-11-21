@@ -431,6 +431,58 @@
           }
         },
         {
+          "name": "sublayers.rs",
+          "desc": {
+            "en": "extra passes over a layer: own settings, held by the limits, order of the work",
+            "es": "pasadas extra sobre una capa: ajustes propios, límites y orden del trabajo",
+            "de": "zusätzliche Durchgänge über einer Ebene: eigene Werte, Grenzen, Reihenfolge",
+            "fr": "passes supplémentaires sur un calque : réglages propres, limites et ordre du travail",
+            "it": "passate extra su un livello: impostazioni proprie, limiti e ordine del lavoro",
+            "ja": "レイヤーへの追加パス：個別設定、上限、作業順序",
+            "zh": "图层的额外加工道次：独立设置、上限与加工顺序",
+            "pt": "passagens extra sobre uma camada: definições próprias, limites e ordem do trabalho"
+          }
+        },
+        {
+          "name": "job.rs",
+          "desc": {
+            "en": "where the work starts, the frame that shows it and the time as a range",
+            "es": "dónde empieza el trabajo, el marco que lo muestra y el tiempo como rango",
+            "de": "wo die Arbeit beginnt, der Rahmen dazu und die Zeit als Spanne",
+            "fr": "où le travail commence, le cadre qui le montre et le temps en fourchette",
+            "it": "dove inizia il lavoro, la cornice che lo mostra e il tempo come intervallo",
+            "ja": "作業の開始位置、それを示す枠、範囲で示す所要時間",
+            "zh": "作业起点、显示作业范围的边框以及以区间表示的时间",
+            "pt": "onde o trabalho começa, a moldura que o mostra e o tempo como intervalo"
+          }
+        },
+        {
+          "name": "live.rs",
+          "desc": {
+            "en": "the live adjustment of power and speed, held by four limits (no machine is touched)",
+            "es": "el ajuste en vivo de potencia y velocidad, con cuatro límites (no toca ninguna máquina)",
+            "de": "die Live-Anpassung von Leistung und Tempo mit vier Grenzen (keine Maschine wird berührt)",
+            "fr": "le réglage en direct de la puissance et de la vitesse, avec quatre limites (aucune machine touchée)",
+            "it": "la regolazione in tempo reale di potenza e velocità, con quattro limiti (nessuna macchina toccata)",
+            "ja": "出力と速度のライブ調整、4つの上限付き（機械には触れない）",
+            "zh": "功率和速度的实时调整，受四项上限约束（不操作任何机器）",
+            "pt": "o ajuste em direto de potência e velocidade, com quatro limites (nenhuma máquina é tocada)"
+          }
+        },
+        {
+          "name": "presets.rs",
+          "desc": {
+            "en": "presets of a material: assign (copy) or link (follow), with the warning of untried values",
+            "es": "preajustes de material: asignar (copia) o vincular (sigue), con el aviso de valores no probados",
+            "de": "Voreinstellungen je Material: zuweisen (Kopie) oder verknüpfen (folgt), mit Warnung bei Ungeprüftem",
+            "fr": "préréglages de matériau : assigner (copie) ou lier (suit), avec l'avertissement des valeurs non essayées",
+            "it": "preimpostazioni di materiale: assegnare (copia) o collegare (segue), con avviso dei valori non provati",
+            "ja": "材料プリセット：割り当て（コピー）またはリンク（追従）、未検証値の警告つき",
+            "zh": "材料预设：指派（复制）或关联（跟随），并提示未经试验的数值",
+            "pt": "predefinições de material: atribuir (copiar) ou ligar (seguir), com aviso dos valores não testados"
+          }
+        },
+        {
           "name": "export.rs",
           "desc": {
             "en": "a drawing written again as a plain SVG or DXF",
@@ -734,6 +786,58 @@
             "ja": "可変テキストのテスト：CSV、カウンター、置換位置、連番、ファズ",
             "zh": "可变文字测试：CSV、计数器、占位、系列和模糊测试",
             "pt": "testes do texto variável: CSV, contadores, lugares, séries e fuzz"
+          }
+        },
+        {
+          "name": "sublayers.rs",
+          "desc": {
+            "en": "tests of the extra passes: order, limits, damaged files with a fixed seed",
+            "es": "pruebas de las pasadas extra: orden, límites y archivos dañados con semilla fija",
+            "de": "Tests der zusätzlichen Durchgänge: Reihenfolge, Grenzen, beschädigte Dateien mit festem Seed",
+            "fr": "tests des passes supplémentaires : ordre, limites, fichiers abîmés à graine fixe",
+            "it": "test delle passate extra: ordine, limiti, file danneggiati con seme fisso",
+            "ja": "追加パスのテスト：順序、上限、固定シードの破損ファイル",
+            "zh": "额外道次测试：顺序、上限、固定种子的损坏文件",
+            "pt": "testes das passagens extra: ordem, limites, ficheiros danificados com semente fixa"
+          }
+        },
+        {
+          "name": "joborigin.rs",
+          "desc": {
+            "en": "tests of the nine anchors, the frame with the laser off and the time as a range",
+            "es": "pruebas de los nueve anclajes, el marco con el láser apagado y el tiempo como rango",
+            "de": "Tests der neun Anker, des Rahmens bei ausgeschaltetem Laser und der Zeit als Spanne",
+            "fr": "tests des neuf ancrages, du cadre laser éteint et du temps en fourchette",
+            "it": "test dei nove ancoraggi, della cornice a laser spento e del tempo come intervallo",
+            "ja": "9つの基準点、レーザー消灯の枠、範囲で示す時間のテスト",
+            "zh": "九个锚点、关闭激光的边框和区间时间的测试",
+            "pt": "testes dos nove âncoras, da moldura com o laser desligado e do tempo como intervalo"
+          }
+        },
+        {
+          "name": "livelimits.rs",
+          "desc": {
+            "en": "tests of the live adjustment: four limits, eight languages, fixed seed",
+            "es": "pruebas del ajuste en vivo: cuatro límites, ocho idiomas, semilla fija",
+            "de": "Tests der Live-Anpassung: vier Grenzen, acht Sprachen, fester Seed",
+            "fr": "tests du réglage en direct : quatre limites, huit langues, graine fixe",
+            "it": "test della regolazione in tempo reale: quattro limiti, otto lingue, seme fisso",
+            "ja": "ライブ調整のテスト：4つの上限、8言語、固定シード",
+            "zh": "实时调整测试：四项上限、八种语言、固定种子",
+            "pt": "testes do ajuste em direto: quatro limites, oito línguas, semente fixa"
+          }
+        },
+        {
+          "name": "presets.rs",
+          "desc": {
+            "en": "tests of the presets: assign, link, refused changes, alternatives and a random series",
+            "es": "pruebas de los preajustes: asignar, vincular, cambios rechazados, alternativas y una serie aleatoria",
+            "de": "Tests der Voreinstellungen: zuweisen, verknüpfen, abgelehnte Änderungen, Alternativen, Zufallsserie",
+            "fr": "tests des préréglages : assigner, lier, changements refusés, alternatives et série aléatoire",
+            "it": "test delle preimpostazioni: assegnare, collegare, modifiche rifiutate, alternative e serie casuale",
+            "ja": "プリセットのテスト：割り当て、リンク、拒否される変更、代替値、ランダム系列",
+            "zh": "预设测试：指派、关联、被拒绝的更改、备选值和随机序列",
+            "pt": "testes das predefinições: atribuir, ligar, alterações recusadas, alternativas e série aleatória"
           }
         },
         {
