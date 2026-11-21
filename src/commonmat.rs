@@ -5,8 +5,8 @@
 //! seed of the database never was, so every answer carries the note «starting point, not tried on a machine» in the language of the window, and a material that must never be put under a
 //! laser is refused with the reasons the database gives. Outside the known range there is no answer, never an extrapolation.
 //!
-//! The database is taken with the feature `common-machining`, because the module `machining` of `eh3d-materials` was added to the common repository after the release this program is built
-//! against. Without the feature nothing is offered (`available()` is false) and the window says so; with it, the code below is the whole of the integration.
+//! The database is taken with the feature `common-machining`, which is on by default (the module `machining` of `eh3d-materials` is in the release of the common repository this program is built
+//! against). Without the feature (`--no-default-features`) nothing is offered (`available()` is false) and the window says so; with it, the code below is the whole of the integration.
 
 use crate::lang::Lang;
 use crate::materials::Material;

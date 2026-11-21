@@ -23,7 +23,7 @@ permissions:
 
 env:
   # The tag of each sibling repository this one is built against (name=tag, separated by spaces); a sibling that is not listed is taken at main.
-  SIBLING_REFS: "EH3D-COMMON=v0.2.7 EH3D-CORE-LIBS=v0.0.9"
+  SIBLING_REFS: "EH3D-COMMON=v0.3.0 EH3D-CORE-LIBS=v0.0.9"
 
 # One build per ref at a time, and a running build is never cancelled by a newer one (a half-done dry_run=false would leave a draft release behind).
 concurrency:

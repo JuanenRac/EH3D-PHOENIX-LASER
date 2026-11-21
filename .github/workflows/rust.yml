@@ -26,7 +26,7 @@ jobs:
     timeout-minutes: 60
     env:
       # The tag of each sibling repository this one is built against (name=tag, separated by spaces); a sibling that is not listed is taken at main.
-      SIBLING_REFS: "EH3D-COMMON=v0.2.7 EH3D-CORE-LIBS=v0.0.9"
+      SIBLING_REFS: "EH3D-COMMON=v0.3.0 EH3D-CORE-LIBS=v0.0.9"
     strategy:
       fail-fast: false
       matrix:
@@ -57,5 +57,7 @@ jobs:
         run: cargo clippy --all-targets -- -D warnings
       - name: Lints of the window
         run: cargo clippy --all-targets --features gui -- -D warnings
+      - name: Lints without the common database of materials
+        run: cargo clippy --all-targets --no-default-features -- -D warnings
       - name: Tests
         run: cargo test --all-targets

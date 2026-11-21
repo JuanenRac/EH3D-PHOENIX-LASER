@@ -29,7 +29,7 @@ The laser program of the PHOENIX family: it engraves a picture dot by dot, cuts 
 * **It reads:** pictures (PNG, PGM), drawings (SVG, DXF, LBRN2), G-code programs to check, the settings file, the library of materials, the common database of materials when it is built in, and the answers of the server.
 * **It writes:** G-code programs, SVG and DXF conversions, reports and previews that the person asks for, the library of materials the person edits and the arrangement of the window, never over a source; and orders to the laser plugin of the server when the person sends a job.
 * **It is read by:** the laser plugin of the EH3D server receives its jobs; no other program reads it.
-* **It depends on:** EH3D-COMMON (the docking frame, the server client and the image reader) as a sibling folder, and the common database of materials only with the feature `common-machining`.
+* **It depends on:** EH3D-COMMON (the docking frame, the server client and the image reader) as a sibling folder, and the common database of materials (feature `common-machining`, on by default; `--no-default-features` leaves it out).
 
 ## What it never decides
 
