@@ -31,7 +31,7 @@ pub fn validate_max_speed(max_mm_min: f64) -> Result<(), String> {
 /// Refuses a speed over the limit, like a power over the limit of power; `what` names where the speed comes from (`--feed`, a layer...).
 pub fn check_speed(what: &str, mm_min: f64, max_mm_min: f64) -> Result<(), String> {
     validate_max_speed(max_mm_min)?;
-    if mm_min.is_finite() && mm_min <= max_mm_min {
+    if mm_min.is_finite() && mm_min >= 0.0 && mm_min <= max_mm_min {
         Ok(())
     } else {
         Err(format!(
@@ -65,7 +65,7 @@ pub fn validate_max(max_percent: f64) -> Result<(), String> {
 /// Refuses a power over the limit; `what` names where the power comes from (`--power`, a layer...).
 pub fn check_power(what: &str, percent: f64, max_percent: f64) -> Result<(), String> {
     validate_max(max_percent)?;
-    if percent.is_finite() && percent <= max_percent {
+    if percent.is_finite() && percent >= 0.0 && percent <= max_percent {
         Ok(())
     } else {
         Err(format!(

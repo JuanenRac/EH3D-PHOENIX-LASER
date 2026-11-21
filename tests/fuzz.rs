@@ -703,9 +703,14 @@ fn a_vector_job_with_wild_numbers_is_refused_or_passes_the_limits_and_never_pani
                 .flat_map(|p| p.points.iter())
                 .any(|q| q.0 < 0.0 || q.1 < 0.0 || q.0 > bx || q.1 > by)
         });
+        // a power below 0 and a speed of 0 or less are refused as well, whatever the limits say
+        let bad_number = job
+            .ops
+            .iter()
+            .any(|o| o.power_pct < 0.0 || o.speed_mm_min <= 0.0);
         assert_eq!(
             verdict.is_ok(),
-            !(over_power || over_speed || outside),
+            !(bad_number || over_power || over_speed || outside),
             "{verdict:?}"
         );
     }
