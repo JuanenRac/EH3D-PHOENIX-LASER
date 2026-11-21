@@ -17,7 +17,7 @@
 
 ---
 
-**Honesty check - what actually runs today:** a Rust library and a command line program (`phoenix-laser`) with 840 tests that run on a computer: turns an image into dots by dithering and writes the G-code of a laser that burns line by line with dynamic power and overscan, reads SVG and DXF drawings and writes the G-code that cuts their contours (the inside ones first, the width of the beam taken into account, bridges, several passes) and engraves their shapes with lines, with the settings of each layer in a file, and a power-against-feed test grid. It has a window (built with `--features gui`) that opens a picture or a drawing, shows the path of the laser, lets the settings be changed and exports the G-code, but the window has not been looked at on a screen yet; it has not been tried on a machine. Its window is now the docking frame of the suite (panels that can be moved, floated and folded, four workspaces and a menu bar), and the reader of LBRN2 projects was measured on twelve real projects of one laser maker (all twelve are read; a picture inside a project is not), but nothing made from them was cut on a machine. It can also send a program to the laser plugin of the EH3D server and follow, hold or stop the job (`phoenix-laser server`), tested against a stand-in of the server only.
+**Honesty check - what actually runs today:** a Rust library and a command line program (`phoenix-laser`) with 860 tests that run on a computer: turns an image into dots by dithering and writes the G-code of a laser that burns line by line with dynamic power and overscan, reads SVG and DXF drawings and writes the G-code that cuts their contours (the inside ones first, the width of the beam taken into account, bridges, several passes) and engraves their shapes with lines, with the settings of each layer in a file, and a power-against-feed test grid. It has a window (built with `--features gui`) that opens a picture or a drawing, shows the path of the laser, lets the settings be changed and exports the G-code, but the window has not been looked at on a screen yet; it has not been tried on a machine. Its window is now the docking frame of the suite (panels that can be moved, floated and folded, four workspaces and a menu bar), and the reader of LBRN2 projects was measured on twelve real projects of one laser maker (all twelve are read; a picture inside a project is not), but nothing made from them was cut on a machine. It can also send a program to the laser plugin of the EH3D server and follow, hold or stop the job (`phoenix-laser server`), tested against a stand-in of the server only.
 
 ---
 
@@ -30,7 +30,7 @@
 |---|---|
 | Version | `0.1.5` |
 | Maturity | Functional |
-| Tests | 840 |
+| Tests | 860 |
 | Stack | Rust |
 | On real hardware | Not tried: nothing here has run on a machine |
 
@@ -46,7 +46,7 @@ Each line is one part of this repository and the light says how far it is today.
 |---|---|---|
 | Core | 🟡 | turns an image into dots by dithering and writes the G-code of a laser that burns line by line with dynamic power and overscan, reads SVG and DXF drawings and cuts or engraves them by layer (ordered contours, beam width, bridges, passes, hatch), and a power-against-feed test grid; tested on a computer with normal and damaged input, not with a collection of real files. |
 | Command line | 🟡 | `phoenix-laser` (`engrave`, `calibrate`, `info`, `cut`, `vector`, `layers`) runs the same functions as the library and prints the result; every error comes back as a message and a non-zero exit code. |
-| Tests | 🟡 | 840 tests pass (`cargo test`), with normal cases, edge cases and damaged input. |
+| Tests | 🟡 | 860 tests pass (`cargo test`), with normal cases, edge cases and damaged input. |
 | Security | 🟡 | Plain safe Rust (`forbid(unsafe_code)`): nothing panics on the files it is given and a bad value is an error with its reason; no independent review. |
 | Window | 🟠 | Written (egui, `--features gui`): open or drop a picture or an SVG or DXF drawing, see the path of the laser (the cut in one colour, the travel dim), edit the table of layers, a calibration grid, zoom and pan, estimate the time, export; its logic is tested, but it has not been built or looked at on a screen yet. |
 | Real hardware | 🔴 | Not tried: nothing here has been run on a machine. |
@@ -217,7 +217,7 @@ To take a picture of the window without opening it by hand, run it with `--shot 
 
 ## 🧪 Testing
 
-The suite has 840 tests (`cargo test`, run on Windows and Linux in the CI). They check the normal cases, the edge cases and damaged input: empty files, garbage and cut files never panic. The CI also runs `cargo fmt --check`, `cargo clippy` with warnings as errors and `python -I tools/ci_validate.py`.
+The suite has 860 tests (`cargo test`, run on Windows and Linux in the CI). They check the normal cases, the edge cases and damaged input: empty files, garbage and cut files never panic. The CI also runs `cargo fmt --check`, `cargo clippy` with warnings as errors and `python -I tools/ci_validate.py`.
 
 ## 🏗️ Build & Release
 
@@ -293,7 +293,8 @@ EH3D-PHOENIX-LASER/
 │   ├── guard.rs                                 tests of the zones, interlocks, material ceilings, the report and the settings list
 │   ├── server_cli.rs                            the server command against a stand-in of the laser plugin
 │   ├── window_cli.rs                            tests that a build without the gui feature stays a command line
-│   └── dockwindow.rs                            tests of the window model: layers of a project, report, interlocks, layout and materials
+│   ├── dockwindow.rs                            tests of the window model: layers of a project, report, interlocks, layout and materials
+│   └── reqs.rs                                  tests of the register of requirements
 ├── examples/
 │   ├── gradient.pgm                             a sample to try the program with
 │   ├── plate.svg                                a plate with a hole and a panel to engrave (SVG)
@@ -305,6 +306,10 @@ EH3D-PHOENIX-LASER/
 │   └── lbrn2_survey.rs                          reads every LBRN2 file of a folder and says what is read and what is not
 ├── docs/
 │   ├── architecture.json                        data of the Architecture picture
+│   ├── NOT_YET.md                               good ideas that are left out of this version, with why and when
+│   ├── REQUIREMENTS.md                          the register of requirements: state, evidence and the test of each
+│   ├── SCOPE.md                                 what the program is for, what it will not do and what it never decides
+│   ├── STATUS.md                                what exists, what is missing and what is still open
 │   ├── structure.json                           data of the Repository Structure picture
 │   ├── vector-settings.md                       the settings file of the vector work, key by key
 │   ├── materials.md                             the library of materials, key by key
@@ -316,6 +321,7 @@ EH3D-PHOENIX-LASER/
 ├── Cargo.toml Cargo.lock                        the workspace and its locked dependencies
 ├── rust-toolchain.toml                          the pinned Rust toolchain
 ├── CHANGELOG.md                                 what changed in each version
+├── AGENTS.md                                    the rules for anyone who changes the repository
 ├── SECURITY.md SUPPORT.md                       how to report a vulnerability and where to ask
 └── CONTRIBUTING.md CODE_OF_CONDUCT.md LICENSE   how to contribute, the code of conduct and the licence
 ```
@@ -352,6 +358,11 @@ README and texts exist in English, Spanish, French, Italian, German, Chinese, Ja
 ## 📚 Documentation
 
 * [Changelog](CHANGELOG.md)
+* [Scope](docs/SCOPE.md): what the program is for, what it will not do and what it never decides.
+* [Requirements](docs/REQUIREMENTS.md): the register of capabilities, the state of each and the test that shows it.
+* [Status](docs/STATUS.md): what exists, what is missing and what is still open.
+* [Not yet](docs/NOT_YET.md): good ideas that are left out of this version.
+* [Rules for changing the repository](AGENTS.md): the rules for anyone who changes the repository.
 * [Architecture and structure data](docs/architecture.json): the data the two pictures are drawn from.
 * [Settings of the vector work](docs/vector-settings.md): every key of the settings file with its default and its range.
 * [The library of materials](docs/materials.md): every key of a material and how a material is applied

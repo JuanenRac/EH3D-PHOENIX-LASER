@@ -17,7 +17,7 @@
 
 ---
 
-**Verifica di onestà - cosa funziona oggi:** una libreria Rust e un programma a riga di comando (`phoenix-laser`) con 840 test che girano su un computer: trasforma un'immagine in punti con la retinatura e scrive il G-code di un laser che brucia riga per riga con potenza dinamica ed extracorsa, legge disegni SVG e DXF e scrive il G-code che ne taglia i contorni (prima quelli interni, con la larghezza del fascio, ponticelli e più passate) e ne incide le forme con linee, con le impostazioni di ogni livello in un file, e una griglia di prova potenza contro avanzamento. Ha una finestra (compilata con `--features gui`) che apre un'immagine o un disegno, mostra il percorso del laser, permette di cambiare le impostazioni ed esporta il G-code, ma la finestra non è ancora stata vista su uno schermo; non è stato provato su una macchina. La finestra è ora il telaio dei pannelli della suite (pannelli che si spostano, fluttuano e si ripiegano, quattro spazi di lavoro e una barra dei menu), e il lettore dei progetti LBRN2 è stato misurato su dodici progetti reali di un produttore di laser (tutti e dodici si leggono; un'immagine dentro un progetto no), ma nulla di ciò che ne deriva è stato tagliato su una macchina. Può anche inviare un programma al plugin laser del server EH3D e seguire, fermare o arrestare il lavoro (`phoenix-laser server`), provato solo contro un sostituto del server.
+**Verifica di onestà - cosa funziona oggi:** una libreria Rust e un programma a riga di comando (`phoenix-laser`) con 860 test che girano su un computer: trasforma un'immagine in punti con la retinatura e scrive il G-code di un laser che brucia riga per riga con potenza dinamica ed extracorsa, legge disegni SVG e DXF e scrive il G-code che ne taglia i contorni (prima quelli interni, con la larghezza del fascio, ponticelli e più passate) e ne incide le forme con linee, con le impostazioni di ogni livello in un file, e una griglia di prova potenza contro avanzamento. Ha una finestra (compilata con `--features gui`) che apre un'immagine o un disegno, mostra il percorso del laser, permette di cambiare le impostazioni ed esporta il G-code, ma la finestra non è ancora stata vista su uno schermo; non è stato provato su una macchina. La finestra è ora il telaio dei pannelli della suite (pannelli che si spostano, fluttuano e si ripiegano, quattro spazi di lavoro e una barra dei menu), e il lettore dei progetti LBRN2 è stato misurato su dodici progetti reali di un produttore di laser (tutti e dodici si leggono; un'immagine dentro un progetto no), ma nulla di ciò che ne deriva è stato tagliato su una macchina. Può anche inviare un programma al plugin laser del server EH3D e seguire, fermare o arrestare il lavoro (`phoenix-laser server`), provato solo contro un sostituto del server.
 
 ---
 
@@ -30,7 +30,7 @@
 |---|---|
 | Versione | `0.1.5` |
 | Maturità | Funzionale |
-| Test | 840 |
+| Test | 860 |
 | Stack tecnologico | Rust |
 | Su hardware reale | Non provato: nulla di questo ha girato su una macchina |
 
@@ -46,7 +46,7 @@ Ogni riga è una parte di questo repository e il semaforo dice a che punto è og
 |---|---|---|
 | Nucleo | 🟡 | trasforma un'immagine in punti con la retinatura e scrive il G-code di un laser che brucia riga per riga con potenza dinamica ed extracorsa, legge disegni SVG e DXF e li taglia o li incide per livello (contorni ordinati, larghezza del fascio, ponticelli, passate, tratteggio), e una griglia di prova potenza contro avanzamento; provato su un computer con input normali e danneggiati, non con una raccolta di file reali. |
 | Riga di comando | 🟡 | `phoenix-laser` (`engrave`, `calibrate`, `info`, `cut`, `vector`, `layers`) esegue le stesse funzioni della libreria e stampa il risultato; ogni errore torna come messaggio e codice di uscita diverso da zero. |
-| Test | 🟡 | 840 test passano (`cargo test`), con casi normali, casi limite e input danneggiati. |
+| Test | 🟡 | 860 test passano (`cargo test`), con casi normali, casi limite e input danneggiati. |
 | Sicurezza | 🟡 | Rust sicuro e semplice (`forbid(unsafe_code)`): nulla va in panico con i file ricevuti e un valore errato è un errore con il suo motivo; nessuna revisione indipendente. |
 | Finestra | 🟠 | Scritta (egui, `--features gui`): aprire o trascinare un'immagine o un disegno SVG o DXF, vedere il percorso del laser (il taglio in un colore, lo spostamento attenuato), modificare la tabella dei livelli, una griglia di calibrazione, zoom e spostamento, stimare il tempo, esportare; la sua logica è testata, ma non è ancora stata compilata né vista su uno schermo. |
 | Hardware reale | 🔴 | Non provato: nulla di questo è stato eseguito su una macchina. |
@@ -217,7 +217,7 @@ Per fare un'immagine della finestra senza aprirla a mano, eseguila con `--shot F
 
 ## 🧪 Test
 
-La suite ha 840 test (`cargo test`, eseguiti su Windows e Linux nella CI). Verificano i casi normali, i casi limite e gli input danneggiati: file vuoti, spazzatura e file tagliati non causano mai un panico. La CI esegue anche `cargo fmt --check`, `cargo clippy` con gli avvisi come errori e `python -I tools/ci_validate.py`.
+La suite ha 860 test (`cargo test`, eseguiti su Windows e Linux nella CI). Verificano i casi normali, i casi limite e gli input danneggiati: file vuoti, spazzatura e file tagliati non causano mai un panico. La CI esegue anche `cargo fmt --check`, `cargo clippy` con gli avvisi come errori e `python -I tools/ci_validate.py`.
 
 ## 🏗️ Compilazione e rilascio
 
@@ -293,7 +293,8 @@ EH3D-PHOENIX-LASER/
 │   ├── guard.rs                                 test delle zone, degli interblocchi, dei tetti dei materiali, del rapporto e dell'elenco delle impostazioni
 │   ├── server_cli.rs                            il comando server contro un sostituto del plugin laser
 │   ├── window_cli.rs                            test che una compilazione senza la funzione gui resti una riga di comando
-│   └── dockwindow.rs                            test del modello della finestra: livelli di un progetto, rapporto, interblocchi, disposizione e materiali
+│   ├── dockwindow.rs                            test del modello della finestra: livelli di un progetto, rapporto, interblocchi, disposizione e materiali
+│   └── reqs.rs                                  test del registro dei requisiti
 ├── examples/
 │   ├── gradient.pgm                             un esempio per provare il programma
 │   ├── plate.svg                                una piastra con un foro e un pannello da incidere (SVG)
@@ -305,6 +306,10 @@ EH3D-PHOENIX-LASER/
 │   └── lbrn2_survey.rs                          legge tutti i file LBRN2 di una cartella e dice cosa si legge e cosa no
 ├── docs/
 │   ├── architecture.json                        dati dell'immagine di Architettura
+│   ├── NOT_YET.md                               buone idee fuori da questa versione, con il perché e il quando
+│   ├── REQUIREMENTS.md                          il registro dei requisiti: stato, evidenza e test di ciascuno
+│   ├── SCOPE.md                                 a cosa serve, cosa non farà e cosa non decide mai
+│   ├── STATUS.md                                cosa esiste, cosa manca e cosa è ancora aperto
 │   ├── structure.json                           dati dell'immagine di Struttura
 │   ├── vector-settings.md                       il file di impostazioni del lavoro vettoriale, chiave per chiave
 │   ├── materials.md                             la libreria dei materiali, chiave per chiave
@@ -316,6 +321,7 @@ EH3D-PHOENIX-LASER/
 ├── Cargo.toml Cargo.lock                        il workspace e le sue dipendenze bloccate
 ├── rust-toolchain.toml                          la toolchain Rust fissata
 ├── CHANGELOG.md                                 cosa è cambiato in ogni versione
+├── AGENTS.md                                    le regole per chi modifica il repository
 ├── SECURITY.md SUPPORT.md                       come segnalare una vulnerabilità e dove chiedere
 └── CONTRIBUTING.md CODE_OF_CONDUCT.md LICENSE   come contribuire, codice di condotta e licenza
 ```
@@ -352,6 +358,11 @@ Il README e i testi esistono in inglese, spagnolo, francese, italiano, tedesco, 
 ## 📚 Documentazione
 
 * [Changelog](CHANGELOG.md)
+* [Ambito](docs/SCOPE.md): a cosa serve il programma, cosa non farà e cosa non decide mai.
+* [Requisiti](docs/REQUIREMENTS.md): il registro delle capacità, lo stato di ciascuna e il test che la mostra.
+* [Stato](docs/STATUS.md): cosa esiste, cosa manca e cosa è ancora aperto.
+* [Non ancora](docs/NOT_YET.md): buone idee lasciate fuori da questa versione.
+* [Regole per modificare il repository](AGENTS.md): le regole per chi modifica il repository.
 * [Dati di architettura e struttura](docs/architecture.json): i dati da cui si disegnano le due immagini.
 * [Impostazioni del lavoro vettoriale](docs/vector-settings.md): ogni chiave del file di impostazioni con il suo valore predefinito e il suo intervallo.
 * [La libreria dei materiali](docs/materials.md): ogni chiave di un materiale e come si applica

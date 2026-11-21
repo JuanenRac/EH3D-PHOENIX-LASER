@@ -17,7 +17,7 @@
 
 ---
 
-**Vérification d'honnêteté - ce qui fonctionne aujourd'hui :** une bibliothèque Rust et un programme en ligne de commande (`phoenix-laser`) avec 840 tests qui s'exécutent sur un ordinateur : il transforme une image en points par tramage et écrit le G-code d'un laser qui brûle ligne par ligne avec une puissance dynamique et un dépassement, lit des dessins SVG et DXF et écrit le G-code qui découpe leurs contours (ceux de l'intérieur d'abord, avec la largeur du faisceau, des ponts et plusieurs passes) et grave leurs formes avec des lignes, avec les réglages de chaque calque dans un fichier, et une grille d'essai puissance contre avance. Il a une fenêtre (compilée avec `--features gui`) qui ouvre une image ou un dessin, montre le trajet du laser, permet de changer les réglages et exporte le G-code, mais la fenêtre n'a pas encore été vue sur un écran ; il n'a pas été essayé sur une machine. La fenêtre est désormais le cadre de panneaux de la suite (panneaux déplaçables, flottants et repliables, quatre espaces de travail et une barre de menus), et le lecteur de projets LBRN2 a été mesuré sur douze projets réels d'un fabricant de lasers (les douze sont lus ; une image dans un projet ne l'est pas), mais rien de ce qui en est tiré n'a été découpé sur une machine. Il peut aussi envoyer un programme au plugin laser du serveur EH3D et suivre, suspendre ou arrêter le travail (`phoenix-laser server`), testé seulement contre un double du serveur.
+**Vérification d'honnêteté - ce qui fonctionne aujourd'hui :** une bibliothèque Rust et un programme en ligne de commande (`phoenix-laser`) avec 860 tests qui s'exécutent sur un ordinateur : il transforme une image en points par tramage et écrit le G-code d'un laser qui brûle ligne par ligne avec une puissance dynamique et un dépassement, lit des dessins SVG et DXF et écrit le G-code qui découpe leurs contours (ceux de l'intérieur d'abord, avec la largeur du faisceau, des ponts et plusieurs passes) et grave leurs formes avec des lignes, avec les réglages de chaque calque dans un fichier, et une grille d'essai puissance contre avance. Il a une fenêtre (compilée avec `--features gui`) qui ouvre une image ou un dessin, montre le trajet du laser, permet de changer les réglages et exporte le G-code, mais la fenêtre n'a pas encore été vue sur un écran ; il n'a pas été essayé sur une machine. La fenêtre est désormais le cadre de panneaux de la suite (panneaux déplaçables, flottants et repliables, quatre espaces de travail et une barre de menus), et le lecteur de projets LBRN2 a été mesuré sur douze projets réels d'un fabricant de lasers (les douze sont lus ; une image dans un projet ne l'est pas), mais rien de ce qui en est tiré n'a été découpé sur une machine. Il peut aussi envoyer un programme au plugin laser du serveur EH3D et suivre, suspendre ou arrêter le travail (`phoenix-laser server`), testé seulement contre un double du serveur.
 
 ---
 
@@ -30,7 +30,7 @@
 |---|---|
 | Version | `0.1.5` |
 | Maturité | Fonctionnel |
-| Tests | 840 |
+| Tests | 860 |
 | Pile technique | Rust |
 | Sur du matériel réel | Non essayé : rien ici n'a fonctionné sur une machine |
 
@@ -46,7 +46,7 @@ Chaque ligne est une partie de ce dépôt et le feu dit où elle en est aujourd'
 |---|---|---|
 | Cœur | 🟡 | transforme une image en points par tramage et écrit le G-code d'un laser qui brûle ligne par ligne avec une puissance dynamique et un dépassement, lit des dessins SVG et DXF et les découpe ou les grave par calque (contours ordonnés, largeur du faisceau, ponts, passes, hachures), et une grille d'essai puissance contre avance ; testé sur un ordinateur avec des entrées normales et abîmées, pas avec une collection de fichiers réels. |
 | Ligne de commande | 🟡 | `phoenix-laser` (`engrave`, `calibrate`, `info`, `cut`, `vector`, `layers`) exécute les mêmes fonctions que la bibliothèque et affiche le résultat ; chaque erreur revient sous forme de message et d'un code de sortie non nul. |
-| Tests | 🟡 | 840 tests passent (`cargo test`), avec des cas normaux, des cas limites et des entrées abîmées. |
+| Tests | 🟡 | 860 tests passent (`cargo test`), avec des cas normaux, des cas limites et des entrées abîmées. |
 | Sécurité | 🟡 | Rust sûr et simple (`forbid(unsafe_code)`) : rien ne panique sur les fichiers reçus et une mauvaise valeur est une erreur avec sa raison ; pas de revue indépendante. |
 | Fenêtre | 🟠 | Écrite (egui, `--features gui`) : ouvrir ou déposer une image ou un dessin SVG ou DXF, voir le trajet du laser (la découpe d'une couleur, le déplacement atténué), modifier le tableau des calques, une grille d'étalonnage, zoom et déplacement, estimer la durée, exporter ; sa logique est testée, mais elle n'a pas encore été compilée ni vue sur un écran. |
 | Matériel réel | 🔴 | Non essayé : rien ici n'a été exécuté sur une machine. |
@@ -217,7 +217,7 @@ Pour prendre une capture de la fenêtre sans l'ouvrir à la main, lancez-la avec
 
 ## 🧪 Tests
 
-La suite compte 840 tests (`cargo test`, exécutés sous Windows et Linux dans le CI). Ils vérifient les cas normaux, les cas limites et les entrées abîmées : fichiers vides, bruit et fichiers coupés ne font jamais paniquer. Le CI exécute aussi `cargo fmt --check`, `cargo clippy` avec les avertissements comme erreurs et `python -I tools/ci_validate.py`.
+La suite compte 860 tests (`cargo test`, exécutés sous Windows et Linux dans le CI). Ils vérifient les cas normaux, les cas limites et les entrées abîmées : fichiers vides, bruit et fichiers coupés ne font jamais paniquer. Le CI exécute aussi `cargo fmt --check`, `cargo clippy` avec les avertissements comme erreurs et `python -I tools/ci_validate.py`.
 
 ## 🏗️ Compilation et publication
 
@@ -293,7 +293,8 @@ EH3D-PHOENIX-LASER/
 │   ├── guard.rs                                 tests des zones, des verrouillages, des plafonds de matériau, du rapport et de la liste des réglages
 │   ├── server_cli.rs                            la commande server contre un double du plugin laser
 │   ├── window_cli.rs                            tests qu'une compilation sans la fonctionnalité gui reste une ligne de commande
-│   └── dockwindow.rs                            tests du modèle de la fenêtre : calques d'un projet, rapport, verrouillages, disposition et matériaux
+│   ├── dockwindow.rs                            tests du modèle de la fenêtre : calques d'un projet, rapport, verrouillages, disposition et matériaux
+│   └── reqs.rs                                  tests du registre des exigences
 ├── examples/
 │   ├── gradient.pgm                             un exemple pour essayer le programme
 │   ├── plate.svg                                une plaque avec un trou et un panneau à graver (SVG)
@@ -305,6 +306,10 @@ EH3D-PHOENIX-LASER/
 │   └── lbrn2_survey.rs                          lit tous les fichiers LBRN2 d'un dossier et dit ce qui est lu ou non
 ├── docs/
 │   ├── architecture.json                        données de l'image d'Architecture
+│   ├── NOT_YET.md                               de bonnes idées hors de cette version, avec pourquoi et quand
+│   ├── REQUIREMENTS.md                          le registre des exigences : état, preuve et test de chacune
+│   ├── SCOPE.md                                 à quoi il sert, ce qu'il ne fera pas et ce qu'il ne décide jamais
+│   ├── STATUS.md                                ce qui existe, ce qui manque et ce qui reste ouvert
 │   ├── structure.json                           données de l'image de Structure
 │   ├── vector-settings.md                       le fichier de réglages du travail vectoriel, clé par clé
 │   ├── materials.md                             la bibliothèque de matériaux, clé par clé
@@ -316,6 +321,7 @@ EH3D-PHOENIX-LASER/
 ├── Cargo.toml Cargo.lock                        le workspace et ses dépendances verrouillées
 ├── rust-toolchain.toml                          la toolchain Rust épinglée
 ├── CHANGELOG.md                                 ce qui a changé dans chaque version
+├── AGENTS.md                                    les règles pour qui modifie le dépôt
 ├── SECURITY.md SUPPORT.md                       signaler une vulnérabilité et poser des questions
 └── CONTRIBUTING.md CODE_OF_CONDUCT.md LICENSE   contribuer, code de conduite et licence
 ```
@@ -352,6 +358,11 @@ Le README et les textes existent en anglais, espagnol, français, italien, allem
 ## 📚 Documentation
 
 * [Journal des modifications](CHANGELOG.md)
+* [Périmètre](docs/SCOPE.md): à quoi sert le programme, ce qu'il ne fera pas et ce qu'il ne décide jamais.
+* [Exigences](docs/REQUIREMENTS.md): le registre des capacités, l'état de chacune et le test qui la montre.
+* [État](docs/STATUS.md): ce qui existe, ce qui manque et ce qui reste ouvert.
+* [Pas encore](docs/NOT_YET.md): de bonnes idées laissées de côté dans cette version.
+* [Règles pour modifier le dépôt](AGENTS.md): les règles pour qui modifie le dépôt.
 * [Données d'architecture et de structure](docs/architecture.json) : les données qui servent à dessiner les deux images.
 * [Réglages du travail vectoriel](docs/vector-settings.md) : chaque clé du fichier de réglages avec sa valeur par défaut et sa plage.
 * [La bibliothèque de matériaux](docs/materials.md) : chaque clé d'un matériau et la façon de l'appliquer
