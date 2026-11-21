@@ -127,6 +127,51 @@ fn text_strokes(text: &str, x: f64, y: f64, height_mm: f64) -> Vec<Vec<(f64, f64
     out
 }
 
+/// The most values a series of the command line may give.
+pub const MAX_SERIES: usize = 1_000;
+
+/// A list of numbers for a test grid: numbers separated by commas, where a part written `FIRST:LAST:STEP` stands for every value from the first to the last (both included) at that step
+/// (`10:50:10` is 10, 20, 30, 40 and 50). The step is above 0, the last is not below the first, and the whole series holds at most [`MAX_SERIES`] values. The values are rounded to six
+/// places, so that `0.1:0.5:0.1` gives 0.1, 0.2, 0.3, 0.4 and 0.5 and not 0.30000000000000004.
+pub fn series(text: &str, what: &str) -> Result<Vec<f64>, String> {
+    let number = |p: &str| -> Result<f64, String> {
+        p.trim()
+            .parse::<f64>()
+            .ok()
+            .filter(|v| v.is_finite())
+            .ok_or_else(|| format!("{what} '{}' is not a number", p.trim()))
+    };
+    let mut out: Vec<f64> = Vec::new();
+    for part in text.split(',') {
+        if part.contains(':') {
+            let bits: Vec<&str> = part.split(':').collect();
+            if bits.len() != 3 {
+                return Err(format!("{what} '{}' is not FIRST:LAST:STEP", part.trim()));
+            }
+            let (first, last, step) = (number(bits[0])?, number(bits[1])?, number(bits[2])?);
+            if step <= 0.0 || last < first {
+                return Err(format!(
+                    "{what} '{}': the step must be above 0 and the last not below the first",
+                    part.trim()
+                ));
+            }
+            let count = ((last - first) / step + 1e-9).floor();
+            if count + 1.0 + out.len() as f64 > MAX_SERIES as f64 {
+                return Err(format!("{what} gives more than {MAX_SERIES} values"));
+            }
+            for k in 0..=(count as usize) {
+                out.push(((first + step * k as f64) * 1e6).round() / 1e6);
+            }
+        } else {
+            out.push(number(part)?);
+        }
+        if out.len() > MAX_SERIES {
+            return Err(format!("{what} gives more than {MAX_SERIES} values"));
+        }
+    }
+    Ok(out)
+}
+
 /// `steps` values spread evenly around `center`, from `spread_percent` below it to `spread_percent` above it (one step gives the centre alone), rounded to `decimals` places and kept
 /// between `lo` and `hi`. A value that the range cuts off is held at the end of the range, and a value that comes out twice is given once, so the ladder never asks for more than the range
 /// allows and may be shorter than `steps`.

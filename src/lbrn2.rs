@@ -662,6 +662,48 @@ fn parse_prims(text: &str) -> Result<Prims, String> {
     Ok(Prims::Pieces(out))
 }
 
+/// The vertices and the pieces of a path of the older format: `<V vx="1" vy="2" c0x= c0y= c1x= c1y=/>` and `<P T="L" p0="0" p1="1"/>` (`B` for a curve), as the elements of the shape. The
+/// handles of a vertex are kept when both of their numbers are there.
+fn elements_lists(e: &Elem) -> Result<(Rc<Vec<Vert>>, Rc<Prims>), String> {
+    let mut verts: Vec<Vert> = Vec::new();
+    let mut pieces: Vec<Prim> = Vec::new();
+    for k in &e.kids {
+        match k.name.as_str() {
+            "V" => {
+                let (Some(x), Some(y)) = (k.number("vx"), k.number("vy")) else {
+                    return Err("a vertex has no vx or vy".to_string());
+                };
+                verts.push(Vert {
+                    p: (x, y),
+                    c0: k.number("c0x").zip(k.number("c0y")),
+                    c1: k.number("c1x").zip(k.number("c1y")),
+                });
+            }
+            "P" => {
+                let index = |name: &str| {
+                    k.attr(name)
+                        .and_then(|v| v.trim().parse::<usize>().ok())
+                        .ok_or_else(|| format!("a piece has no {name}"))
+                };
+                let (a, b) = (index("p0")?, index("p1")?);
+                pieces.push(match k.attr("T").map(str::trim) {
+                    Some("L") => Prim::Line(a, b),
+                    Some("B") => Prim::Bezier(a, b),
+                    _ => return Err("a piece is neither L nor B".to_string()),
+                });
+            }
+            _ => {}
+        }
+        if verts.len() > MAX_LIST_ITEMS || pieces.len() > MAX_LIST_ITEMS {
+            return Err("a list of vertices or pieces is too long".to_string());
+        }
+    }
+    if pieces.is_empty() {
+        return Err("a path has vertices and no pieces".to_string());
+    }
+    Ok((Rc::new(verts), Rc::new(Prims::Pieces(pieces))))
+}
+
 fn read_index(s: &str, at: &mut usize) -> Option<usize> {
     let b = s.as_bytes();
     let start = *at;
@@ -780,7 +822,13 @@ impl Reader<'_> {
                     };
                     self.path(back, &mul(parent, &own), &layer)?;
                 }
-                None => bump(&mut self.stats.skipped, "text without an outline"),
+                // a text that carries only its letters: drawn with the stroke font of the program
+                None => {
+                    let Some(own) = self.matrix_of(e, "text") else {
+                        return Ok(());
+                    };
+                    self.plain_text(e, &mul(parent, &own), &layer)?;
+                }
             },
             "Bitmap" => {
                 let Some(own) = self.matrix_of(e, "picture") else {
@@ -803,6 +851,64 @@ impl Reader<'_> {
             other => {
                 bump(&mut self.stats.skipped, &format!("shape of type {other}"));
             }
+        }
+        Ok(())
+    }
+
+    /// A text with no outline of its own (the project of the older format writes the letters and the height, not their shapes): its letters are drawn with the stroke font of the
+    /// program, in capitals, at the height `H` and placed by the alignment (`Ah` across: 0 left, 1 centre, 2 right; `Av` up: 0 top, 1 middle, 2 bottom). That is a guess at the shape and the
+    /// place of the text, not the font of the project, and a character that the font has not is left blank; both are said in a note. A text with no letter that can be drawn, or a height
+    /// the font refuses, is left out with a note.
+    fn plain_text(&mut self, e: &Elem, m: &Mat, layer: &str) -> Result<(), String> {
+        let (Some(text), Some(height)) = (e.attr("Str"), e.number("H")) else {
+            bump(&mut self.stats.skipped, "text without an outline");
+            return Ok(());
+        };
+        let mut blanked = false;
+        let letters: String = text
+            .chars()
+            .map(|c| {
+                if crate::text::has_glyph(c) || c == '\n' {
+                    c
+                } else {
+                    blanked = true;
+                    ' '
+                }
+            })
+            .collect();
+        let settings = crate::vconfig::TextSettings {
+            height_mm: height,
+            ..crate::vconfig::TextSettings::default()
+        };
+        let Ok(layout) = crate::text::layout(&letters, &settings) else {
+            bump(
+                &mut self.stats.skipped,
+                "text that the stroke font cannot draw",
+            );
+            return Ok(());
+        };
+        let across = e.number("Ah").unwrap_or(0.0);
+        let up = e.number("Av").unwrap_or(2.0);
+        let dx = -layout.width_mm * (across.clamp(0.0, 2.0) / 2.0);
+        // the letters stand on the baseline when `Av` says bottom, are centred on it when it says middle and hang from it when it says top
+        let dy = -layout.height_mm * (2.0 - up.clamp(0.0, 2.0)) / 2.0;
+        for stroke in &layout.strokes {
+            if stroke.len() < 2 {
+                continue;
+            }
+            let pts: Vec<Pt> = stroke
+                .iter()
+                .map(|&(x, y)| apply(m, (x + dx, -(y + dy))))
+                .collect();
+            self.stats.read_shapes += 1;
+            self.col.push(layer, None, pts, false)?;
+        }
+        self.col.warn(
+            "texts that the project holds as letters are drawn with the stroke font of the program (capitals, its own shapes): their shape and their place are a guess, not the font of the project",
+        );
+        if blanked {
+            self.col
+                .warn("a character that the stroke font has not was left blank in a text");
         }
         Ok(())
     }
@@ -930,8 +1036,18 @@ impl Reader<'_> {
         self.col.push(layer, None, pts, true)
     }
 
-    /// The lists of a path: its own, or the ones an earlier path wrote under the same number.
+    /// The lists of a path: its own, or the ones an earlier path wrote under the same number. A project of the older format (`.lbrn`) writes them as elements, one `V` for each vertex and one
+    /// `P` for each piece, instead of the two lists of text.
     fn lists(&mut self, e: &Elem) -> Option<(Rc<Vec<Vert>>, Rc<Prims>)> {
+        if e.kid("VertList").is_none() && e.kids.iter().any(|k| k.name == "V") {
+            return match elements_lists(e) {
+                Ok(lists) => Some(lists),
+                Err(m) => {
+                    self.col.warn(format!("a path was skipped: {m}"));
+                    None
+                }
+            };
+        }
         let vid = e.attr("VertID").map(str::to_string);
         let pid = e.attr("PrimID").map(str::to_string);
         let verts = match e.kid("VertList") {
@@ -1291,7 +1407,7 @@ pub fn read_lbrn2(bytes: &[u8], opts: &ReadOptions) -> Result<Drawing, String> {
 // ---------------------------------------------------------------- what a file holds and what the reader uses of it
 
 /// The elements this reader uses.
-pub const READ_ELEMENTS: [&str; 27] = [
+pub const READ_ELEMENTS: [&str; 29] = [
     "LightBurnProject",
     "CutSetting",
     "CutSetting_Img",
@@ -1308,6 +1424,8 @@ pub const READ_ELEMENTS: [&str; 27] = [
     "XForm",
     "VertList",
     "PrimList",
+    "V",
+    "P",
     "Children",
     "BackupPath",
     "tabsEnabled",
@@ -1322,7 +1440,7 @@ pub const READ_ELEMENTS: [&str; 27] = [
 ];
 
 /// The attributes this reader uses, as `element.attribute`.
-pub const READ_ATTRIBUTES: [&str; 36] = [
+pub const READ_ATTRIBUTES: [&str; 45] = [
     "LightBurnProject.AppVersion",
     "LightBurnProject.DeviceName",
     "LightBurnProject.FormatVersion",
@@ -1343,6 +1461,15 @@ pub const READ_ATTRIBUTES: [&str; 36] = [
     "Shape.CutIndex",
     "Shape.VertID",
     "Shape.PrimID",
+    "V.vx",
+    "V.vy",
+    "V.c0x",
+    "V.c0y",
+    "V.c1x",
+    "V.c1y",
+    "P.T",
+    "P.p0",
+    "P.p1",
     "Shape.W",
     "Shape.H",
     "Shape.Cr",

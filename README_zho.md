@@ -17,7 +17,7 @@
 
 ---
 
-**诚实性检查 - 今天实际能运行的内容：**一个 Rust 库和一个命令行程序（`phoenix-laser`），带有 950 个在计算机上运行的测试：它通过抖动把图像变成点，并写出逐行烧蚀、带动态功率和过扫的激光 G 代码；读取 SVG、DXF 和 LBRN2 图纸，写出切割其轮廓的 G 代码（先切内部轮廓，考虑光束宽度，带连接桥，可多道），并用线条雕刻其图形，每个图层的设置放在文件中；烧蚀文字、二维码和条形码；按机器的限制检查程序；并写出功率对进给的测试网格。它有一个窗口（用 `--features gui` 构建），即套件的停靠面板框架，有十二个面板和四个工作区，可打开图片或图纸，显示激光路径，允许修改设置并导出 G 代码；窗口还没有人在屏幕上看过。LBRN2 工程读取器用某激光器厂商的十二个真实工程测量过（十二个都能读取，其中唯一的图片会被解码并逐点雕刻；它们的 y 轴方向从未用真实零件确认过）。它还可以把程序发送到 EH3D 服务器的激光插件，并跟踪、暂停或停止作业（`phoenix-laser server`），只针对服务器的替身测试过。**这里没有任何内容在真实激光器上运行过**：用这些工程或其他任何东西做出的东西都没有在机器上切割或烧蚀过。
+**诚实性检查 - 今天实际能运行的内容：**一个 Rust 库和一个命令行程序（`phoenix-laser`），带有 986 个在计算机上运行的测试：它通过抖动把图像变成点，并写出逐行烧蚀、带动态功率和过扫的激光 G 代码；读取 SVG、DXF 和 LBRN2 图纸，写出切割其轮廓的 G 代码（先切内部轮廓，考虑光束宽度，带连接桥，可多道），并用线条雕刻其图形，每个图层的设置放在文件中；烧蚀文字、二维码和条形码；按机器的限制检查程序；并写出功率对进给的测试网格。它有一个窗口（用 `--features gui` 构建），即套件的停靠面板框架，有十二个面板和四个工作区，可打开图片或图纸，显示激光路径，允许修改设置并导出 G 代码；窗口还没有人在屏幕上看过。LBRN2 工程读取器用某激光器厂商的十二个真实工程测量过（十二个都能读取，其中唯一的图片会被解码并逐点雕刻；它们的 y 轴方向从未用真实零件确认过）。它还可以把程序发送到 EH3D 服务器的激光插件，并跟踪、暂停或停止作业（`phoenix-laser server`），只针对服务器的替身测试过。**这里没有任何内容在真实激光器上运行过**：用这些工程或其他任何东西做出的东西都没有在机器上切割或烧蚀过。
 
 ---
 
@@ -30,7 +30,7 @@
 |---|---|
 | 版本 | `0.1.5` |
 | 成熟度 | 可用 |
-| 测试 | 950 |
+| 测试 | 986 |
 | 技术栈 | Rust |
 | 真实硬件 | 未试过：这里的任何内容都没有在机器上运行过 |
 
@@ -46,7 +46,7 @@
 |---|---|---|
 | 核心 | 🟡 | 用抖动把图像变成点，并写出逐行烧蚀、带动态功率和超程的激光 G 代码；读取 SVG 和 DXF 图纸并按图层切割或雕刻（轮廓排序、光束宽度、连接桥、遍数、填充）；还有功率对进给的测试网格；已在计算机上用正常和损坏的输入测试，没有用一批真实文件检查。 |
 | 命令行 | 🟡 | `phoenix-laser`（`engrave`、`calibrate`、`info`、`cut`、`vector`、`layers`）运行与库相同的函数并打印结果；每个错误都以消息和非零退出码返回。 |
-| 测试 | 🟡 | 950 个测试通过（`cargo test`），包含正常情况、边界情况和损坏的输入。 |
+| 测试 | 🟡 | 986 个测试通过（`cargo test`），包含正常情况、边界情况和损坏的输入。 |
 | 安全 | 🟡 | 纯安全 Rust（`forbid(unsafe_code)`）：处理收到的文件时不会 panic，错误的值会返回带原因的错误；没有独立审查。 |
 | 窗口 | 🟠 | 已编写（egui，`--features gui`），作为套件的停靠面板框架：打开或拖入图像或 SVG、DXF、LBRN2 图纸，查看激光路径（切割为单一颜色，空移变淡），编辑图层表，文字、二维码、条形码、标记、取景框和焦点模式，校准网格，缩放与平移，估算时间，检查，报告，发送到服务器，导出；其逻辑已测试，但还没有人在屏幕上看过。 |
 | 真实硬件 | 🔴 | 未试过：这里的任何内容都没有在机器上运行过。 |
@@ -94,6 +94,7 @@
 * **发送到 EH3D 服务器**（`src/server.rs`，设置文件中的 `[server]`）：`phoenix-laser server send PROGRAM.nc` 通过套件共用的客户端（EH3D-COMMON 的 `eh3d-serverclient`：键 `server_address`、`server_token`、`server_machine`、`server_timeout_s`、`server_retries` 和 `server_mdns`，停顿逐渐加长的重试，创建内容的请求绝不发送两次，服务器的拒绝按代码以系统语言说明），把 G-code 程序作为 EH3D-SERVER 的 `laser` 插件的作业发送。发出之前，程序会按设置中机器的上限（功率和速度上限、工作台）检查，不合格的不会发送；`--follow` 一直等到作业结束；`status`、`job`、`pause` 和 `resume` 查询机器和作业并暂停或继续；`stop` 是激光机的紧急停止：作业立即结束，机器被锁定，在管理员运行 `release` 之前不接受、也不会被发送任何程序。令牌绝不打印（可以放在变量 `PHOENIX_LASER_SERVER_TOKEN` 中），并以明文经普通 HTTP 传输。本地命令不受影响。已针对激光插件的替身在内存中以及本机的套接字上测试；服务器的插件本身是模拟器，这里的一切都没有在真正的激光器上运行过。`phoenix-laser server vector DRAWING.svg|dxf` 将图纸作为矢量作业发送（路径和每个图层的一项操作，先按设置的上限检查），`phoenix-laser server test-fire --power-percent P --confirm-fire` 让激光短暂发射以找到焦点（作业运行期间、紧急停止锁定机器期间、外罩打开或气助吹气关闭时，以及超过服务器自身上限时，服务器会拒绝）。
 * **从窗口发送到服务器**（`src/window.rs`、`src/linkpane.rs`、设置文件中的 `[server]`）：窗口的服务器部分显示套件的面板（地址、令牌、机器、连接的限制、连接状态以及用名称和密码登录），其按钮将算出的程序作为激光机的作业发送，显示进度，并可暂停、继续或用紧急停止按钮停止（作业立即结束，机器保持锁定直到管理员解除）；点亮激光但未确认的外框、未通过上限检查的程序不会发送；仅为查看而打开的程序，只有在通过检查且本人勾选对应复选框后才会原样发送。关闭窗口后，作业仍留在服务器上原处。
 * **LBRN2 工程**（`src/lbrn2.rs`、`docs/lbrn2.md`、`examples/lbrn2_survey.rs`）：`cut`、`vector`、`layers` 和 `convert`（以及窗口）也能读取 `.lbrn2` 工程。矩形、路径（直线段和贝塞尔曲线）、带变换的分组以及文字的轮廓会变成以毫米为单位的图纸；工程的每个图层变成表中的一行，其功率、速度（工程为 mm/s，表为 mm/min）、遍数、填充间距和顺序只是建议值，机器的限制仍然高于它们；不发送到激光器的图层会被跳过。工程内的图片（base64 的 PNG 或 PGM）在限制范围内解码，并用 `phoenix-laser engrave PROJECT.lbrn2 OUT.nc` 逐点雕刻（命令行没有给出时使用图片所在图层的功率和速度，超过限制的值会被拒绝，绝不会被降低）；也会读取椭圆和多边形（仅根据属性名称编写，属于原型）、图层的连接桥以及可变文字的计数器；超过限制或格式不同的图片，以及真实示例中未出现的图形类型，会被略过并附带稳定的代码在说明中计数。格式依据十二个真实工程的行为读取，没有规范，y 轴按 SVG 的方向处理，除非 `lbrn2_flip_y = off` 另有说明：这个方向从未用真实零件确认过，每次读取都会在说明中这样说明。`phoenix-laser text OUT.nc --text 'N{counter:4} {name}' --csv FILE.csv`（或 `--counter 起点,步长,数量`、`--counter-project PROJECT.lbrn2`）为 CSV 文件的每一行写出一个程序，并在写出第一个之前全部检查；`--preview` 不写任何文件，只显示每一行的文字。`cargo run --release --example lbrn2_survey -- 文件夹` 读取文件夹中所有 `.lbrn2` 文件，并说明哪些可读、哪些不可读及原因，以及文件中读取器未使用的元素和属性。
+* **测试文件、旧版工程格式与文本形式的预设**（`src/testfiles.rs`、`src/presets.rs`、`src/dxf.rs`、`src/lbrn2.rs`）：DXF 读取器会画出 `HATCH` 和 `SOLID` 的轮廓；`.lbrn` 工程（旧格式，路径以 `V` 和 `P` 元素书写）与 `.lbrn2` 一样被读取，其中的文字用笔画字体绘制；`--project-layers` 在命令行中给工程的图层带来功率、速度和遍数；`calibrate` 接受范围（`--powers 20:80:20`）；`phoenix-laser matrix` 把功率对速度的矩阵写成工程，每一对一个图层；`phoenix-laser ytest` 写出显示 Y 轴指向的工程；预设簿以文本保存，由 `phoenix-laser presets` 列出。尚未烧制任何东西：矩阵和 Y 轴测试都没有在其他程序中打开过。
 * **面板窗口**（`src/panels.rs`、`src/gui.rs`）：窗口是套件的面板框架（`eh3d-dock`）：十二个面板（视图、图层、作业设置、属性、库、材料、取景、机器、模拟与时间、作业、报告和控制台）可以移除、放回、移动、合并为标签页、浮动、折叠和最大化；四个按任务而不是按经验水平划分的工作区（准备、运行、检查、紧凑）；包含文件、编辑、视图、工具、窗口和帮助的菜单栏；作业的停止按钮和联锁状态位于所有面板之外，因此任何工作区都无法隐藏它们。布局以 `dock.` 开头的行保存在设置文件中，设置读取器会忽略这些行。面板、工作区和菜单是带测试的数据；窗口还没有人在屏幕上看过。
 * **通用材料数据库的起始点**（`src/commonmat.rs`，特性 `common-machining`）：材料、激光类型（二极管或 CO2）、切割或雕刻、激光功率（瓦）和厚度会给出通用数据库中的功率、速度和遍数，按原样使用，并始终显示“尚未在机器上试过”的提示；当材料不能接触激光时会给出原因（此时没有答案）。超出数据库已知范围同样没有答案，绝不猜测。该特性默认启用（构建固定到带有 `machining` 模块的 EH3D-COMMON 版本）；使用 `--no-default-features` 则不包含它。
 * **子图层**（`src/sublayers.rs`，设置文件中的 `[sublayer 图层/标签]`）：一个图层可以加工多次，例如先填充再描边，每个道次有自己的模式、功率、速度、道次数、焦点步进和填充线。子图层从其图层的设置开始，并像图层一样受机器上限约束（错误会指出图层和标签，不会悄悄降低数值）；作业先雕刻后切割，各类按其 `order` 排序，`layers` 会列出各道次及其用时。服务器只收到图层，并会说明这一点。
@@ -167,17 +168,20 @@ phoenix-laser engrave IMAGE OUT.nc --width-mm 50 [--dot-mm 0.1] [--feed 3000] [-
               [--dither fs|atkinson|threshold|bayer] [--threshold 128] [--overscan MM|auto] [--accel 1000] [--origin X,Y] [--dry-run]
               [--gamma 1] [--contrast 0] [--brightness 0] [--invert] [--auto-level] [--max-power 100] [--max-speed MM/MIN] [--config FILE] [--profile NAME]
               [--material NAME --materials FILE]
-phoenix-laser calibrate OUT.nc --powers 20,40,60,80 --feeds 1000,2000,3000 [--smax 1000] [--max-power 100] [--max-speed MM/MIN] [--config FILE] [--profile NAME]
+phoenix-laser calibrate OUT.nc --powers 20,40,60,80|20:80:20 --feeds 1000,2000,3000|1000:3000:1000 [--smax 1000] [--max-power 100] [--max-speed MM/MIN] [--config FILE] [--profile NAME]
 phoenix-laser calibrate OUT.nc --material NAME --materials FILE [--steps 5] [--spread 40] [--labels|--no-labels] [--label-mm 3] [--smax 1000] [--max-power 100] [--max-speed MM/MIN] [--config FILE] [--profile NAME]
+phoenix-laser matrix OUT.lbrn2 --powers 20:80:20 --feeds 600:2400:600 [--square-mm 8] [--gap-mm 3] [--outline]
+phoenix-laser ytest OUT.lbrn2
+phoenix-laser presets BOOK.cfg [--lang CODE]
 phoenix-laser text OUT.nc --text TEXT [--height-mm 10] [--spacing 25] [--line-spacing 50] [--power 20] [--feed 1000] [--passes 1] [--max-minutes 240] [--align left|center|right] [--mirror] [--origin X,Y] [--bed X,Y] [--smax 1000] [--max-power 100] [--max-speed MM/MIN] [--config FILE] [--profile NAME]
 phoenix-laser qr OUT.nc --text DATA [--ecc L|M|Q|H] [--module-mm 1] [--line-mm 0.1] [--power 20] [--feed 1000] [--passes 1] [--max-minutes 240] [--invert] [--border-modules 0] [--overscan-mm 0] [--mirror] [--origin X,Y] [--bed X,Y] [--smax 1000] [--max-power 100] [--max-speed MM/MIN] [--print] [--config FILE] [--profile NAME]
 phoenix-laser barcode OUT.nc --text DATA [--module-mm 0.4] [--height-mm 10] [--line-mm 0.1] [--power 20] [--feed 1000] [--passes 1] [--max-minutes 240] [--mirror] [--origin X,Y] [--bed X,Y] [--smax 1000] [--max-power 100] [--max-speed MM/MIN] [--config FILE] [--profile NAME]
 phoenix-laser marks OUT.nc --size W,H [--origin X,Y] [--arm-mm 5] [--margin-mm 0] [--power 10] [--feed 1000] [--passes 1] [--centre-cross|--no-centre-cross] [--bed X,Y] [--smax 1000] [--max-power 100] [--max-speed MM/MIN] [--config FILE] [--profile NAME]
 phoenix-laser info IMAGE
-phoenix-laser cut DRAWING OUT.nc [--config FILE] [--power P] [--speed MM/MIN] [--passes N] [--focus-step MM] [--kerf MM] [--kerf-side none|auto|inside|outside]
+phoenix-laser cut DRAWING OUT.nc [--config FILE] [--project-layers] [--power P] [--speed MM/MIN] [--passes N] [--focus-step MM] [--kerf MM] [--kerf-side none|auto|inside|outside]
               [--tabs N] [--tab-width MM] [--smax N] [--overscan MM] [--origin X,Y] [--bed X,Y] [--max-power P] [--max-speed MM/MIN] [--profile NAME] [--material NAME --materials FILE] [--dpi N] [--tolerance MM] [--dry-run]
 phoenix-laser vector DRAWING OUT.nc [the options of cut] [--angle DEG] [--spacing MM] [--cross|--no-cross]
-phoenix-laser layers DRAWING [--config FILE] [--dpi N] [--accel MM/S2]
+phoenix-laser layers DRAWING [--config FILE] [--project-layers] [--dpi N] [--accel MM/S2]
 phoenix-laser convert DRAWING OUT.svg|dxf [--config FILE] [--dpi N] [--tolerance MM]
 phoenix-laser trace IMAGE OUT.nc --width-mm W [--threshold 128] [--invert] [--simplify MM] [--min-area MM2] [--engrave] [the options of cut]
 phoenix-laser materials FILE
@@ -220,7 +224,7 @@ cargo run --release --features gui -- --shot screen.png examples/plate.svg   # a
 
 ## 🧪 测试
 
-测试套件有 950 个测试（`cargo test`，CI 在 Windows 和 Linux 上运行）。它们检查正常情况、边界情况和损坏的输入：空文件、乱码和被截断的文件绝不会 panic。CI 还运行 `cargo fmt --check`、把警告当作错误的 `cargo clippy` 以及 `python -I tools/ci_validate.py`。
+测试套件有 986 个测试（`cargo test`，CI 在 Windows 和 Linux 上运行）。它们检查正常情况、边界情况和损坏的输入：空文件、乱码和被截断的文件绝不会 panic。CI 还运行 `cargo fmt --check`、把警告当作错误的 `cargo clippy` 以及 `python -I tools/ci_validate.py`。
 
 ## 🏗️ 构建与发布
 
@@ -269,6 +273,7 @@ EH3D-PHOENIX-LASER/
 │   ├── frame.rs                                 作业边框（在激光关闭时描出的矩形）及其四角的定位标记
 │   ├── register.rs                              作业所在位置：在图片中找到的标记和模拟相机
 │   ├── svg.rs                                   SVG 读取器：安全子集，不含脚本、图像和实体
+│   ├── testfiles.rs                             功率对速度矩阵和 Y 轴测试，以工程形式
 │   ├── dxf.rs                                   DXF 读取器：直线、多段线、圆弧、圆、椭圆、样条和块，含单位
 │   ├── lbrn2.rs                                 LBRN2 工程文件读取：图层、图形、分组和曲线
 │   ├── lbrn2_pic.rs                             LBRN2 工程中的图片：base64、PNG、限制，按摆放方向转动
@@ -300,11 +305,17 @@ EH3D-PHOENIX-LASER/
 │   ├── vector.rs                                图纸切割测试：命令、示例、恶意文件和 G-code 检查
 │   ├── lbrn2.rs                                 LBRN2 读取器测试：自编工程、恶意文件和模糊测试
 │   ├── lbrn2_more.rs                            LBRN2 图片、y 轴、椭圆、多边形、连接桥和模糊测试
+│   ├── lbrn_v1.rs                               旧版工程格式、其文字以及命令行中工程图层的测试
+│   ├── dxf_hatch.rs                             DXF 填充与实体的测试，含固定种子的模糊测试
 │   ├── vartext.rs                               可变文字测试：CSV、计数器、占位、系列和模糊测试
 │   ├── sublayers.rs                             额外道次测试：顺序、上限、固定种子的损坏文件
 │   ├── joborigin.rs                             九个锚点、关闭激光的边框和区间时间的测试
 │   ├── livelimits.rs                            实时调整测试：四项上限、八种语言、固定种子
 │   ├── presets.rs                               预设测试：指派、关联、被拒绝的更改、备选值和随机序列
+│   ├── presetbook.rs                            以文本保存的预设簿的测试
+│   ├── matrix.rs                                测试网格的范围及其矩阵的测试
+│   ├── testfiles.rs                             程序写出的矩阵与 Y 轴工程的测试
+│   ├── samples.rs                               指定样本文件夹时对读取器的测试
 │   ├── guard.rs                                 对禁区、联锁、材料上限、报告和设置清单的测试
 │   ├── server_cli.rs                            针对激光插件替身的 server 命令
 │   ├── window_cli.rs                            测试没有 gui 特性的构建仍然只是命令行

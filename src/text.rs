@@ -298,6 +298,11 @@ fn glyph(c: char) -> Option<&'static [Stroke]> {
     })
 }
 
+/// Whether the font has a character (lower case is the same as its capital).
+pub fn has_glyph(c: char) -> bool {
+    glyph(c.to_ascii_uppercase()).is_some()
+}
+
 /// The characters of the font, for the message of a refusal.
 pub const ALPHABET: &str = "A-Z, 0-9, space and . , - + / : ! ? ( ) = _ '";
 

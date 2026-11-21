@@ -7,7 +7,7 @@ mod cli_args;
 use cli_args::{finish, flag, num, switch};
 use eh3d_phoenix_laser::barcode;
 use eh3d_phoenix_laser::calibrate::{
-    focus_grid, focus_test, grid, labelled_grid, ladder, Grid, Labels,
+    focus_grid, focus_test, grid, labelled_grid, ladder, series, Grid, Labels,
 };
 use eh3d_phoenix_laser::contract;
 use eh3d_phoenix_laser::cut::{self, layer_times, layers as layer_list, plan, Plan};
@@ -29,6 +29,7 @@ use eh3d_phoenix_laser::report;
 use eh3d_phoenix_laser::safety;
 use eh3d_phoenix_laser::server::{self, Order};
 use eh3d_phoenix_laser::svg::read_svg;
+use eh3d_phoenix_laser::testfiles;
 use eh3d_phoenix_laser::text as laser_text;
 use eh3d_phoenix_laser::tone::Tone;
 use eh3d_phoenix_laser::trace;
@@ -51,13 +52,16 @@ const HELP: &str = "phoenix-laser: laser engraving from an image
                 [--dither fs|atkinson|threshold|bayer] [--threshold 128] [--overscan MM|auto] [--accel 1000] [--origin X,Y] [--dry-run]
                 [--gamma 1] [--contrast 0] [--brightness 0] [--invert] [--auto-level] [--max-power 100] [--max-speed MM/MIN] [--config FILE] [--profile NAME]
                 [--material NAME --materials FILE]
-  phoenix-laser calibrate OUT.nc --powers 20,40,60,80 --feeds 1000,2000,3000 [--smax 1000] [--max-power 100] [--max-speed MM/MIN] [--config FILE] [--profile NAME]
+  phoenix-laser calibrate OUT.nc --powers 20,40,60,80|20:80:20 --feeds 1000,2000,3000|1000:3000:1000 [--smax 1000] [--max-power 100] [--max-speed MM/MIN] [--config FILE] [--profile NAME]
+  phoenix-laser matrix OUT.lbrn2 --powers 20:80:20 --feeds 600:2400:600 [--square-mm 8] [--gap-mm 3] [--outline]
+  phoenix-laser ytest OUT.lbrn2
+  phoenix-laser presets BOOK.cfg [--lang CODE]
   phoenix-laser calibrate OUT.nc --material NAME --materials FILE [--steps 5] [--spread 40] [--labels|--no-labels] [--label-mm 3] [--smax 1000] [--max-power 100] [--max-speed MM/MIN] [--config FILE] [--profile NAME]
   phoenix-laser info IMAGE
-  phoenix-laser cut DRAWING OUT.nc [--config FILE] [--power P] [--speed MM/MIN] [--passes N] [--focus-step MM] [--kerf MM] [--kerf-side none|auto|inside|outside]
+  phoenix-laser cut DRAWING OUT.nc [--config FILE] [--project-layers] [--power P] [--speed MM/MIN] [--passes N] [--focus-step MM] [--kerf MM] [--kerf-side none|auto|inside|outside]
                 [--tabs N] [--tab-width MM] [--smax N] [--overscan MM] [--origin X,Y] [--bed X,Y] [--max-power P] [--max-speed MM/MIN] [--profile NAME] [--material NAME --materials FILE] [--dpi N] [--tolerance MM] [--dry-run]
   phoenix-laser vector DRAWING OUT.nc [the options of cut] [--angle DEG] [--spacing MM] [--cross|--no-cross]
-  phoenix-laser layers DRAWING [--config FILE] [--dpi N] [--accel MM/S2]
+  phoenix-laser layers DRAWING [--config FILE] [--project-layers] [--dpi N] [--accel MM/S2]
   phoenix-laser convert DRAWING OUT.svg|dxf [--config FILE] [--dpi N] [--tolerance MM]
   phoenix-laser trace IMAGE OUT.nc --width-mm W [--threshold 128] [--invert] [--simplify MM] [--min-area MM2] [--engrave] [the options of cut]
   phoenix-laser materials FILE
@@ -90,7 +94,8 @@ The engraving is made of dots of --dot-mm on a side, so the image is scaled to -
 The tone options change the grey levels before the dots are made: --gamma (0.1 to 10, more than 1 lightens the middle greys), --contrast and --brightness (-100 to 100), --invert (black burns least) and --auto-level (the darkest level becomes black and the lightest white).
 DRAWING is an SVG, a DXF or an LBRN2 project file. cut follows the contours (the ones inside first), vector fills the closed shapes with lines and follows the open ones. Every layer (or colour, for an SVG) has its
 own settings in the file of --config (see the documentation); an option of the command line changes them for all the layers. Without --config, cut cuts everything and vector engraves everything.
-layers lists the layers of a drawing with what would be done with each.
+layers lists the layers of a drawing with what would be done with each. --project-layers (cut, vector and layers, for an LBRN2 or LBRN project) gives each layer the power, the speed and the passes of its row in the project, except for a layer that the file of --config names; --material and the other options of the command line still win over them and the limits of the machine hold over all of them. An LBRN file (the older format of a project) is read like an LBRN2 one; a text in it that has only its letters is drawn with the stroke font of the program, which is a guess at its shape and its place.
+matrix writes the power-against-speed matrix as a project: a square for every pair of --powers (percent) and --feeds (mm/min), each on its own layer named after its pair (P40 F1200), filled with lines or only outlined with --outline, --square-mm (8) wide and --gap-mm (3) apart; --powers and --feeds take lists (20,40,60) and ranges FIRST:LAST:STEP (20:60:20), as calibrate does. ytest writes the project that shows which way the y axis of a project points: a square, a rectangle and an arrow whose point is at the larger y of the file; open it in the program that made your projects and set lbrn2_flip_y of [read] to match what you see. presets reads a book of presets (the file that Book::to_text writes: [preset NAME] and [bind LAYER] sections) and lists it in a language, naming the line of any mistake.
 convert reads a drawing (an SVG, a DXF or an LBRN2 project, with its curves cut into straight pieces within --tolerance) and writes it again as a plain SVG or DXF, chosen by the extension of OUT: the SVG has a group for each layer, in millimetres with the y axis down, and the DXF is the old ASCII form of release 12, in millimetres with the y axis up, with the layer names written with letters, figures, _, - and $ only; the colours are kept. It never writes over the drawing it reads.
 trace follows the outline of a picture (a PNG or a PGM of a logo, a silhouette or a stencil) instead of burning it dot by dot: grey levels under --threshold are ink (over it with --invert), the border is found with sub-pixel precision, simplified until no point is farther than --simplify mm from the line, and specks smaller than --min-area mm2 are dropped. The result is a layer called trace that is cut, or filled with lines with --engrave, with the settings of --config, the options of cut and every limit of the file ([trace] holds max_pixels, max_contours and max_segments).
 materials FILE lists the materials of a library: a plain text file with a [material NAME] section for each material and way of working (see the documentation). --material NAME takes the power, the speed, the passes and the rest that the library says for it, before the other options, which win; the library is --materials FILE or the file named by PHOENIX_LASER_MATERIALS.
@@ -335,6 +340,27 @@ fn drawing_settings(
         }
     };
     take_profile(args, &mut s, config.is_some())?;
+    // `--project-layers`: the layers of an LBRN2 or LBRN project give the power, the speed and the passes of their rows, except the ones the settings file names; the material and the
+    // options of the command line below still win over them, and the limits of the machine hold over all of them
+    if switch(args, "--project-layers") {
+        let path = args
+            .iter()
+            .find(|a| !a.starts_with("--"))
+            .ok_or("--project-layers needs the project file")?
+            .clone();
+        let bytes = fs::read(&path).map_err(|e| format!("{path}: {e}"))?;
+        let project = read_project(&bytes, &s.read).map_err(|e| format!("{path}: {e}"))?;
+        let mut taken = 0usize;
+        for (key, hint) in project.hints() {
+            if !s.layers.iter().any(|(n, _)| *n == key) {
+                s.layers.push((key, hint));
+                taken += 1;
+            }
+        }
+        eprintln!(
+            "note: {taken} layer(s) of the project give their power, speed and passes; check them for this machine"
+        );
+    }
     if let Some(v) = flag(args, "--dpi")? {
         s.read.dpi = num(&v, "--dpi")?;
     }
@@ -411,7 +437,7 @@ fn read_drawing(path: &str, s: &Settings) -> Result<(Vec<u8>, Drawing), String> 
     let drawing = match ext.as_str() {
         "svg" => read_svg(&bytes, &s.read),
         "dxf" => read_dxf(&bytes, &s.read),
-        "lbrn2" => read_lbrn2(&bytes, &s.read),
+        "lbrn2" | "lbrn" => read_lbrn2(&bytes, &s.read),
         _ => Err("it is not an SVG, a DXF or an LBRN2 file".to_string()),
     }
     .map_err(|e| format!("{path}: {e}"))?;
@@ -1765,6 +1791,111 @@ fn qr_job(mut args: Vec<String>) -> Result<(), String> {
 
 /// `calibrate`: the grid of squares of power against feed, from lists or spread around what a material of the library says, with the figures of each column and row burnt next to it when
 /// they are asked for.
+/// `matrix`: the power-against-speed matrix as a project that another program can open: one layer for each pair, named after it.
+fn matrix_job(mut args: Vec<String>) -> Result<(), String> {
+    let powers = series(
+        &flag(&mut args, "--powers")?.ok_or("--powers is needed")?,
+        "--powers",
+    )?;
+    let feeds = series(
+        &flag(&mut args, "--feeds")?.ok_or("--feeds is needed")?,
+        "--feeds",
+    )?;
+    let square = flag(&mut args, "--square-mm")?
+        .map(|v| num(&v, "--square-mm"))
+        .transpose()?
+        .unwrap_or(8.0);
+    let gap = flag(&mut args, "--gap-mm")?
+        .map(|v| num(&v, "--gap-mm"))
+        .transpose()?
+        .unwrap_or(3.0);
+    let outline = switch(&mut args, "--outline");
+    finish(&args, 1)?;
+    let out = args.first().ok_or("matrix needs an output file")?;
+    project_name_check(out)?;
+    let text = testfiles::matrix_project(&powers, &feeds, square, gap, !outline)?;
+    write_atomic(Path::new(out), &text)?;
+    println!(
+        "{} powers x {} feeds = {} layers written; the power and the speed of each square are those of its layer, and the limits of the machine hold when the project is cut",
+        powers.len(),
+        feeds.len(),
+        powers.len() * feeds.len()
+    );
+    Ok(())
+}
+
+/// `presets`: reads a book of presets and says what it holds (the presets, the layers they are given to and the warning of every one that was not tried), in a language.
+fn presets_job(mut args: Vec<String>) -> Result<(), String> {
+    let lang = match flag(&mut args, "--lang")? {
+        Some(code) => Lang::from_code(&code).ok_or_else(|| {
+            format!("--lang '{code}' is not one of en, es, de, fr, it, ja, zh or pt")
+        })?,
+        None => Lang::from_env(),
+    };
+    finish(&args, 1)?;
+    let path = args.first().ok_or("presets needs a book")?;
+    let meta = fs::metadata(path).map_err(|e| format!("{path}: {e}"))?;
+    if meta.len() > 1 << 20 {
+        return Err(format!("{path}: the book is larger than 1 MiB"));
+    }
+    let text = fs::read_to_string(path).map_err(|e| format!("{path}: {e}"))?;
+    let book =
+        eh3d_phoenix_laser::presets::Book::from_text(&text).map_err(|e| format!("{path}: {e}"))?;
+    println!(
+        "{} preset(s), {} binding(s)",
+        book.presets.len(),
+        book.bindings.len()
+    );
+    for p in &book.presets {
+        println!(
+            "{}: {}{} {} at {} % and {} mm/min, {} pass(es){}",
+            p.name,
+            p.material,
+            p.thickness_mm.map_or(String::new(), |t| format!(" {t} mm")),
+            match p.what {
+                eh3d_phoenix_laser::commonmat::What::Cut => "cut",
+                eh3d_phoenix_laser::commonmat::What::Engrave => "engrave",
+            },
+            p.power_percent,
+            p.speed_mm_min,
+            p.passes,
+            if p.alternative {
+                " (second figure)"
+            } else {
+                ""
+            }
+        );
+    }
+    for line in book.describe(lang) {
+        println!("{line}");
+    }
+    Ok(())
+}
+
+/// `ytest`: the project that shows which way the y axis of a project points.
+fn ytest_job(args: Vec<String>) -> Result<(), String> {
+    finish(&args, 1)?;
+    let out = args.first().ok_or("ytest needs an output file")?;
+    project_name_check(out)?;
+    write_atomic(Path::new(out), &testfiles::y_axis_project())?;
+    println!("written: open it in the program that made the projects you have, see where the arrow points (toward the larger y of the file), and set lbrn2_flip_y of [read] to match; nothing here says which is right");
+    Ok(())
+}
+
+/// The output of a project writer ends in `.lbrn2`.
+fn project_name_check(out: &str) -> Result<(), String> {
+    if Path::new(out)
+        .extension()
+        .is_some_and(|e| e.eq_ignore_ascii_case("lbrn2"))
+    {
+        Ok(())
+    } else {
+        Err(format!(
+            "{out}: the project is written with the extension .lbrn2"
+        ))
+    }
+}
+
 fn calibrate_job(mut args: Vec<String>) -> Result<(), String> {
     let material = take_material(&mut args)?;
     let powers_arg = flag(&mut args, "--powers")?;
@@ -1814,7 +1945,7 @@ fn calibrate_job(mut args: Vec<String>) -> Result<(), String> {
     let mut spread_used = false;
     let mut mid: (Option<f64>, Option<f64>) = (None, None);
     let powers = match (&powers_arg, &material) {
-        (Some(v), _) => list(v, "--powers")?,
+        (Some(v), _) => series(v, "--powers")?,
         (None, Some((m, _))) => {
             let centre = m
                 .power
@@ -1838,7 +1969,7 @@ fn calibrate_job(mut args: Vec<String>) -> Result<(), String> {
         }
     };
     let feeds = match (&feeds_arg, &material) {
-        (Some(v), _) => list(v, "--feeds")?,
+        (Some(v), _) => series(v, "--feeds")?,
         (None, Some((m, _))) => {
             let centre = m
                 .speed
@@ -2028,7 +2159,7 @@ fn run(mut args: Vec<String>) -> Result<(), String> {
             let bytes = fs::read(&args[0]).map_err(|e| format!("{}: {e}", args[0]))?;
             let is_project = Path::new(&args[0])
                 .extension()
-                .is_some_and(|e| e.eq_ignore_ascii_case("lbrn2"));
+                .is_some_and(|e| e.eq_ignore_ascii_case("lbrn2") || e.eq_ignore_ascii_case("lbrn"));
             // the picture of an LBRN2 project: its grey levels, the size the project gives it and the layer that holds it
             let (img, project_size) = if is_project {
                 let project =
@@ -2111,6 +2242,9 @@ fn run(mut args: Vec<String>) -> Result<(), String> {
             Ok(())
         }
         "calibrate" => calibrate_job(args),
+        "matrix" => matrix_job(args),
+        "presets" => presets_job(args),
+        "ytest" => ytest_job(args),
         "text" => text_job(args),
         "qr" => qr_job(args),
         "barcode" => barcode_job(args),
@@ -2179,7 +2313,7 @@ fn run(mut args: Vec<String>) -> Result<(), String> {
                 }
                 f.power_percent = num(&v, "--power")?;
             }
-            let powers = powers.map(|v| list(&v, "--powers")).transpose()?;
+            let powers = powers.map(|v| series(&v, "--powers")).transpose()?;
             finish(&args, 1)?;
             let out = args.first().ok_or("focus needs an output file")?;
             safety::validate_max(machine.max_power_percent)?;

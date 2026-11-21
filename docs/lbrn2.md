@@ -1,6 +1,6 @@
 # LBRN2 projects
 
-`phoenix-laser` reads `.lbrn2` project files, the project format of a laser program of another maker (its names are trademarks of their owners). `cut`, `vector`, `layers` and `convert` take one in place of an SVG or a DXF, and the window opens it like a drawing. There is no published specification of the format: the reader was written from the behaviour of real files, and what it does with each part is below. Nothing is copied from another program.
+`phoenix-laser` reads `.lbrn2` project files (and `.lbrn` ones, the older format, see below), the project format of a laser program of another maker (its names are trademarks of their owners). `cut`, `vector`, `layers` and `convert` take one in place of an SVG or a DXF, and the window opens it like a drawing. There is no published specification of the format: the reader was written from the behaviour of real files, and what it does with each part is below. Nothing is copied from another program.
 
 ## What is read
 
@@ -15,7 +15,7 @@ The file is XML. The root is a `LightBurnProject` element; its attributes `AppVe
 | `Path` | `VertList`: vertices written `V x y`, each followed by the optional handles `c0x c0y c1x c1y`; a handle given with only its x (the value 1) is no handle. `PrimList`: `L a b` is a line from vertex `a` to vertex `b`, `B a b` a cubic Bezier that leaves `a` through its `c0` and arrives at `b` through its `c1`; the word `LineClosed` is a closed polygon through all the vertices. A new outline starts where a piece does not begin at the end of the one before; an outline that returns to its first vertex is closed. |
 | `VertID`, `PrimID` | a path may leave its lists out when an earlier path wrote them under the same number; a number nobody wrote skips the path with a note. |
 | `Group` with `Children` | the matrix of the child acts first, the matrix of the group second, at any depth. |
-| `Text` | drawn from its `BackupPath`, the outline of the letters, whose `XForm` is the one that places the text (it is applied once). A text with no outline is left out. |
+| `Text` | drawn from its `BackupPath`, the outline of the letters, whose `XForm` is the one that places the text (it is applied once). A text that has only its letters (`Str` and the height `H`, as the older format writes it) is drawn with the stroke font of the program in capitals, placed by `Ah` (across: 0 left, 1 centre, 2 right) and `Av` (up: 0 top, 1 middle, 2 bottom); that is a guess at the shape and the place of the text, said in a note, and a character that the font has not is left blank. A text with no letters or with a height that the font refuses is left out. |
 | `Bitmap` | a picture: `W` and `H` are its size, centred on its origin, and `Data` is the picture as base64 text (a PNG in every real example; a PGM is read too). It is decoded within the limits `max_bitmap_bytes`, `max_bitmap_pixels` and `max_bitmaps` of `[limits]`, turned and mirrored as its `XForm` places it (a flip and a quarter turn; any other turn is refused) and kept for engraving, not drawn in the cut. See below. |
 | `Ellipse`, `Polygon` | **prototype, no real project had one.** An `Ellipse` has the radii `Rx` and `Ry` (or one radius `R`), centred on its origin; a `Polygon` has `N` sides (3 to 1000) on the ellipse of `Rx` and `Ry`, with a vertex pointing up. Both are written from the names of the attributes alone, with projects written for the tests, and are counted in the notes when they have no size or no number of sides. An array of copies is not a shape of its own in what was seen: its copies are groups, which the reader already follows. |
 | `tabsEnabled`, `tabCount`, `tabSize` (a layer) | **prototype.** For a layer that cuts, `tabsEnabled` on gives the layer that many tabs (`tabCount`, 0 to 100) as long as `tabSize` mm (the width of the program when the layer gives none); `tabsUseSpacing` and `manualTabs` are not used. They are hints of the table of layers, like the rest of the layer. |
@@ -24,6 +24,10 @@ The file is XML. The root is a `LightBurnProject` element; its attributes `AppVe
 The curves are cut into straight pieces that are never farther than `tolerance_mm` of `[read]` from the curve. The limits of `[limits]` hold: the size of the file, the depth of the elements, their number, the shapes, the points and the coordinates; a declared entity is an error.
 
 The y axis of the file is taken as the one of an SVG (it points down), so the drawing is turned over when it is cut. **That was never confirmed with a real part**: if a cut comes out as a mirror image, this is where to look. The setting `lbrn2_flip_y` of `[read]` (on by default, which is what was always done) chooses the direction: `off` takes the y axis of the file as pointing up like the one of the machine, and the drawing and the pictures are not turned over. Every reading of a project that holds a drawing or a picture says in its notes which direction it used and that it is not confirmed, so the note is in the report before a job and in the window whichever way the setting is.
+
+## The older format (`.lbrn`)
+
+A project of the older format has the same root and the same layers and shapes, and writes a path another way: one `V` element for each vertex (`<V vx="0" vy="0"/>`, with `c0x c0y c1x c1y` when it has handles) and one `P` element for each piece (`<P T="L" p0="0" p1="1"/>`, `T="B"` for a curve) instead of the two lists of text. Both ways are read, and every command and the window take the extension `.lbrn` as they take `.lbrn2`. The older format was measured on a handful of real projects (their shapes, layers and texts were read; nothing was cut), kept outside of this repository like the others. The layers of a project reach `cut`, `vector` and `layers` with `--project-layers`.
 
 ## Pictures
 
@@ -39,7 +43,7 @@ Said in the notes of the drawing and counted:
 
 * a picture that is over a limit, in a format that is not read, damaged or turned by something other than a quarter turn (with its code, see above);
 * a shape of a type that is not read (any `Type` other than `Rect`, `Path`, `Group`, `Text`, `Bitmap`, `Ellipse` and `Polygon`);
-* a text with no outline;
+* a text with no outline and no letters, a text that the stroke font refuses (nothing it can draw, or a height over its limit);
 * a path whose lists are missing or damaged, a rectangle, ellipse or picture without a size, and a polygon without a number of sides from 3 to 1000.
 
 The rest of the file (the preview picture, the text of the variable text of a shape, the options of the optimiser, the settings of picture layers, the notes) is not used.

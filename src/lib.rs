@@ -42,6 +42,7 @@ pub mod server;
 pub mod shot;
 pub mod sublayers;
 pub mod svg;
+pub mod testfiles;
 pub mod text;
 pub mod tone;
 pub mod trace;

@@ -319,6 +319,213 @@ impl Book {
         Ok(p.warning(lang).into_iter().collect())
     }
 
+    /// The book as text, to keep next to the settings: a `[preset NAME]` section for each preset (its material, thickness, what it does, power, speed, passes, air assist, whether it was
+    /// tried and whether it is the second figure of another source) and a `[bind LAYER]` or `[bind LAYER/LABEL]` section for each binding (the preset and `linked = on` or `off`). The
+    /// text is always the same for the same book, so that a file under version control only changes when the book does. A name with a bracket is refused.
+    pub fn to_text(&self) -> Result<String, String> {
+        let mut out = String::from("# presets and the layers they are given to\n");
+        for p in &self.presets {
+            p.validate()?;
+            if p.name.contains(['[', ']']) || p.material.contains(['\n', '\r']) {
+                return Err(format!(
+                    "preset {}: a name or a material with a bracket or a line break cannot be kept",
+                    p.name
+                ));
+            }
+            let flag = |v: bool| if v { "on" } else { "off" };
+            out.push_str(&format!(
+                "\n[preset {}]\nmaterial = {}\n",
+                p.name, p.material
+            ));
+            if let Some(t) = p.thickness_mm {
+                out.push_str(&format!("thickness = {t}\n"));
+            }
+            out.push_str(&format!(
+                "what = {}\npower = {}\nspeed = {}\npasses = {}\n",
+                match p.what {
+                    What::Cut => "cut",
+                    What::Engrave => "engrave",
+                },
+                p.power_percent,
+                p.speed_mm_min,
+                p.passes
+            ));
+            if let Some(a) = p.air_assist {
+                out.push_str(&format!("air = {}\n", flag(a)));
+            }
+            out.push_str(&format!(
+                "verified = {}\nalternative = {}\n",
+                flag(p.verified),
+                flag(p.alternative)
+            ));
+        }
+        for b in &self.bindings {
+            out.push_str(&format!(
+                "\n[bind {}]\npreset = {}\nlinked = {}\n",
+                b.target.name(),
+                b.preset,
+                if b.linked { "on" } else { "off" }
+            ));
+        }
+        Ok(out)
+    }
+
+    /// Reads a book written by [`Book::to_text`]. The text is held to a size (1 MiB), every line is a comment, a section head or `key = value` with a key that the section knows, a key
+    /// is not given twice, every preset is checked like [`Book::add`], and a binding must name a preset of the book and be there once for its target. A mistake is an error that names its
+    /// line, and nothing of a damaged text is kept.
+    pub fn from_text(text: &str) -> Result<Book, String> {
+        if text.len() > 1 << 20 {
+            return Err("the book of presets is larger than 1 MiB".to_string());
+        }
+        enum Sec {
+            None,
+            Preset(Vec<(String, String)>, String, usize),
+            Bind(Vec<(String, String)>, String, usize),
+        }
+        let mut book = Book::new();
+        let mut sec = Sec::None;
+        fn close(book: &mut Book, sec: Sec) -> Result<(), String> {
+            let get = |kv: &[(String, String)], k: &str| {
+                kv.iter().find(|(a, _)| a == k).map(|(_, v)| v.clone())
+            };
+            let on_off = |v: Option<String>, line: usize, k: &str| match v.as_deref() {
+                None => Ok(None),
+                Some("on") => Ok(Some(true)),
+                Some("off") => Ok(Some(false)),
+                Some(o) => Err(format!("line {line}: {k} is on or off, not '{o}'")),
+            };
+            let number = |v: Option<String>, line: usize, k: &str| -> Result<Option<f64>, String> {
+                v.map(|t| {
+                    t.parse::<f64>()
+                        .ok()
+                        .filter(|x| x.is_finite())
+                        .ok_or_else(|| format!("line {line}: {k} '{t}' is not a number"))
+                })
+                .transpose()
+            };
+            match sec {
+                Sec::None => Ok(()),
+                Sec::Preset(kv, name, line) => {
+                    let need = |k: &str| {
+                        get(&kv, k).ok_or_else(|| format!("line {line}: preset {name} has no {k}"))
+                    };
+                    let what = match need("what")?.as_str() {
+                        "cut" => What::Cut,
+                        "engrave" => What::Engrave,
+                        o => return Err(format!("line {line}: what is cut or engrave, not '{o}'")),
+                    };
+                    let value = |k: &str| -> Result<f64, String> {
+                        number(Some(need(k)?), line, k).map(|v| v.unwrap_or(0.0))
+                    };
+                    let passes = need("passes")?
+                        .parse::<u32>()
+                        .map_err(|_| format!("line {line}: passes is a whole number"))?;
+                    let p = Preset {
+                        name: name.clone(),
+                        material: need("material")?,
+                        thickness_mm: number(get(&kv, "thickness"), line, "thickness")?,
+                        what,
+                        power_percent: value("power")?,
+                        speed_mm_min: value("speed")?,
+                        passes,
+                        air_assist: on_off(get(&kv, "air"), line, "air")?,
+                        verified: on_off(get(&kv, "verified"), line, "verified")?.unwrap_or(false),
+                        alternative: on_off(get(&kv, "alternative"), line, "alternative")?
+                            .unwrap_or(false),
+                    };
+                    book.add(p).map_err(|e| format!("line {line}: {e}"))
+                }
+                Sec::Bind(kv, name, line) => {
+                    let (layer, label) = name.split_once('/').unwrap_or((name.as_str(), ""));
+                    if layer.trim().is_empty() {
+                        return Err(format!("line {line}: a binding names a layer"));
+                    }
+                    let target = Target::sublayer(layer, label);
+                    let preset = get(&kv, "preset")
+                        .ok_or_else(|| format!("line {line}: binding {name} has no preset"))?
+                        .to_lowercase();
+                    if book.find(&preset).is_none() {
+                        return Err(format!(
+                            "line {line}: binding {name} names the preset '{preset}', which the book does not have"
+                        ));
+                    }
+                    if book.binding(&target).is_some() {
+                        return Err(format!("line {line}: {name} is bound twice"));
+                    }
+                    if book.bindings.len() >= MAX_BINDINGS {
+                        return Err(format!("a book holds {MAX_BINDINGS} bindings at the most"));
+                    }
+                    let linked = on_off(get(&kv, "linked"), line, "linked")?.unwrap_or(false);
+                    book.bindings.push(Binding {
+                        target,
+                        preset,
+                        linked,
+                    });
+                    Ok(())
+                }
+            }
+        }
+        for (n, raw) in text.lines().enumerate() {
+            let line = n + 1;
+            let t = raw.trim();
+            if t.is_empty() || t.starts_with('#') {
+                continue;
+            }
+            if let Some(head) = t.strip_prefix('[') {
+                let head = head
+                    .strip_suffix(']')
+                    .ok_or_else(|| format!("line {line}: a section head ends with ]"))?;
+                let old = std::mem::replace(&mut sec, Sec::None);
+                close(&mut book, old)?;
+                sec = match head.split_once(' ') {
+                    Some(("preset", name)) if !name.trim().is_empty() => {
+                        Sec::Preset(Vec::new(), name.trim().to_string(), line)
+                    }
+                    Some(("bind", name)) if !name.trim().is_empty() => {
+                        Sec::Bind(Vec::new(), name.trim().to_string(), line)
+                    }
+                    _ => {
+                        return Err(format!(
+                            "line {line}: '[{head}]' is not [preset NAME] or [bind LAYER]"
+                        ))
+                    }
+                };
+                continue;
+            }
+            let (k, v) = t
+                .split_once('=')
+                .ok_or_else(|| format!("line {line}: '{t}' is not key = value"))?;
+            let (k, v) = (k.trim().to_string(), v.trim().to_string());
+            let (kv, known): (&mut Vec<(String, String)>, &[&str]) = match &mut sec {
+                Sec::None => return Err(format!("line {line}: '{k}' is outside of a section")),
+                Sec::Preset(kv, _, _) => (
+                    kv,
+                    &[
+                        "material",
+                        "thickness",
+                        "what",
+                        "power",
+                        "speed",
+                        "passes",
+                        "air",
+                        "verified",
+                        "alternative",
+                    ],
+                ),
+                Sec::Bind(kv, _, _) => (kv, &["preset", "linked"]),
+            };
+            if !known.contains(&k.as_str()) {
+                return Err(format!("line {line}: '{k}' is not a key of this section"));
+            }
+            if kv.iter().any(|(a, _)| *a == k) {
+                return Err(format!("line {line}: '{k}' is given twice"));
+            }
+            kv.push((k, v));
+        }
+        close(&mut book, sec)?;
+        Ok(book)
+    }
+
     /// Cuts the link of a target: it keeps the values it has and follows the preset no more. False when the target was not linked.
     pub fn unlink(&mut self, target: &Target) -> bool {
         match self

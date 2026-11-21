@@ -64,7 +64,7 @@ impl Job {
     /// The extensions the list of files shows.
     pub fn extensions(self) -> &'static [&'static str] {
         match self {
-            Job::OpenImage => &["png", "pgm", "svg", "dxf", "lbrn2"],
+            Job::OpenImage => &["png", "pgm", "svg", "dxf", "lbrn2", "lbrn"],
             Job::OpenConfig => &["cfg"],
             Job::ExportGcode => &["nc", "ngc", "gcode", "gc", "tap", "txt"],
             Job::OpenMaterials => &["cfg"],
@@ -789,7 +789,7 @@ fn parse_drawing(bytes: &[u8], ext: &str, opts: &ReadOptions) -> Result<Drawing,
     match ext {
         "svg" => read_svg(bytes, opts),
         "dxf" => read_dxf(bytes, opts),
-        "lbrn2" => read_lbrn2(bytes, opts),
+        "lbrn2" | "lbrn" => read_lbrn2(bytes, opts),
         _ => Err("not a drawing this program reads (SVG, DXF, LBRN2)".to_string()),
     }
 }
@@ -1817,7 +1817,7 @@ impl Window {
     /// Opens a file chosen or dropped on the window: a drawing (SVG, DXF) or a picture (anything else, which the reader of pictures refuses when it is not one).
     pub fn open_dropped(&mut self, path: &Path) -> bool {
         match extension_of(path).as_str() {
-            "svg" | "dxf" | "lbrn2" => self.open_vector(path),
+            "svg" | "dxf" | "lbrn2" | "lbrn" => self.open_vector(path),
             "png" | "pgm" => self.open_image(path),
             "nc" | "ngc" | "gcode" | "gc" | "tap" => self.open_gcode(path),
             _ => {
@@ -1897,7 +1897,7 @@ impl Window {
             let bytes =
                 read_file_up_to(path, opts.limits.max_file_bytes as u64).map_err(Status::Failed)?;
             let failed = |e: String| Status::Failed(format!("{}: {e}", path.display()));
-            let (drawing, hints) = if ext == "lbrn2" {
+            let (drawing, hints) = if ext == "lbrn2" || ext == "lbrn" {
                 let project = read_project(&bytes, &opts).map_err(failed)?;
                 let hints = project.hints();
                 (project.drawing, hints)

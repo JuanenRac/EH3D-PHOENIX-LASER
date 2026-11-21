@@ -379,6 +379,19 @@
           }
         },
         {
+          "name": "testfiles.rs",
+          "desc": {
+            "en": "the power-against-speed matrix and the y axis test, as projects",
+            "es": "la matriz de potencia contra velocidad y la prueba del eje Y, como proyectos",
+            "de": "die Matrix Leistung gegen Geschwindigkeit und der Y-Achsen-Test als Projekte",
+            "fr": "la matrice puissance contre vitesse et l'essai de l'axe Y, comme projets",
+            "it": "la matrice potenza contro velocità e la prova dell'asse Y, come progetti",
+            "ja": "出力対速度のマトリクスと Y 軸テストをプロジェクトとして",
+            "zh": "功率对速度矩阵和 Y 轴测试，以工程形式",
+            "pt": "a matriz de potência contra velocidade e o teste do eixo Y, como projetos"
+          }
+        },
+        {
           "name": "dxf.rs",
           "desc": {
             "en": "the DXF reader: lines, polylines, arcs, circles, ellipses, splines and blocks, with units",
@@ -776,6 +789,32 @@
           }
         },
         {
+          "name": "lbrn_v1.rs",
+          "desc": {
+            "en": "tests of the older project format, its texts and the layers of a project on the command line",
+            "es": "pruebas del formato antiguo de proyectos, sus textos y las capas de un proyecto en la línea de comandos",
+            "de": "Tests des älteren Projektformats, seiner Texte und der Ebenen eines Projekts auf der Kommandozeile",
+            "fr": "essais de l'ancien format de projet, de ses textes et des calques d'un projet en ligne de commande",
+            "it": "prove del vecchio formato di progetto, dei suoi testi e dei livelli di un progetto sulla riga di comando",
+            "ja": "旧形式のプロジェクト、そのテキスト、コマンドラインでのプロジェクトのレイヤーのテスト",
+            "zh": "旧版工程格式、其文字以及命令行中工程图层的测试",
+            "pt": "testes do formato antigo de projetos, dos seus textos e das camadas de um projeto na linha de comandos"
+          }
+        },
+        {
+          "name": "dxf_hatch.rs",
+          "desc": {
+            "en": "tests of the hatches and the solids of a DXF, with a fuzz of a fixed seed",
+            "es": "pruebas de los rellenos y sólidos de un DXF, con fuzz de semilla fija",
+            "de": "Tests der Schraffuren und Solids eines DXF, mit Fuzz mit festem Seed",
+            "fr": "essais des hachures et des solides d'un DXF, avec fuzz à graine fixe",
+            "it": "prove dei tratteggi e dei solidi di un DXF, con fuzz a seme fisso",
+            "ja": "DXF のハッチングとソリッドのテスト（固定シードのファズ付き）",
+            "zh": "DXF 填充与实体的测试，含固定种子的模糊测试",
+            "pt": "testes dos preenchimentos e sólidos de um DXF, com fuzz de semente fixa"
+          }
+        },
+        {
           "name": "vartext.rs",
           "desc": {
             "en": "tests of the variable text: CSV files, counters, places, series and fuzz",
@@ -838,6 +877,58 @@
             "ja": "プリセットのテスト：割り当て、リンク、拒否される変更、代替値、ランダム系列",
             "zh": "预设测试：指派、关联、被拒绝的更改、备选值和随机序列",
             "pt": "testes das predefinições: atribuir, ligar, alterações recusadas, alternativas e série aleatória"
+          }
+        },
+        {
+          "name": "presetbook.rs",
+          "desc": {
+            "en": "tests of the book of presets kept as text",
+            "es": "pruebas del libro de preajustes guardado como texto",
+            "de": "Tests des als Text gespeicherten Buchs der Voreinstellungen",
+            "fr": "essais du livre de préréglages gardé en texte",
+            "it": "prove del libro dei preset conservato come testo",
+            "ja": "テキストで保存するプリセットブックのテスト",
+            "zh": "以文本保存的预设簿的测试",
+            "pt": "testes do livro de predefinições guardado como texto"
+          }
+        },
+        {
+          "name": "matrix.rs",
+          "desc": {
+            "en": "tests of the ranges of the test grid and of its matrix",
+            "es": "pruebas de los rangos de la rejilla de prueba y de su matriz",
+            "de": "Tests der Bereiche des Testrasters und seiner Matrix",
+            "fr": "essais des plages de la grille d'essai et de sa matrice",
+            "it": "prove degli intervalli della griglia di prova e della sua matrice",
+            "ja": "テストグリッドの範囲とそのマトリクスのテスト",
+            "zh": "测试网格的范围及其矩阵的测试",
+            "pt": "testes dos intervalos da grelha de teste e da sua matriz"
+          }
+        },
+        {
+          "name": "testfiles.rs",
+          "desc": {
+            "en": "tests of the matrix and y axis projects the program writes",
+            "es": "pruebas de los proyectos de matriz y de eje Y que escribe el programa",
+            "de": "Tests der Matrix- und Y-Achsen-Projekte, die das Programm schreibt",
+            "fr": "essais des projets de matrice et d'axe Y que le programme écrit",
+            "it": "prove dei progetti di matrice e di asse Y che il programma scrive",
+            "ja": "プログラムが書くマトリクスと Y 軸のプロジェクトのテスト",
+            "zh": "程序写出的矩阵与 Y 轴工程的测试",
+            "pt": "testes dos projetos de matriz e de eixo Y que o programa escreve"
+          }
+        },
+        {
+          "name": "samples.rs",
+          "desc": {
+            "en": "the readers on a folder of samples, when one is named",
+            "es": "los lectores sobre una carpeta de muestras, cuando se indica una",
+            "de": "die Leser über einen Ordner mit Beispielen, wenn einer genannt wird",
+            "fr": "les lecteurs sur un dossier d'échantillons, quand on en nomme un",
+            "it": "i lettori su una cartella di campioni, quando ne è indicata una",
+            "ja": "サンプルのフォルダーを指定したときのリーダーのテスト",
+            "zh": "指定样本文件夹时对读取器的测试",
+            "pt": "os leitores sobre uma pasta de amostras, quando se indica uma"
           }
         },
         {

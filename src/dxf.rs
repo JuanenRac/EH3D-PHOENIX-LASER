@@ -1,6 +1,6 @@
 //! The reader of DXF drawings (the text form): `LINE`, `LWPOLYLINE` and the old `POLYLINE` with its `VERTEX` list (both with arcs given as bulges), `ARC`, `CIRCLE`, `ELLIPSE` (whole or an arc
 //! of it) and `SPLINE` (evaluated from its control points and knots, or taken through its fit points), and `INSERT`, which draws a block of the `BLOCKS` section at its place, scale and
-//! rotation (also as an array of columns and rows, and a block inside a block). The unit of the file (`$INSUNITS`) turns everything into millimetres; the layer and the colour of each
+//! rotation (also as an array of columns and rows, and a block inside a block), `HATCH` (the outline of its boundary paths, never its fill pattern) and `SOLID` and `TRACE` (their outline). The unit of the file (`$INSUNITS`) turns everything into millimetres; the layer and the colour of each
 //! entity are kept, and an entity of a block that is on layer 0 or has no colour takes the layer and the colour of the `INSERT`. Everything else is skipped with a note. The size of the
 //! file, the number of entities (what a block adds counts), how deep blocks nest, the points and the pieces of a curve are limited by [`ReadOptions`].
 
@@ -79,6 +79,10 @@ fn aci_color(index: i64) -> Option<String> {
         _ => return None,
     };
     Some(hex.to_string())
+}
+
+fn dist2(a: Pt, b: Pt) -> f64 {
+    (a.0 - b.0).powi(2) + (a.1 - b.1).powi(2)
 }
 
 fn float(g: &[Group], code: i32) -> Option<f64> {
@@ -364,9 +368,167 @@ impl Reader<'_> {
             }
             "ELLIPSE" => self.ellipse(g, &layer, color.as_deref())?,
             "INSERT" => self.insert(g, &layer, color.as_deref())?,
+            "HATCH" => self.hatch(g, &layer, color.as_deref())?,
+            "SOLID" | "TRACE" => self.solid(g, &layer, color.as_deref())?,
             other => self.col.warn(format!(
                 "{other} entities are not supported and were skipped"
             )),
+        }
+        Ok(())
+    }
+
+    /// A `SOLID` or a `TRACE`: three or four corners (the file gives the third and the fourth in the order of a bow tie) become a closed outline; a fourth corner equal to the third is a triangle.
+    fn solid(&mut self, g: &[Group], layer: &str, color: Option<&str>) -> Result<(), String> {
+        let u = self.unit;
+        let corner = |x: i32, y: i32| Some((float(g, x)? * u, float(g, y)? * u));
+        let (Some(a), Some(b), Some(c)) = (corner(10, 20), corner(11, 21), corner(12, 22)) else {
+            self.col.warn("a SOLID without three corners was skipped");
+            return Ok(());
+        };
+        let d = corner(13, 23).unwrap_or(c);
+        let pts = if dist2(c, d) < 1e-18 {
+            vec![a, b, c]
+        } else {
+            vec![a, b, d, c]
+        };
+        self.emit(layer, color, pts, true)
+    }
+
+    /// A `HATCH`: the outlines of its boundary paths are drawn as closed shapes (a polyline path, or edges that are lines and arcs of a circle chained one after the other). The pattern that
+    /// fills the area is not drawn and an edge that is an ellipse or a spline is skipped, each with a note.
+    fn hatch(&mut self, g: &[Group], layer: &str, color: Option<&str>) -> Result<(), String> {
+        let u = self.unit;
+        let (tol, max) = (self.tol(), self.max_seg());
+        let Some(start) = g.iter().position(|(c, _)| *c == 91) else {
+            self.col.warn("HATCH without boundary paths was skipped");
+            return Ok(());
+        };
+        let count = g[start].1.trim().parse::<usize>().unwrap_or(0).min(10_000);
+        let mut i = start + 1;
+        let mut drawn = 0usize;
+        let mut lost_edges = false;
+        for _ in 0..count {
+            while i < g.len() && g[i].0 != 92 {
+                i += 1;
+            }
+            let Some(&(_, flag)) = g.get(i) else { break };
+            let flag = flag.trim().parse::<i64>().unwrap_or(0);
+            i += 1;
+            if flag & 2 != 0 {
+                // a polyline path: is-closed (73), the number of vertices (93) and then the vertices
+                let mut closed = true;
+                while i < g.len() && g[i].0 != 93 {
+                    if g[i].0 == 73 {
+                        closed = g[i].1.trim() != "0";
+                    }
+                    i += 1;
+                }
+                i += 1;
+                let mut verts: Vec<(f64, f64, f64)> = Vec::new();
+                while i < g.len() && !matches!(g[i].0, 92 | 97 | 75) {
+                    let v = g[i].1.trim().parse::<f64>().unwrap_or(f64::NAN);
+                    match g[i].0 {
+                        10 if v.is_finite() => verts.push((v * u, 0.0, 0.0)),
+                        20 if v.is_finite() => {
+                            if let Some(last) = verts.last_mut() {
+                                last.1 = v * u;
+                            }
+                        }
+                        42 if v.is_finite() => {
+                            if let Some(last) = verts.last_mut() {
+                                last.2 = v;
+                            }
+                        }
+                        _ => {}
+                    }
+                    i += 1;
+                }
+                if verts.len() >= 2 {
+                    self.push_poly(layer, color, &verts, closed)?;
+                    drawn += 1;
+                }
+                continue;
+            }
+            // a path of edges
+            while i < g.len() && g[i].0 != 93 {
+                i += 1;
+            }
+            let edges = g
+                .get(i)
+                .and_then(|(_, v)| v.trim().parse::<usize>().ok())
+                .unwrap_or(0)
+                .min(100_000);
+            i += 1;
+            let mut pts: Vec<Pt> = Vec::new();
+            for _ in 0..edges {
+                while i < g.len() && g[i].0 != 72 {
+                    i += 1;
+                }
+                let Some(&(_, kind)) = g.get(i) else { break };
+                i += 1;
+                let mut j = i;
+                while j < g.len() && !matches!(g[j].0, 72 | 97 | 92) {
+                    j += 1;
+                }
+                let e = &g[i..j];
+                i = j;
+                match kind.trim() {
+                    "1" => {
+                        if let (Some(x1), Some(y1), Some(x2), Some(y2)) =
+                            (float(e, 10), float(e, 20), float(e, 11), float(e, 21))
+                        {
+                            if pts.is_empty() {
+                                pts.push((x1 * u, y1 * u));
+                            }
+                            pts.push((x2 * u, y2 * u));
+                        }
+                    }
+                    "2" => {
+                        if let (Some(cx), Some(cy), Some(r)) =
+                            (float(e, 10), float(e, 20), float(e, 40))
+                        {
+                            let a0 = float(e, 50).unwrap_or(0.0);
+                            let a1 = float(e, 51).unwrap_or(360.0);
+                            let ccw = text(e, 73).is_none_or(|v| v != "0");
+                            let (c, r) = ((cx * u, cy * u), r * u);
+                            if r > 0.0 {
+                                let mut sweep = wrap_degrees(if ccw { a1 - a0 } else { a0 - a1 });
+                                if sweep == 0.0 {
+                                    sweep = 360.0;
+                                }
+                                let sweep = if ccw { sweep } else { -sweep };
+                                let first = a0.to_radians();
+                                if pts.is_empty() {
+                                    pts.push((c.0 + r * first.cos(), c.1 + r * first.sin()));
+                                }
+                                pts.extend(circle_arc(c, r, first, sweep.to_radians(), tol, max));
+                            }
+                        }
+                    }
+                    _ => lost_edges = true,
+                }
+            }
+            if pts.len() >= 3 {
+                if let (Some(&f), Some(&l)) = (pts.first(), pts.last()) {
+                    if dist2(f, l) < 1e-12 {
+                        pts.pop();
+                    }
+                }
+                self.emit(layer, color, pts, true)?;
+                drawn += 1;
+            }
+        }
+        if lost_edges {
+            self.col
+                .warn("HATCH edges that are ellipses or splines were skipped");
+        }
+        if drawn == 0 {
+            self.col
+                .warn("HATCH with no boundary that can be read was skipped");
+        } else {
+            self.col.warn(format!(
+                "the outline of a HATCH was drawn ({drawn} path(s)); its fill pattern is not"
+            ));
         }
         Ok(())
     }
