@@ -187,9 +187,10 @@ impl JobInfo {
     }
 
     pub fn percent(&self) -> u64 {
-        (self.done * 100)
-            .checked_div(self.total)
-            .map_or(0, |p| p.min(100))
+        // in 128 bits: a server that answers a huge count must not overflow the product
+        (u128::from(self.done) * 100)
+            .checked_div(u128::from(self.total))
+            .map_or(0, |p| p.min(100) as u64)
     }
 }
 
@@ -353,6 +354,20 @@ pub fn check_vector_before_send(job: &VectorJob, s: &Settings) -> Result<(), Str
     let m = &s.machine;
     let mut problems: Vec<String> = Vec::new();
     for o in &job.ops {
+        if !o.power_pct.is_finite() || o.power_pct < 0.0 {
+            problems.push(format!(
+                "layer {} has a power that is not a number from 0 up: {}",
+                cut::comment_text(&o.layer),
+                o.power_pct
+            ));
+        }
+        if !o.speed_mm_min.is_finite() || o.speed_mm_min <= 0.0 {
+            problems.push(format!(
+                "layer {} has a speed that is not a number above 0: {}",
+                cut::comment_text(&o.layer),
+                o.speed_mm_min
+            ));
+        }
         if o.power_pct > send_power_cap(s) {
             problems.push(format!(
                 "layer {} asks for {} % and {} is lower",
@@ -369,6 +384,15 @@ pub fn check_vector_before_send(job: &VectorJob, s: &Settings) -> Result<(), Str
                 m.max_speed_mm_min
             ));
         }
+    }
+    let not_numbers = job
+        .paths
+        .iter()
+        .flat_map(|p| p.points.iter())
+        .filter(|q| !q.0.is_finite() || !q.1.is_finite())
+        .count();
+    if not_numbers > 0 {
+        problems.push(format!("{not_numbers} points are not numbers"));
     }
     if let Some((bx, by)) = m.bed_mm {
         let outside = job

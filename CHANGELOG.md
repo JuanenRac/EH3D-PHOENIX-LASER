@@ -3,6 +3,7 @@
 All notable changes to this project are documented here.
 
 ## [Unreleased]
+- **The checks of power and speed, the gate before a vector job leaves and the percent of a job are stricter:** a negative power or speed passed `check_power` and `check_speed`; a vector job with a power or speed that was not a number, a negative power, a speed of 0 or less, or a point that was not a number was sent when no bed was set (a comparison with a number that is not a number is never true); the percent of a job overflowed when the server answered a huge count of lines. 43 new tests keep them, and cover the ids that go into a request, the forbidden zones at their edges and the energy of a layer.
 
 ## [0.1.6] - Hatch and legacy project reading, power and speed matrix and Y axis test projects, project layers as settings, preset book as text
 
