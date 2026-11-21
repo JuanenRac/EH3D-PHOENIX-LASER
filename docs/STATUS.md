@@ -6,7 +6,7 @@ EH3D-PHOENIX-LASER works on a computer: the command line engraves pictures, cuts
 
 ## Recent work
 
-The window became the docking frame of the suite with four workspaces for tasks, the reader of LBRN2 projects was added with the layers of a project filling the table of layers, a tool that reads a folder of projects and says what the reader leaves out was added, and the common database of materials now gives starting points that are shown as untried. The README counts 840 tests where the code has more; the register is the one that says what exists.
+The window became the docking frame of the suite with four workspaces for tasks, the reader of LBRN2 projects was added with the layers of a project filling the table of layers, a tool that reads a folder of projects and says what the reader leaves out was added, and the common database of materials now gives starting points that are shown as untried. The README files, this page and the register of requirements agree on what exists and what is missing; the register is the one that says it.
 
 ## Capabilities
 

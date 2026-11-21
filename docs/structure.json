@@ -56,14 +56,14 @@
         {
           "name": "calibrate.rs",
           "desc": {
-            "en": "a part of the logic",
-            "es": "una parte de la lógica",
-            "de": "ein Teil der Logik",
-            "fr": "une partie de la logique",
-            "it": "una parte della logica",
-            "ja": "ロジックの一部",
-            "zh": "逻辑的一部分",
-            "pt": "uma parte da lógica"
+            "en": "the test grids: power against feed, the focus ladder and the grid of a material",
+            "es": "las rejillas de prueba: potencia contra avance, la escalera de foco y la rejilla de un material",
+            "de": "die Testraster: Leistung gegen Vorschub, Fokusleiter und das Raster eines Materials",
+            "fr": "les grilles d'essai : puissance contre avance, échelle de focale et grille d'un matériau",
+            "it": "le griglie di prova: potenza contro avanzamento, scala di fuoco e griglia di un materiale",
+            "ja": "テスト格子：出力と送り、フォーカスの梯子、材料の格子",
+            "zh": "测试网格：功率对进给、焦点梯形线和材料网格",
+            "pt": "as grelhas de teste: potência contra avanço, escada de foco e grelha de um material"
           }
         },
         {
@@ -82,14 +82,14 @@
         {
           "name": "dither.rs",
           "desc": {
-            "en": "a part of the logic",
-            "es": "una parte de la lógica",
-            "de": "ein Teil der Logik",
-            "fr": "une partie de la logique",
-            "it": "una parte della logica",
-            "ja": "ロジックの一部",
-            "zh": "逻辑的一部分",
-            "pt": "uma parte da lógica"
+            "en": "from grey levels to dots: threshold, Floyd-Steinberg, Atkinson and Bayer",
+            "es": "de niveles de gris a puntos: umbral, Floyd-Steinberg, Atkinson y Bayer",
+            "de": "von Graustufen zu Punkten: Schwellwert, Floyd-Steinberg, Atkinson und Bayer",
+            "fr": "des niveaux de gris aux points : seuil, Floyd-Steinberg, Atkinson et Bayer",
+            "it": "dai livelli di grigio ai punti: soglia, Floyd-Steinberg, Atkinson e Bayer",
+            "ja": "階調からドットへ：しきい値、Floyd-Steinberg、Atkinson、Bayer",
+            "zh": "从灰度到点：阈值、Floyd-Steinberg、Atkinson 和 Bayer",
+            "pt": "dos níveis de cinzento aos pontos: limiar, Floyd-Steinberg, Atkinson e Bayer"
           }
         },
         {
@@ -212,14 +212,14 @@
         {
           "name": "raster.rs",
           "desc": {
-            "en": "a part of the logic",
-            "es": "una parte de la lógica",
-            "de": "ein Teil der Logik",
-            "fr": "une partie de la logique",
-            "it": "una parte della logica",
-            "ja": "ロジックの一部",
-            "zh": "逻辑的一部分",
-            "pt": "uma parte da lógica"
+            "en": "the engraving line by line: dots to moves, overscan and power",
+            "es": "el grabado línea a línea: de puntos a movimientos, sobrerrecorrido y potencia",
+            "de": "die Gravur Zeile für Zeile: Punkte zu Bewegungen, Überlauf und Leistung",
+            "fr": "la gravure ligne par ligne : des points aux déplacements, dépassement et puissance",
+            "it": "l'incisione riga per riga: dai punti ai movimenti, extracorsa e potenza",
+            "ja": "1 行ずつの彫刻：ドットから移動へ、オーバースキャンと出力",
+            "zh": "逐行雕刻：由点生成移动、过扫和功率",
+            "pt": "a gravação linha a linha: de pontos a movimentos, sobrecurso e potência"
           }
         },
         {
@@ -747,6 +747,45 @@
             "ja": "要件一覧のテスト",
             "zh": "需求登记表的测试",
             "pt": "testes do registo de requisitos"
+          }
+        },
+        {
+          "name": "more.rs",
+          "desc": {
+            "en": "the G-code read back, the numbers and the grid",
+            "es": "el G-code releído, los números y la rejilla",
+            "de": "der G-Code zurückgelesen, die Zahlen, das Raster",
+            "fr": "le G-code relu, les nombres et la grille",
+            "it": "il G-code riletto, i numeri e la griglia",
+            "ja": "G コードの読み戻し、数値、格子",
+            "zh": "回读 G 代码、数字和网格",
+            "pt": "o G-code relido, os números e a grelha"
+          }
+        },
+        {
+          "name": "more2.rs",
+          "desc": {
+            "en": "the engraving at the edge of every value",
+            "es": "el grabado en el borde de cada valor",
+            "de": "die Gravur am Rand jedes Werts",
+            "fr": "la gravure au bord de chaque valeur",
+            "it": "l'incisione al limite di ogni valore",
+            "ja": "各値の限界での彫刻",
+            "zh": "每个值边界上的雕刻",
+            "pt": "a gravação no limite de cada valor"
+          }
+        },
+        {
+          "name": "rapid_power.rs",
+          "desc": {
+            "en": "no rapid move with a power still set",
+            "es": "ningún movimiento rápido con potencia puesta",
+            "de": "keine Eilbewegung mit gesetzter Leistung",
+            "fr": "aucun déplacement rapide avec une puissance réglée",
+            "it": "nessun movimento rapido con potenza impostata",
+            "ja": "出力を設定したままの高速移動なし",
+            "zh": "快速移动时不带功率",
+            "pt": "nenhum movimento rápido com potência definida"
           }
         }
       ]
