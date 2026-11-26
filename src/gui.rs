@@ -814,6 +814,10 @@ impl App {
                     }
                 });
             });
+        // Escape says no; no button has the keyboard, so Enter does not write
+        if ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape)) {
+            answer = Some(false);
+        }
         match answer {
             Some(true) => {
                 if self.win.suite_confirm() == Step::Done {
@@ -2466,5 +2470,65 @@ pub fn run_shot(files: Vec<PathBuf>, lang: Lang, request: ShotRequest) -> Result
     match taken {
         Some(result) => result,
         None => Err("the window closed before the picture was taken".to_owned()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use eh3d_project::{Ed25519Signer, OpenOptions, Project, SaveOptions};
+
+    const OUTLINE: &str = "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"40mm\" height=\"30mm\" viewBox=\"0 0 40 30\"><rect x=\"1\" y=\"1\" width=\"38\" height=\"28\" stroke=\"#000000\" fill=\"none\"/></svg>";
+
+    /// One frame of the question alone, with one key pressed (or none).
+    fn frame(app: &mut App, ctx: &egui::Context, key: Option<egui::Key>) {
+        let mut input = egui::RawInput::default();
+        if let Some(key) = key {
+            input.events.push(egui::Event::Key {
+                key,
+                physical_key: Some(key),
+                pressed: true,
+                repeat: false,
+                modifiers: egui::Modifiers::NONE,
+            });
+        }
+        let mut out = ctx.run_ui(input, |ui| app.suite_confirm_window(ui.ctx()));
+        out.textures_delta.clear();
+    }
+
+    #[test]
+    fn enter_and_escape_over_the_question_before_a_signature_is_removed_write_nothing() {
+        let dir = std::env::temp_dir().join(format!("eh3d-laser-question-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let drawing = dir.join("outline.svg");
+        std::fs::write(&drawing, OUTLINE).unwrap();
+        let project = dir.join("job.eh3d");
+        let mut app = App::build(Lang::En, None, false);
+        assert!(app.win.open_dropped(&drawing));
+        assert_eq!(app.win.suite_save_as(&project), Step::Done);
+        Project::open(&project, &OpenOptions::default())
+            .unwrap()
+            .sign_branch(
+                crate::eh3dfile::BRANCH,
+                &Ed25519Signer::from_seed(&[9; 32]),
+                &SaveOptions::default(),
+            )
+            .unwrap();
+        app.win.suite_refresh();
+        assert!(app.win.compute(), "{:?}", app.win.status);
+        let before = std::fs::read(&project).unwrap();
+        assert_eq!(app.win.suite_save(), Step::Asked);
+
+        let ctx = egui::Context::default();
+        for key in [None, Some(egui::Key::Enter), None] {
+            frame(&mut app, &ctx, key);
+            assert!(app.win.suite.pending.is_some(), "{key:?}");
+        }
+        frame(&mut app, &ctx, Some(egui::Key::Escape));
+        assert!(app.win.suite.pending.is_none());
+        assert_eq!(app.win.suite_confirm(), Step::Refused);
+        assert_eq!(std::fs::read(&project).unwrap(), before);
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 }
