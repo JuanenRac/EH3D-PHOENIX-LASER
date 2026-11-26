@@ -12,6 +12,7 @@ use eh3d_dock::core::PanelDef;
 use eh3d_dock::geom::Side;
 use eh3d_dock::menu::{Entry, Item, Label, Menu, MenuBar, StdAction};
 use eh3d_dock::model::{Layout, Node};
+use eh3d_dock::palette;
 use eh3d_dock::sectors::{titles, Sector};
 use eh3d_dock::shortcuts::Shortcut;
 use eh3d_dock::stdmenus::{
@@ -19,6 +20,15 @@ use eh3d_dock::stdmenus::{
 };
 use eh3d_dock::texts::Text8;
 use eh3d_dock::workspaces::Workspace;
+
+/// The colour of the titles and of the other words that stand out: the colour of the program, moved to a lightness that reads on each of the grounds (all light or all dark).
+pub fn title_colour(grounds: [palette::Rgb; 3]) -> palette::Rgb {
+    grounds
+        .iter()
+        .fold(Phoenix::Laser.accent(), |found, &ground| {
+            palette::readable(found, ground)
+        })
+}
 
 /// The look of the window «About»: which program of the family this is and its own picture, drawn in a ring of its colour.
 pub fn about_brand() -> AboutBrand {

@@ -4,6 +4,7 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+- **Titles in the colour of the program:** the name in the top bar, the titles of the groups and the headers of the tables are crimson instead of amber, with a contrast of at least 4.5 to 1 on light and dark windows. Amber text is left for cautions only (values that were not tried on a machine); the colours of the drawing and of the path keep their meaning.
 - **`project save --config` no longer puts the token of the server into a project:** a settings file that gives a value to `server_token` is refused, nothing is written and the value is not printed (the window already left such a file out). A project is a file that is passed on; one saved before with such a file should be looked at and the token changed.
 - **What the window shows and asks about a project, and its words, are shared:** they are `eh3d_project::suiteview` and `eh3d_project::suitetext` of EH3D-COMMON instead of two files of the program.
 - **The accents of the window are crimson, the colour of the program:** the selection, the active tab, links, coloured outlines and main buttons take it from the frame of the suite, with text that reads on every ground; panels and bars stay as they were.
