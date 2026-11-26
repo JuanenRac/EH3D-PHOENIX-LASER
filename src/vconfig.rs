@@ -1910,7 +1910,11 @@ mod tests {
         assert_eq!(mine.panel.attachments.max_attachment_bytes, 16 << 20);
         assert_eq!(mine.panel.viewer.max_pdf_bytes, 8 << 20);
         assert_eq!(mine.machine.s_max, 500);
-        for bad in ["attachments.max_mb = 0", "viewer.other = 4", "viewer.max_pdf_mb = x"] {
+        for bad in [
+            "attachments.max_mb = 0",
+            "viewer.other = 4",
+            "viewer.max_pdf_mb = x",
+        ] {
             let e = parse(&format!("{bad}\n")).unwrap_err();
             assert!(e.contains("line 1") && e.contains("4096"), "{bad}: {e}");
         }

@@ -806,7 +806,19 @@ fn extension_of(path: &Path) -> String {
 pub fn opens_file(path: &Path) -> bool {
     matches!(
         extension_of(path).as_str(),
-        "cfg" | "eh3d" | "svg" | "dxf" | "lbrn2" | "lbrn" | "png" | "pgm" | "nc" | "ngc" | "gcode" | "gc" | "tap"
+        "cfg"
+            | "eh3d"
+            | "svg"
+            | "dxf"
+            | "lbrn2"
+            | "lbrn"
+            | "png"
+            | "pgm"
+            | "nc"
+            | "ngc"
+            | "gcode"
+            | "gc"
+            | "tap"
     )
 }
 
@@ -3914,7 +3926,9 @@ mod tests {
 
     #[test]
     fn the_files_the_window_opens_are_told_apart_from_the_ones_of_the_attachments() {
-        for own in ["a.cfg", "a.eh3d", "a.SVG", "a.dxf", "a.lbrn2", "a.png", "a.pgm", "a.nc", "a.gcode"] {
+        for own in [
+            "a.cfg", "a.eh3d", "a.SVG", "a.dxf", "a.lbrn2", "a.png", "a.pgm", "a.nc", "a.gcode",
+        ] {
             assert!(opens_file(Path::new(own)), "{own}");
         }
         for other in ["sheet.pdf", "notes.txt", "table.csv", "noextension"] {
