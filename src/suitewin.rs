@@ -119,6 +119,7 @@ pub fn keep_my_limits(mine: &Settings, theirs: Settings) -> Settings {
     s.frame.pilot_percent = s.frame.pilot_percent.min(s.frame.max_pilot_percent);
     s.server = mine.server.clone();
     s.send = mine.send;
+    s.panel = mine.panel.clone();
     s.interlocks = mine.interlocks;
     for zone in &mine.zones {
         if !s.zones.contains(zone) {

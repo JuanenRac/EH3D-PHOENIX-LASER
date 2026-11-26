@@ -22,7 +22,18 @@ does not name, and also what every `[layer NAME]` starts from (wherever in the f
 
 The window keeps the arrangement of its panels in the same file, as lines that start with `dock.` (for example `dock.version=1`). The reader of the settings leaves those lines alone wherever they are, the window writes them back without touching any other line, and a line that is not a setting and does not start with `dock.` is still an error.
 
-`phoenix-laser settings` lists every key of this file and of a library of materials (section, key, kind of value, default and whether it is a safety setting), as text or as JSON with `--json`; a test keeps that list equal to the keys the reader takes and to the defaults of the tables below.
+The limits of the panel «Attachments» are lines of their own that may be written anywhere in the file, as in every program of the suite. Each value is a whole number from 1 to 4096; another key that starts with `attachments.` or `viewer.`, or another value, is an error. The settings file of a project never changes them.
+
+| Key | Default | Meaning |
+|---|---|---|
+| `attachments.max_mb` | 1024 | largest file that is attached or taken out |
+| `viewer.max_attachment_mb` | 1024 | largest attachment shown, opened or saved |
+| `viewer.max_pdf_mb` | 256 | largest PDF shown inside |
+| `viewer.max_image_mb` | 64 | largest picture file shown |
+| `viewer.max_text_mb` | 2 | bytes of a text file shown |
+| `viewer.max_office_mb` | 128 | largest office document previewed |
+
+`phoenix-laser settings` lists every key of the sections of this file and of a library of materials (section, key, kind of value, default and whether it is a safety setting), as text or as JSON with `--json`; a test keeps that list equal to the keys the reader takes and to the defaults of the tables below.
 
 ## What a layer is
 

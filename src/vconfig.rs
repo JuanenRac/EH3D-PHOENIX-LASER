@@ -1146,6 +1146,8 @@ pub struct Settings {
     pub defaults: LayerParams,
     /// The settings of the layers that the file names, by name (lower case).
     pub layers: Vec<(String, LayerParams)>,
+    /// The limits of the panel «Attachments» (`attachments.max_mb`, `viewer.max_*_mb`).
+    pub panel: eh3d_attachpanel::PanelLimits,
 }
 
 impl Default for Settings {
@@ -1186,6 +1188,7 @@ impl Default for Settings {
             tone: Tone::default(),
             defaults: LayerParams::default(),
             layers: Vec::new(),
+            panel: eh3d_attachpanel::PanelLimits::default(),
         }
     }
 }
@@ -1694,6 +1697,7 @@ pub fn parse(text: &str) -> Result<Settings, String> {
     let mut named_zones: Vec<String> = Vec::new();
     let mut named_subs: Vec<String> = Vec::new();
     let mut section = String::new();
+    let mut panel = eh3d_attachpanel::PanelLimits::default();
     for (n, raw) in text.lines().enumerate() {
         let line = n + 1;
         let t = raw.trim();
@@ -1705,6 +1709,18 @@ pub fn parse(text: &str) -> Result<Settings, String> {
             .is_some_and(|(k, _)| k.trim().starts_with(DOCK_KEY_PREFIX))
         {
             continue;
+        }
+        // the limits of the panel of the attachments are written as in every program of the suite, wherever in the file
+        if let Some((key, value)) = t.split_once('=') {
+            if eh3d_attachpanel::PanelLimits::is_key(key) {
+                if !panel.apply(key, value) {
+                    return Err(format!(
+                        "line {line}: '{}' is not a limit of the attachments or its value is not a whole number from 1 to 4096",
+                        key.trim()
+                    ));
+                }
+                continue;
+            }
         }
         if let Some(head) = t.strip_prefix('[') {
             let head = head
@@ -1750,7 +1766,10 @@ pub fn parse(text: &str) -> Result<Settings, String> {
             value: value.trim(),
         });
     }
-    let mut s = Settings::default();
+    let mut s = Settings {
+        panel,
+        ..Settings::default()
+    };
     for e in entries.iter().filter(|e| e.section == "defaults") {
         set_layer(&mut s.defaults, e.key, e.value).map_err(|m| format!("line {}: {m}", e.line))?;
     }
@@ -1883,6 +1902,26 @@ pub fn load(path: &Path) -> Result<Settings, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_limits_of_the_attachments_are_read_anywhere_and_a_project_never_changes_them() {
+        let text = "attachments.max_mb = 16\n[machine]\ns_max = 500\nviewer.max_pdf_mb = 8\n";
+        let mine = parse(text).unwrap();
+        assert_eq!(mine.panel.attachments.max_attachment_bytes, 16 << 20);
+        assert_eq!(mine.panel.viewer.max_pdf_bytes, 8 << 20);
+        assert_eq!(mine.machine.s_max, 500);
+        for bad in [
+            "attachments.max_mb = 0",
+            "viewer.other = 4",
+            "viewer.max_pdf_mb = x",
+        ] {
+            let e = parse(&format!("{bad}\n")).unwrap_err();
+            assert!(e.contains("line 1") && e.contains("4096"), "{bad}: {e}");
+        }
+        let theirs = parse("attachments.max_mb = 4096\n").unwrap();
+        let kept = crate::suitewin::keep_my_limits(&mine, theirs);
+        assert_eq!(kept.panel, mine.panel);
+    }
 
     #[test]
     fn the_tolerance_of_the_arcs_of_a_program_is_a_setting_with_a_range() {
