@@ -20,6 +20,8 @@ use crate::qr;
 use crate::raster::{engrave, overscan_for, Params};
 use crate::safety;
 use crate::server;
+use crate::suitetext::{Said, S};
+use crate::suitewin::{Step, SuiteState};
 use crate::svg::read_svg;
 use crate::text;
 use crate::tone::Tone;
@@ -54,11 +56,33 @@ pub enum Job {
     OpenGcode,
     /// A new, empty library of materials (the name is typed; a file that is there is never written over).
     NewMaterials,
+    /// A project file of the suite to open.
+    SuiteOpen,
+    /// The name of a project file of the suite to save into.
+    SuiteSaveAs,
+    /// A drawing to import into the project, keeping the original.
+    SuiteImport,
+    /// The folder a branch of the project is written into.
+    SuiteExtract,
 }
 
 impl Job {
     pub fn is_export(self) -> bool {
-        matches!(self, Job::ExportGcode | Job::NewMaterials)
+        matches!(
+            self,
+            Job::ExportGcode | Job::NewMaterials | Job::SuiteSaveAs | Job::SuiteExtract
+        )
+    }
+
+    /// The title of the jobs of the project of the suite (the others have theirs in [`Job::title`]).
+    pub fn suite_title(self) -> Option<S> {
+        match self {
+            Job::SuiteOpen => Some(S::MenuOpen),
+            Job::SuiteSaveAs => Some(S::MenuSaveAs),
+            Job::SuiteImport => Some(S::MenuImport),
+            Job::SuiteExtract => Some(S::MenuExtract),
+            _ => None,
+        }
     }
 
     /// The extensions the list of files shows.
@@ -70,6 +94,9 @@ impl Job {
             Job::OpenMaterials => &["cfg"],
             Job::OpenGcode => &["nc", "ngc", "gcode", "gc", "tap", "txt"],
             Job::NewMaterials => &["cfg"],
+            Job::SuiteOpen | Job::SuiteSaveAs => &["eh3d"],
+            Job::SuiteImport => &["svg", "dxf", "lbrn2", "lbrn"],
+            Job::SuiteExtract => &[],
         }
     }
 
@@ -81,6 +108,8 @@ impl Job {
             Job::OpenMaterials => Msg::TitleOpenMaterials,
             Job::OpenGcode => Msg::TitleOpenGcode,
             Job::NewMaterials => Msg::TitleNewMaterials,
+            Job::SuiteOpen | Job::SuiteImport => Msg::TitleOpenImage,
+            Job::SuiteSaveAs | Job::SuiteExtract => Msg::TitleExport,
         }
     }
 }
@@ -794,6 +823,41 @@ fn parse_drawing(bytes: &[u8], ext: &str, opts: &ReadOptions) -> Result<Drawing,
     }
 }
 
+/// A drawing from its bytes, read by what the extension of its path says.
+pub(crate) fn read_vector(
+    path: &Path,
+    bytes: Vec<u8>,
+    opts: &ReadOptions,
+) -> Result<VectorFile, Status> {
+    let ext = extension_of(path);
+    if bytes.len() > opts.limits.max_file_bytes {
+        return Err(Status::Failed(format!(
+            "{}: the file is larger than {} bytes (max_file_bytes)",
+            path.display(),
+            opts.limits.max_file_bytes
+        )));
+    }
+    let failed = |e: String| Status::Failed(format!("{}: {e}", path.display()));
+    let (drawing, hints) = if ext == "lbrn2" || ext == "lbrn" {
+        let project = read_project(&bytes, opts).map_err(failed)?;
+        let hints = project.hints();
+        (project.drawing, hints)
+    } else {
+        (
+            parse_drawing(&bytes, &ext, opts).map_err(failed)?,
+            Vec::new(),
+        )
+    };
+    Ok(VectorFile {
+        path: path.to_path_buf(),
+        name: name_of(path),
+        ext,
+        bytes,
+        drawing,
+        hints,
+    })
+}
+
 fn name_of(path: &Path) -> String {
     path.file_name().map_or_else(
         || path.display().to_string(),
@@ -959,6 +1023,8 @@ pub enum Status {
     SameFile(String),
     /// A library of materials was read: its name and how many materials it holds.
     MaterialsLoaded(String, usize),
+    /// Something was done with the project of the suite.
+    Suite(Said),
     /// A material was applied to the boxes of the window.
     MaterialApplied(String),
     /// The program was sent to the server under this name and is being followed.
@@ -1001,6 +1067,7 @@ impl Status {
     pub fn text(&self, lang: Lang) -> String {
         match self {
             Status::Ready => Msg::Ready.tr(lang).to_string(),
+            Status::Suite(said) => said.text(lang.code()),
             Status::ImageOpened { name, w, h } => fill(
                 Msg::ImageOpened.tr(lang),
                 &[name, &w.to_string(), &h.to_string()],
@@ -1320,6 +1387,8 @@ pub struct Window {
     pub common_thickness: String,
     /// The report of the program that was worked out, once it is asked for (it is dropped when anything changes).
     pub report_text: Option<String>,
+    /// The project file of the suite the window works on.
+    pub suite: SuiteState,
 }
 
 impl Window {
@@ -1377,6 +1446,7 @@ impl Window {
             common_what: commonmat::What::Cut,
             common_thickness: "3".to_string(),
             report_text: None,
+            suite: SuiteState::default(),
         }
     }
 
@@ -1415,7 +1485,7 @@ impl Window {
         }
     }
 
-    fn mark_stale(&mut self) {
+    pub(crate) fn mark_stale(&mut self) {
         // whatever changes, the laser is not lit unless the person says it again
         self.pilot_confirmed = false;
         self.report_text = None;
@@ -1817,6 +1887,7 @@ impl Window {
     /// Opens a file chosen or dropped on the window: a drawing (SVG, DXF) or a picture (anything else, which the reader of pictures refuses when it is not one).
     pub fn open_dropped(&mut self, path: &Path) -> bool {
         match extension_of(path).as_str() {
+            "eh3d" => self.suite_open(path),
             "svg" | "dxf" | "lbrn2" | "lbrn" => self.open_vector(path),
             "png" | "pgm" => self.open_image(path),
             "nc" | "ngc" | "gcode" | "gc" | "tap" => self.open_gcode(path),
@@ -1831,7 +1902,7 @@ impl Window {
     }
 
     /// How the drawing is read, from the boxes of the window.
-    fn read_options(&self) -> Result<ReadOptions, Status> {
+    pub(crate) fn read_options(&self) -> Result<ReadOptions, Status> {
         let mut o = self.settings.read;
         o.dpi = self.number(Key::Dpi)?;
         o.tolerance_mm = self.number(Key::Tolerance)?;
@@ -1893,46 +1964,13 @@ impl Window {
     /// Opens an SVG or DXF drawing and builds the table of its layers; the program then cuts instead of engraving.
     pub fn open_vector(&mut self, path: &Path) -> bool {
         let opened = self.read_options().and_then(|opts| {
-            let ext = extension_of(path);
             let bytes =
                 read_file_up_to(path, opts.limits.max_file_bytes as u64).map_err(Status::Failed)?;
-            let failed = |e: String| Status::Failed(format!("{}: {e}", path.display()));
-            let (drawing, hints) = if ext == "lbrn2" || ext == "lbrn" {
-                let project = read_project(&bytes, &opts).map_err(failed)?;
-                let hints = project.hints();
-                (project.drawing, hints)
-            } else {
-                (
-                    parse_drawing(&bytes, &ext, &opts).map_err(failed)?,
-                    Vec::new(),
-                )
-            };
-            Ok((ext, bytes, drawing, hints))
+            read_vector(path, bytes, &opts)
         });
         match opened {
-            Ok((ext, bytes, drawing, hints)) => {
-                self.warnings = drawing.warnings.clone();
-                self.vector = Some(VectorFile {
-                    path: path.to_path_buf(),
-                    name: name_of(path),
-                    ext,
-                    bytes,
-                    drawing,
-                    hints,
-                });
-                self.rebuild_rows();
-                self.mode = Mode::Cut;
-                self.work_mode = Mode::Cut;
-                self.done = None;
-                self.segs.clear();
-                self.stale = false;
-                self.truncated = false;
-                let shapes = self.vector.as_ref().map_or(0, |v| v.drawing.shapes.len());
-                self.status = Status::VectorOpened {
-                    name: name_of(path),
-                    shapes,
-                    layers: self.rows.len(),
-                };
+            Ok(file) => {
+                self.show_vector(file);
                 true
             }
             Err(s) => {
@@ -1940,6 +1978,26 @@ impl Window {
                 false
             }
         }
+    }
+
+    /// Makes a drawing that was read the drawing of the work.
+    pub(crate) fn show_vector(&mut self, file: VectorFile) {
+        self.warnings = file.drawing.warnings.clone();
+        let name = file.name.clone();
+        let shapes = file.drawing.shapes.len();
+        self.vector = Some(file);
+        self.rebuild_rows();
+        self.mode = Mode::Cut;
+        self.work_mode = Mode::Cut;
+        self.done = None;
+        self.segs.clear();
+        self.stale = false;
+        self.truncated = false;
+        self.status = Status::VectorOpened {
+            name,
+            shapes,
+            layers: self.rows.len(),
+        };
     }
 
     /// The table of layers of the drawing that is open, with what the settings say for each.
@@ -1972,91 +2030,8 @@ impl Window {
     pub fn load_config(&mut self, path: &Path) -> bool {
         match vconfig::load(path) {
             Ok(s) => {
-                let t = |v: f64| format!("{v}");
-                self.put(Key::Dpi, t(s.read.dpi));
-                self.put(Key::Tolerance, t(s.read.tolerance_mm));
-                self.put(Key::SMax, s.machine.s_max.to_string());
-                self.put(Key::Overscan, t(s.machine.overscan_mm));
-                self.put(Key::OriginX, t(s.machine.origin.0));
-                self.put(Key::OriginY, t(s.machine.origin.1));
-                self.put(Key::ZStart, t(s.focus.z_start_mm));
-                self.put(Key::ZStep, t(s.focus.z_step_mm));
-                self.put(Key::FocusLines, s.focus.steps.to_string());
-                self.put(Key::FocusLength, t(s.focus.length_mm));
-                self.put(Key::FocusSpacing, t(s.focus.spacing_mm));
-                self.put(Key::FocusFeed, t(s.focus.feed_mm_min));
-                self.put(Key::FocusPower, t(s.focus.power_percent));
-                self.put(Key::FrameMargin, t(s.frame.margin_mm));
-                // a pilot power in the file is only a value to show: the laser still needs the confirmation of the person
-                self.put(Key::FramePilot, t(s.frame.pilot_percent));
-                self.put(Key::FrameLaps, s.frame.laps.to_string());
-                self.put(Key::FrameFeed, t(s.frame.feed_mm_min));
-                self.put(Key::MaxPower, t(s.machine.max_power_percent));
-                self.put(Key::MaxSpeed, t(s.machine.max_speed_mm_min));
-                self.put(Key::LaserWatts, t(s.machine.laser_watts));
-                self.put(Key::Gamma, t(s.tone.gamma));
-                self.put(Key::Contrast, t(s.tone.contrast));
-                self.put(Key::Brightness, t(s.tone.brightness));
-                self.tone_invert = s.tone.invert;
-                self.tone_auto_level = s.tone.auto_level;
-                self.put(Key::TraceThreshold, s.trace.threshold.to_string());
-                self.put(Key::TraceSimplify, t(s.trace.simplify_mm));
-                self.put(Key::TraceMinArea, t(s.trace.min_area_mm2));
-                self.trace_invert = s.trace.invert;
-                self.put(Key::CalSteps, s.calibrate.steps.to_string());
-                self.put(Key::CalSpread, t(s.calibrate.spread_percent));
-                self.put(Key::CalLabelMm, t(s.calibrate.label_mm));
-                self.put(Key::CalMinPower, t(s.calibrate.min_power_percent));
-                self.put(Key::CalMinFeed, t(s.calibrate.min_feed_mm_min));
-                self.cal_labels = s.calibrate.labels;
-                self.put(Key::VerifyOverscan, t(s.verify.overscan_mm));
-                self.put(Key::TextHeight, t(s.text.height_mm));
-                self.put(Key::TextMaxHeight, t(s.text.max_height_mm));
-                self.put(Key::TextSpacing, t(s.text.spacing_percent));
-                self.put(Key::TextLineSpacing, t(s.text.line_spacing_percent));
-                self.put(Key::TextPower, t(s.text.power_percent));
-                self.put(Key::TextSpeed, t(s.text.speed_mm_min));
-                self.put(Key::TextPasses, s.text.passes.to_string());
-                self.put(Key::TextMaxChars, s.text.max_chars.to_string());
-                self.put(Key::TextMaxMinutes, t(s.text.max_minutes));
-                self.put(Key::QrModule, t(s.qr.module_mm));
-                self.put(Key::QrLine, t(s.qr.line_mm));
-                self.put(Key::QrPower, t(s.qr.power_percent));
-                self.put(Key::QrSpeed, t(s.qr.speed_mm_min));
-                self.put(Key::QrPasses, s.qr.passes.to_string());
-                self.put(Key::QrMaxBytes, s.qr.max_bytes.to_string());
-                self.put(Key::QrMaxVersion, s.qr.max_version.to_string());
-                self.put(Key::QrMaxSize, t(s.qr.max_size_mm));
-                self.put(Key::QrMaxLines, s.qr.max_lines.to_string());
-                self.put(Key::QrOverscan, t(s.qr.overscan_mm));
-                self.put(Key::QrMaxMinutes, t(s.qr.max_minutes));
-                self.put(Key::QrBorder, s.qr.border_modules.to_string());
-                self.put(Key::MarksArm, t(s.marks.arm_mm));
-                self.put(Key::MarksMargin, t(s.marks.margin_mm));
-                self.put(Key::MarksPower, t(s.marks.power_percent));
-                self.put(Key::MarksSpeed, t(s.marks.speed_mm_min));
-                self.put(Key::MarksPasses, s.marks.passes.to_string());
-                self.marks_cross = s.marks.centre_cross;
-                self.put(Key::BarcodeModule, t(s.barcode.module_mm));
-                self.put(Key::BarcodeHeight, t(s.barcode.height_mm));
-                self.put(Key::BarcodeLine, t(s.barcode.line_mm));
-                self.put(Key::BarcodePower, t(s.barcode.power_percent));
-                self.put(Key::BarcodeSpeed, t(s.barcode.speed_mm_min));
-                self.put(Key::BarcodePasses, s.barcode.passes.to_string());
-                self.put(Key::BarcodeMaxChars, s.barcode.max_chars.to_string());
-                self.put(Key::BarcodeMaxWidth, t(s.barcode.max_width_mm));
-                self.put(Key::BarcodeMaxLines, s.barcode.max_lines.to_string());
-                self.put(Key::BarcodeMaxMinutes, t(s.barcode.max_minutes));
-                self.barcode_mirror = s.barcode.mirror;
-                self.qr_ecc = s.qr.ecc;
-                self.qr_invert = s.qr.invert;
-                self.qr_mirror = s.qr.mirror;
-                self.text_mirror = s.text.mirror;
-                self.text_align = s.text.align;
-                self.settings = s;
+                self.apply_settings(s);
                 self.config_path = Some(path.to_path_buf());
-                self.rebuild_rows();
-                self.mark_stale();
                 self.status = Status::ConfigLoaded(name_of(path));
                 true
             }
@@ -2065,6 +2040,94 @@ impl Window {
                 false
             }
         }
+    }
+
+    /// The boxes of the window and the table of layers take what the settings say.
+    pub(crate) fn apply_settings(&mut self, s: Settings) {
+        let t = |v: f64| format!("{v}");
+        self.put(Key::Dpi, t(s.read.dpi));
+        self.put(Key::Tolerance, t(s.read.tolerance_mm));
+        self.put(Key::SMax, s.machine.s_max.to_string());
+        self.put(Key::Overscan, t(s.machine.overscan_mm));
+        self.put(Key::OriginX, t(s.machine.origin.0));
+        self.put(Key::OriginY, t(s.machine.origin.1));
+        self.put(Key::ZStart, t(s.focus.z_start_mm));
+        self.put(Key::ZStep, t(s.focus.z_step_mm));
+        self.put(Key::FocusLines, s.focus.steps.to_string());
+        self.put(Key::FocusLength, t(s.focus.length_mm));
+        self.put(Key::FocusSpacing, t(s.focus.spacing_mm));
+        self.put(Key::FocusFeed, t(s.focus.feed_mm_min));
+        self.put(Key::FocusPower, t(s.focus.power_percent));
+        self.put(Key::FrameMargin, t(s.frame.margin_mm));
+        // a pilot power in the file is only a value to show: the laser still needs the confirmation of the person
+        self.put(Key::FramePilot, t(s.frame.pilot_percent));
+        self.put(Key::FrameLaps, s.frame.laps.to_string());
+        self.put(Key::FrameFeed, t(s.frame.feed_mm_min));
+        self.put(Key::MaxPower, t(s.machine.max_power_percent));
+        self.put(Key::MaxSpeed, t(s.machine.max_speed_mm_min));
+        self.put(Key::LaserWatts, t(s.machine.laser_watts));
+        self.put(Key::Gamma, t(s.tone.gamma));
+        self.put(Key::Contrast, t(s.tone.contrast));
+        self.put(Key::Brightness, t(s.tone.brightness));
+        self.tone_invert = s.tone.invert;
+        self.tone_auto_level = s.tone.auto_level;
+        self.put(Key::TraceThreshold, s.trace.threshold.to_string());
+        self.put(Key::TraceSimplify, t(s.trace.simplify_mm));
+        self.put(Key::TraceMinArea, t(s.trace.min_area_mm2));
+        self.trace_invert = s.trace.invert;
+        self.put(Key::CalSteps, s.calibrate.steps.to_string());
+        self.put(Key::CalSpread, t(s.calibrate.spread_percent));
+        self.put(Key::CalLabelMm, t(s.calibrate.label_mm));
+        self.put(Key::CalMinPower, t(s.calibrate.min_power_percent));
+        self.put(Key::CalMinFeed, t(s.calibrate.min_feed_mm_min));
+        self.cal_labels = s.calibrate.labels;
+        self.put(Key::VerifyOverscan, t(s.verify.overscan_mm));
+        self.put(Key::TextHeight, t(s.text.height_mm));
+        self.put(Key::TextMaxHeight, t(s.text.max_height_mm));
+        self.put(Key::TextSpacing, t(s.text.spacing_percent));
+        self.put(Key::TextLineSpacing, t(s.text.line_spacing_percent));
+        self.put(Key::TextPower, t(s.text.power_percent));
+        self.put(Key::TextSpeed, t(s.text.speed_mm_min));
+        self.put(Key::TextPasses, s.text.passes.to_string());
+        self.put(Key::TextMaxChars, s.text.max_chars.to_string());
+        self.put(Key::TextMaxMinutes, t(s.text.max_minutes));
+        self.put(Key::QrModule, t(s.qr.module_mm));
+        self.put(Key::QrLine, t(s.qr.line_mm));
+        self.put(Key::QrPower, t(s.qr.power_percent));
+        self.put(Key::QrSpeed, t(s.qr.speed_mm_min));
+        self.put(Key::QrPasses, s.qr.passes.to_string());
+        self.put(Key::QrMaxBytes, s.qr.max_bytes.to_string());
+        self.put(Key::QrMaxVersion, s.qr.max_version.to_string());
+        self.put(Key::QrMaxSize, t(s.qr.max_size_mm));
+        self.put(Key::QrMaxLines, s.qr.max_lines.to_string());
+        self.put(Key::QrOverscan, t(s.qr.overscan_mm));
+        self.put(Key::QrMaxMinutes, t(s.qr.max_minutes));
+        self.put(Key::QrBorder, s.qr.border_modules.to_string());
+        self.put(Key::MarksArm, t(s.marks.arm_mm));
+        self.put(Key::MarksMargin, t(s.marks.margin_mm));
+        self.put(Key::MarksPower, t(s.marks.power_percent));
+        self.put(Key::MarksSpeed, t(s.marks.speed_mm_min));
+        self.put(Key::MarksPasses, s.marks.passes.to_string());
+        self.marks_cross = s.marks.centre_cross;
+        self.put(Key::BarcodeModule, t(s.barcode.module_mm));
+        self.put(Key::BarcodeHeight, t(s.barcode.height_mm));
+        self.put(Key::BarcodeLine, t(s.barcode.line_mm));
+        self.put(Key::BarcodePower, t(s.barcode.power_percent));
+        self.put(Key::BarcodeSpeed, t(s.barcode.speed_mm_min));
+        self.put(Key::BarcodePasses, s.barcode.passes.to_string());
+        self.put(Key::BarcodeMaxChars, s.barcode.max_chars.to_string());
+        self.put(Key::BarcodeMaxWidth, t(s.barcode.max_width_mm));
+        self.put(Key::BarcodeMaxLines, s.barcode.max_lines.to_string());
+        self.put(Key::BarcodeMaxMinutes, t(s.barcode.max_minutes));
+        self.barcode_mirror = s.barcode.mirror;
+        self.qr_ecc = s.qr.ecc;
+        self.qr_invert = s.qr.invert;
+        self.qr_mirror = s.qr.mirror;
+        self.text_mirror = s.text.mirror;
+        self.text_align = s.text.align;
+        self.settings = s;
+        self.rebuild_rows();
+        self.mark_stale();
     }
 
     /// Reads the settings file that is named by `PHOENIX_LASER_CONFIG`, or `phoenix-laser.cfg` in the folder the program runs in, when there is one.
@@ -3699,22 +3762,17 @@ impl Window {
             self.picture.as_ref().map(|p| &p.path),
             self.vector.as_ref().map(|v| &v.path),
             self.config_path.as_ref(),
+            self.suite.file.as_ref(),
         ];
         if inputs.into_iter().flatten().any(|p| same_file(p, path)) {
             self.status = Status::SameFile(path.display().to_string());
             return false;
         }
-        let Some(done) = &self.done else {
+        let Some(text) = self.program_text() else {
             self.status = Status::NeedImage;
             return false;
         };
-        let head = header(&Header {
-            generator: "phoenix-laser",
-            version: env!("CARGO_PKG_VERSION"),
-            source: done.source.as_ref().map(|(n, h)| (n.as_str(), h.clone())),
-            tools: &done.tools,
-        });
-        match write_atomic(path, &format!("{head}{}", done.gcode)) {
+        match write_atomic(path, &text) {
             Ok(()) => {
                 self.status = Status::Written(name_of(path));
                 self.pilot_confirmed = false;
@@ -3727,15 +3785,52 @@ impl Window {
         }
     }
 
+    /// The G-code of the work that was worked out, with its header, as it is written to a file or put into a project.
+    pub(crate) fn program_text(&self) -> Option<String> {
+        let done = self.done.as_ref()?;
+        let head = header(&Header {
+            generator: "phoenix-laser",
+            version: env!("CARGO_PKG_VERSION"),
+            source: done.source.as_ref().map(|(n, h)| (n.as_str(), h.clone())),
+            tools: &done.tools,
+        });
+        Some(format!("{head}{}", done.gcode))
+    }
+
     /// Does what a chosen file is for.
     pub fn run_job(&mut self, job: Job, path: &Path) -> bool {
         match job {
             Job::OpenImage => self.open_dropped(path),
-            Job::OpenConfig => self.load_config(path),
-            Job::OpenMaterials => self.load_materials(path),
+            Job::OpenConfig => {
+                let read = self.load_config(path);
+                if read {
+                    self.suite_chose_settings();
+                }
+                read
+            }
+            Job::OpenMaterials => {
+                let read = self.load_materials(path);
+                if read {
+                    self.suite_chose_materials();
+                }
+                read
+            }
             Job::OpenGcode => self.open_gcode(path),
             Job::ExportGcode => self.export(path),
-            Job::NewMaterials => self.create_materials(path),
+            Job::NewMaterials => {
+                let made = self.create_materials(path);
+                if made {
+                    self.suite_chose_materials();
+                }
+                made
+            }
+            Job::SuiteOpen => self.suite_open(path),
+            Job::SuiteSaveAs => self.suite_save_as(path) != Step::Refused,
+            Job::SuiteImport => self.suite_import(path) != Step::Refused,
+            Job::SuiteExtract => {
+                let branch = self.suite.extract_branch.clone();
+                self.suite_extract(&branch, path)
+            }
         }
     }
 

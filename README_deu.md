@@ -105,6 +105,7 @@ Jede Zeile ist ein Teil dieses Repositorys, und die Ampel sagt, wie weit er heut
 * **Die Tonkurve** (`src/tone.rs`): Vor der Punkterzeugung lassen sich die Graustufen auf den vollen Bereich dehnen (`--auto-level`), Kontrast und Helligkeit ändern, mit einem Gamma krümmen oder invertieren, mit einer einzigen Tabelle von 256 Einträgen; mit den Standardwerten bleibt das Bild völlig unverändert.
 * **Ein geprüfter G-Code:** Das Programm einer Zeichnung wird vor der Ausgabe Zeile für Zeile geprüft: kein Laser an bei einer Eilbewegung oder ohne Geschwindigkeit, kein `S` über voller Leistung, keine Bewegung außerhalb des Bettes, `M5` am Ende; die Datei wird nie über die Zeichnung oder die Einstellungen geschrieben, aus denen sie stammt.
 * **Projekte der Suite** (`src/eh3dfile.rs`, `docs/eh3d-project.md`): `phoenix-laser project` hält die Arbeit im Zweig `laser/` eines `.eh3d`-Projekts, einer einzigen Datei mit einem Zweig je Programm: `save` legt Zeichnung, Einstellungen, Materialbibliothek und Programme dort ab; `import` bewahrt die Zeichnung eines anderen Programms (LBRN2, LBRN, SVG oder DXF) Byte für Byte mit einem Bericht darüber, was gelesen wurde, was nicht und was beim Export verloren geht; `take` kopiert einen Umriss oder ein Netz aus einem anderen Zweig, etwa `cad/`, mit Hash und Format der Quelle, sodass `list` und `open` melden, wenn die Kopie veraltet ist; `open` und `extract` schreiben Dateien, ohne eine zu überschreiben. Geschrieben wird nur `laser/`: alle anderen Zweige, bekannt oder nicht, behalten ihre Bytes. Erprobt wurde das nur mit erfundenen Projekten.
+* **Das Projekt im Fenster** (`src/suitewin.rs`, `src/suitecore.rs`, `docs/eh3d-project.md`): Datei > Suite-Projekt (.eh3d) öffnet ein Projekt, speichert es und speichert es unter anderem Namen mit allen Zweigen, importiert eine Datei und behält das Original, übernimmt eine Datei eines anderen Zweigs, entpackt einen Zweig und listet die Zweige. Veraltetes und Signiertes bleibt sichtbar; bevor ein dort nicht geöffnetes Projekt, ein seit dem Lesen geänderter Zweig oder eine Signatur überschrieben wird, fragt das Fenster. Das Öffnen eines Projekts lockert nie die Grenzwerte, Verriegelungen oder den Server der eigenen Einstellungen, und eine Einstellungsdatei mit dem Server-Token kommt nicht in ein Projekt. Die Logik ist ohne Bildschirm getestet; die Einträge wurden noch von keiner Person am Bildschirm ausprobiert.
 
 ## 🧩 Rolle in EH3D
 
@@ -282,6 +283,9 @@ EH3D-PHOENIX-LASER/
 │   ├── dxf.rs                                   der DXF-Leser: Linien, Polylinien, Bögen, Kreise, Ellipsen, Splines und Blöcke, mit Einheiten
 │   ├── eh3dfile.rs                              der Zweig laser eines .eh3d-Projekts: speichern, importieren, übernehmen, öffnen, entnehmen
 │   ├── projcli.rs                               der Befehl project der Kommandozeile
+│   ├── suitecore.rs                             der Stand eines .eh3d-Projekts für das Fenster: veraltet, signiert, was vor dem Schreiben gefragt wird
+│   ├── suitetext.rs                             die Texte der Projekteinträge des Fensters in acht Sprachen
+│   ├── suitewin.rs                              das Menü Datei des Fensters für ein .eh3d-Projekt: öffnen, speichern, importieren, übernehmen, entpacken
 │   ├── lbrn2.rs                                 der Leser von LBRN2-Projekten: Ebenen, Formen, Gruppen und Kurven
 │   ├── lbrn2_pic.rs                             die Bilder eines LBRN2-Projekts: Base64, PNG, Grenzen, wie platziert gedreht
 │   ├── vartext.rs                               der variable Text: ein Zähler und die Spalten einer CSV-Datei, ein Text je Zeile
@@ -328,6 +332,7 @@ EH3D-PHOENIX-LASER/
 │   ├── window_cli.rs                            Tests, dass ein Build ohne das Feature gui eine reine Kommandozeile bleibt
 │   ├── dockwindow.rs                            Tests des Fenstermodells: Projektebenen, Bericht, Verriegelungen, Anordnung und Materialien
 │   ├── eh3dfile.rs                              Tests des Projektzweigs: Hin und zurück, andere Zweige, veraltete Kopien, beschädigte Dateien
+│   ├── suitewindow.rs                           Tests des Projektmenüs des Fensters ohne Bildschirm
 │   ├── reqs.rs                                  Tests des Anforderungsregisters
 │   ├── more.rs                                  der G-Code zurückgelesen, die Zahlen, das Raster
 │   ├── more2.rs                                 die Gravur am Rand jedes Werts

@@ -105,6 +105,7 @@ Chaque ligne est une partie de ce dépôt et le feu dit où elle en est aujourd'
 * **La courbe de tons** (`src/tone.rs`) : avant de fabriquer les points, les niveaux de gris peuvent être étirés sur toute la plage (`--auto-level`), recevoir plus ou moins de contraste et de luminosité, être courbés par un gamma ou inversés, avec une seule table de 256 entrées ; avec les valeurs par défaut l'image n'est pas modifiée du tout.
 * **Un G-code vérifié :** le programme d'un dessin est vérifié ligne par ligne avant d'être livré : aucun laser allumé pendant un déplacement rapide ou sans vitesse, aucun `S` au-dessus de la pleine puissance, aucun déplacement hors du plateau, `M5` à la fin ; le fichier n'est jamais écrit sur le dessin ni sur les réglages dont il provient.
 * **Projets de la suite** (`src/eh3dfile.rs`, `docs/eh3d-project.md`) : `phoenix-laser project` garde le travail dans la branche `laser/` d'un projet `.eh3d`, un seul fichier avec une branche par programme : `save` y place le dessin, les réglages, la bibliothèque de matériaux et les programmes ; `import` conserve octet pour octet un dessin d'un autre programme (LBRN2, LBRN, SVG ou DXF) avec un rapport de ce qui a été lu, de ce qui ne l'a pas été et de ce qui se perd à l'export ; `take` copie un contour ou un maillage d'une autre branche, comme `cad/`, avec l'empreinte et le format de sa source, et `list` et `open` signalent quand elle est périmée ; `open` et `extract` écrivent des fichiers sans en écraser aucun. Seule `laser/` est écrite : les autres branches, connues ou non, gardent leurs octets. Cela n'a été essayé qu'avec des projets inventés.
+* **Le projet dans la fenêtre** (`src/suitewin.rs`, `src/suitecore.rs`, `docs/eh3d-project.md`) : Fichier > Projet de la suite (.eh3d) ouvre un projet, l'enregistre et l'enregistre sous un autre nom en gardant toutes les branches, importe un fichier en gardant l'original, prend un fichier d'une autre branche, extrait une branche et liste les branches. Ce qui est périmé ou signé reste visible ; avant d'écrire sur un projet qui n'y a pas été ouvert, sur une branche modifiée depuis sa lecture ou sur une signature, la fenêtre demande. Ouvrir un projet n'assouplit jamais les limites, les verrouillages ni le serveur de ses propres réglages, et un fichier de réglages avec le jeton du serveur n'est pas mis dans un projet. La logique est testée sans écran ; aucune personne n'a essayé les entrées sur un écran.
 
 ## 🧩 Rôle dans EH3D
 
@@ -282,6 +283,9 @@ EH3D-PHOENIX-LASER/
 │   ├── dxf.rs                                   le lecteur DXF : lignes, polylignes, arcs, cercles, ellipses, splines et blocs, avec unités
 │   ├── eh3dfile.rs                              la branche laser d'un projet .eh3d : enregistrer, importer, prendre, ouvrir, extraire
 │   ├── projcli.rs                               la commande project de la ligne de commande
+│   ├── suitecore.rs                             l'état d'un projet .eh3d pour la fenêtre : périmé, signé, quoi demander avant d'écrire
+│   ├── suitetext.rs                             les textes des entrées de projet de la fenêtre en huit langues
+│   ├── suitewin.rs                              le menu Fichier de la fenêtre pour un projet .eh3d : ouvrir, enregistrer, importer, prendre, extraire
 │   ├── lbrn2.rs                                 le lecteur des projets LBRN2 : calques, formes, groupes et courbes
 │   ├── lbrn2_pic.rs                             les images d'un projet LBRN2 : base64, PNG, limites, tournées comme placées
 │   ├── vartext.rs                               le texte variable : un compteur et les colonnes d'un CSV, un texte par ligne
@@ -328,6 +332,7 @@ EH3D-PHOENIX-LASER/
 │   ├── window_cli.rs                            tests qu'une compilation sans la fonctionnalité gui reste une ligne de commande
 │   ├── dockwindow.rs                            tests du modèle de la fenêtre : calques d'un projet, rapport, verrouillages, disposition et matériaux
 │   ├── eh3dfile.rs                              tests de la branche du projet : aller-retour, autres branches, copies périmées, fichiers abîmés
+│   ├── suitewindow.rs                           tests du menu de projet de la fenêtre, sans écran
 │   ├── reqs.rs                                  tests du registre des exigences
 │   ├── more.rs                                  le G-code relu, les nombres et la grille
 │   ├── more2.rs                                 la gravure au bord de chaque valeur

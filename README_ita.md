@@ -105,6 +105,7 @@ Ogni riga è una parte di questo repository e il semaforo dice a che punto è og
 * **La curva dei toni** (`src/tone.rs`): prima di fare i punti i grigi si possono stirare su tutta la gamma (`--auto-level`), cambiare di contrasto e luminosità, curvare con un gamma o invertire, con un'unica tabella di 256 voci; con i valori predefiniti l'immagine non cambia affatto.
 * **Un G-code verificato:** il programma di un disegno viene verificato riga per riga prima di essere consegnato: nessun laser acceso durante un movimento rapido o senza velocità, nessuna `S` oltre la piena potenza, nessun movimento fuori dal piano, `M5` alla fine; il file non viene mai scritto sopra il disegno né sopra le impostazioni da cui deriva.
 * **Progetti della suite** (`src/eh3dfile.rs`, `docs/eh3d-project.md`): `phoenix-laser project` tiene il lavoro nel ramo `laser/` di un progetto `.eh3d`, un solo file con un ramo per ogni programma: `save` vi mette il disegno, le impostazioni, la libreria dei materiali e i programmi; `import` conserva byte per byte un disegno di un altro programma (LBRN2, LBRN, SVG o DXF) con un rapporto di ciò che è stato letto, di ciò che non lo è stato e di ciò che si perde in esportazione; `take` copia un contorno o una mesh da un altro ramo, come `cad/`, con l'hash e il formato della sorgente, e `list` e `open` dicono quando è superata; `open` ed `extract` scrivono file senza sovrascriverne alcuno. Viene scritto solo `laser/`: gli altri rami, noti o no, conservano i loro byte. È stato provato solo con progetti inventati.
+* **Il progetto nella finestra** (`src/suitewin.rs`, `src/suitecore.rs`, `docs/eh3d-project.md`): File > Progetto della suite (.eh3d) apre un progetto, lo salva e lo salva con un altro nome mantenendo tutti i rami, importa un file conservando l'originale, prende un file di un altro ramo, estrae un ramo ed elenca i rami. Ciò che non è aggiornato o è firmato resta in vista; prima di scrivere su un progetto non aperto lì, su un ramo cambiato da quando è stato letto o su una firma, la finestra chiede. Aprire un progetto non allenta mai i limiti, gli interblocchi o il server delle proprie impostazioni, e un file di impostazioni con il token del server non viene messo in un progetto. La logica è provata senza schermo; nessuna persona ha provato le voci su uno schermo.
 
 ## 🧩 Ruolo in EH3D
 
@@ -282,6 +283,9 @@ EH3D-PHOENIX-LASER/
 │   ├── dxf.rs                                   il lettore DXF: linee, polilinee, archi, cerchi, ellissi, spline e blocchi, con unità
 │   ├── eh3dfile.rs                              il ramo laser di un progetto .eh3d: salvare, importare, prendere, aprire, estrarre
 │   ├── projcli.rs                               il comando project della riga di comando
+│   ├── suitecore.rs                             lo stato di un progetto .eh3d per la finestra: non aggiornato, firmato, cosa chiedere prima di scrivere
+│   ├── suitetext.rs                             i testi delle voci di progetto della finestra in otto lingue
+│   ├── suitewin.rs                              il menu File della finestra per un progetto .eh3d: aprire, salvare, importare, prendere, estrarre
 │   ├── lbrn2.rs                                 il lettore dei progetti LBRN2: livelli, forme, gruppi e curve
 │   ├── lbrn2_pic.rs                             le immagini di un progetto LBRN2: base64, PNG, limiti, ruotate come posizionate
 │   ├── vartext.rs                               il testo variabile: un contatore e le colonne di un CSV, un testo per riga
@@ -328,6 +332,7 @@ EH3D-PHOENIX-LASER/
 │   ├── window_cli.rs                            test che una compilazione senza la funzione gui resti una riga di comando
 │   ├── dockwindow.rs                            test del modello della finestra: livelli di un progetto, rapporto, interblocchi, disposizione e materiali
 │   ├── eh3dfile.rs                              test del ramo del progetto: andata e ritorno, altri rami, copie superate, file danneggiati
+│   ├── suitewindow.rs                           test del menu di progetto della finestra, senza schermo
 │   ├── reqs.rs                                  test del registro dei requisiti
 │   ├── more.rs                                  il G-code riletto, i numeri e la griglia
 │   ├── more2.rs                                 l'incisione al limite di ogni valore

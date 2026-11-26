@@ -2,7 +2,7 @@
 
 This register is the single source of the state of each capability: `STATUS.md` and the README files cite it and never state a state that it does not. A state is one of `planned`, `prototype`, `implemented` and `validated`. `validated` means that a person has run the capability on a real machine and the evidence of the manifest says `bench` or `field`; nothing here is validated, because nothing of this program has run on a real laser, a real material or a real server: the G-code is checked by the program's own reader, the server is a stand-in, and the pictures for the marks are simulated.
 
-The register has 134 requirements: 114 implemented, 16 prototype, 4 planned and 0 validated. By progress: 114 done, 16 partial, 0 pending and 4 blocked. High coverage is not proof of correctness, so each row says how it is checked: the test that names it, and what it shows.
+The register has 138 requirements: 118 implemented, 16 prototype, 4 planned and 0 validated. By progress: 118 done, 16 partial, 0 pending and 4 blocked. High coverage is not proof of correctness, so each row says how it is checked: the test that names it, and what it shows.
 
 ## How to read the register
 
@@ -178,3 +178,7 @@ The check is `tests/reqs.rs`: it reads this table, finds each test and fails whe
 | PLAS-132 | A branch of a newer format or a sealed one is not written, with the code of the format, and the file stays as it was. | implemented | done | host-test | `tests/eh3dfile::a_branch_of_a_newer_format_or_sealed_is_not_written` | - |
 | PLAS-133 | A damaged project is an error and never a crash, with damage made from a fixed seed. | implemented | done | host-test | `tests/eh3dfile::damaged_projects_are_errors_and_never_a_crash` | - |
 | PLAS-134 | A signed branch is listed as signed, and a change that removes the signature says so. | implemented | done | host-test | `tests/eh3dfile::a_signed_branch_is_listed_and_a_change_says_the_signature_is_gone` | - |
+| PLAS-135 | The window opens, saves and saves under another name a project, keeping the bytes of every other branch. | implemented | done | host-test | `tests/suitewindow::saving_under_another_name_keeps_every_branch_and_another_project_is_asked_about` | - |
+| PLAS-136 | The window asks before it writes a project it did not open, a branch that changed or a signed one, and says that a signature was removed. | implemented | done | host-test | `tests/suitewindow::a_branch_that_changed_or_is_signed_is_asked_about_and_the_signature_is_told` | - |
+| PLAS-137 | The window takes a file of another branch, keeps what is out of date in sight and keeps the reference when it saves. | implemented | done | host-test | `tests/suitewindow::a_file_taken_from_cad_is_told_as_out_of_date_and_a_save_keeps_its_reference` | - |
+| PLAS-138 | A project opened in the window never loosens the limits of the person, and the token of the server never goes into a project. | implemented | done | host-test | `tests/suitewindow::a_project_never_loosens_the_limits_of_the_person_and_no_token_goes_into_one` | - |

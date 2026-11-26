@@ -7,6 +7,9 @@ use crate::lang::{fill, Lang, Msg};
 use crate::materials;
 use crate::panels::{self, id as pid, Cmd, LayoutWatch, MenuFacts};
 use crate::shot::{ShotRequest, ShotTheme, ShotWindow, PATIENCE_FRAMES};
+use crate::suitecore;
+use crate::suitetext::S;
+use crate::suitewin::Step;
 use crate::vconfig::{KerfSide, LayerMode, QrEcc, TextAlign};
 use crate::window::{fire, Job, Key, Kind, LayerField, Mode, Section, Window, MAX_SEGMENTS};
 use eframe::egui::{
@@ -49,7 +52,22 @@ struct Dialog {
     export: Option<String>,
 }
 
+/// The list of the project that is open on screen.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SuiteList {
+    /// The branches and their state.
+    Branches,
+    /// The files of the other branches, to take one.
+    Take,
+    /// The branches, to extract one.
+    Extract,
+}
+
 struct App {
+    /// The list of the project that is shown.
+    suite_list: Option<SuiteList>,
+    /// The window had the keyboard in the last frame (the project is read again when it comes back).
+    was_focused: bool,
     win: Window,
     /// The picture mode, while the window is there only to be photographed.
     shot: Option<ShotState>,
@@ -83,11 +101,15 @@ impl App {
         let mut fit_pending = false;
         if let Some(p) = initial {
             if win.open_dropped(&p) {
-                win.compute();
+                if win.can_compute() {
+                    win.compute();
+                }
                 fit_pending = true;
             }
         }
         App {
+            suite_list: None,
+            was_focused: true,
             win,
             shot: None,
             dialog: None,
@@ -107,11 +129,14 @@ impl App {
 
     /// Opens the window of files for a job: the list of pictures to open, or the name of the file to write.
     fn ask(&mut self, job: Job) {
-        let export = job.is_export().then(|| {
-            self.win
+        let export = job.is_export().then(|| match job {
+            Job::SuiteSaveAs => self.win.suite_suggested_name(),
+            Job::SuiteExtract => self.win.suite_extract_name(),
+            _ => self
+                .win
                 .suggested_output_for(job)
                 .and_then(|p| p.file_name().map(|n| n.to_string_lossy().into_owned()))
-                .unwrap_or_else(|| "engraving.nc".to_string())
+                .unwrap_or_else(|| "engraving.nc".to_string()),
         });
         self.dialog = Some(Dialog {
             browser: Browser::new(self.folder(), job.extensions()),
@@ -528,6 +553,7 @@ impl App {
             has_work: self.win.has_work(),
             can_compute: self.win.can_compute(),
             can_export: self.win.can_export(),
+            has_suite: self.win.suite.file.is_some(),
             has_done: self.win.done.is_some(),
             can_send: self.win.can_send(),
             server_active: self.win.server_active(),
@@ -546,7 +572,9 @@ impl App {
             }
             ok
         } else if self.win.open_dropped(path) {
-            self.win.compute();
+            if self.win.can_compute() {
+                self.win.compute();
+            }
             self.fit_pending = true;
             true
         } else {
@@ -576,6 +604,17 @@ impl App {
             Cmd::OpenGcode => self.ask(Job::OpenGcode),
             Cmd::OpenMaterials => self.ask(Job::OpenMaterials),
             Cmd::NewMaterials => self.ask(Job::NewMaterials),
+            Cmd::SuiteOpen => self.ask(Job::SuiteOpen),
+            Cmd::SuiteSave => {
+                if self.win.suite_save() == Step::NeedsName {
+                    self.ask(Job::SuiteSaveAs);
+                }
+            }
+            Cmd::SuiteSaveAs => self.ask(Job::SuiteSaveAs),
+            Cmd::SuiteImport => self.ask(Job::SuiteImport),
+            Cmd::SuiteTake => self.show_suite_list(SuiteList::Take),
+            Cmd::SuiteExtract => self.show_suite_list(SuiteList::Extract),
+            Cmd::SuiteBranches => self.show_suite_list(SuiteList::Branches),
             Cmd::Compute => {
                 if self.win.can_compute() {
                     self.do_compute();
@@ -594,8 +633,199 @@ impl App {
         }
     }
 
-    /// What is done at the start of a frame: a file dropped on the window is opened.
+    fn show_suite_list(&mut self, list: SuiteList) {
+        self.win.suite_refresh();
+        self.suite_list = Some(list);
+    }
+
+    /// The project of the suite stays in sight: its name, what is out of date, what a write would unsign and what was last done.
+    fn suite_bar(&mut self, ui: &mut egui::Ui) {
+        let lines = self.win.suite_banner();
+        if lines.is_empty() {
+            return;
+        }
+        egui::Panel::top("suite").show(ui, |ui| {
+            ui.horizontal_wrapped(|ui| {
+                for (text, attention) in lines {
+                    let text = egui::RichText::new(text);
+                    ui.label(if attention {
+                        text.strong().color(DANGER)
+                    } else {
+                        text.color(DIM)
+                    });
+                    ui.separator();
+                }
+            });
+        });
+    }
+
+    /// The list of the branches, or of the files to take, of the project.
+    fn suite_list_window(&mut self, ctx: &egui::Context) {
+        let Some(list) = self.suite_list else {
+            return;
+        };
+        let (Some(view), code) = (self.win.suite.view.clone(), self.win.lang.code()) else {
+            self.suite_list = None;
+            return;
+        };
+        let title = match list {
+            SuiteList::Branches => S::MenuBranches,
+            SuiteList::Take => S::MenuTake,
+            SuiteList::Extract => S::MenuExtract,
+        };
+        let mut open = true;
+        let mut take = None;
+        let mut extract = None;
+        let mut again = false;
+        egui::Window::new(title.tr(code))
+            .id(egui::Id::unique("suite-list"))
+            .open(&mut open)
+            .collapsible(false)
+            .default_size([620.0, 360.0])
+            .show(ctx, |ui| {
+                egui::ScrollArea::vertical()
+                    .max_height(300.0)
+                    .show(ui, |ui| match list {
+                        SuiteList::Branches => {
+                            egui::Grid::new("suite-branches")
+                                .num_columns(5)
+                                .striped(true)
+                                .show(ui, |ui| {
+                                    for word in [
+                                        S::ColBranch,
+                                        S::ColApp,
+                                        S::ColFormat,
+                                        S::ColFiles,
+                                        S::ColState,
+                                    ] {
+                                        ui.label(egui::RichText::new(word.tr(code)).color(ACCENT));
+                                    }
+                                    ui.end_row();
+                                    for b in &view.branches {
+                                        ui.label(b.id.as_str());
+                                        ui.label(b.app.as_str());
+                                        ui.label(b.format.as_str());
+                                        ui.label(b.files.to_string());
+                                        let state = suitecore::state_text(b, code);
+                                        let state = egui::RichText::new(state);
+                                        ui.label(if b.stale.is_empty() {
+                                            state
+                                        } else {
+                                            state.color(DANGER)
+                                        });
+                                        ui.end_row();
+                                    }
+                                });
+                        }
+                        SuiteList::Take => {
+                            if view.takeable.is_empty() {
+                                ui.label(S::NothingToTake.tr(code));
+                            } else {
+                                ui.label(S::ChooseFile.tr(code));
+                            }
+                            for (branch, name) in &view.takeable {
+                                if ui
+                                    .selectable_label(false, format!("{branch}/{name}"))
+                                    .clicked()
+                                {
+                                    take = Some((branch.clone(), name.clone()));
+                                }
+                            }
+                        }
+                        SuiteList::Extract => {
+                            ui.label(S::ChooseBranch.tr(code));
+                            for b in &view.branches {
+                                if ui.selectable_label(false, b.id.as_str()).clicked() {
+                                    extract = Some(b.id.clone());
+                                }
+                            }
+                        }
+                    });
+                ui.separator();
+                if ui.button(S::ReadAgain.tr(code)).clicked() {
+                    again = true;
+                }
+            });
+        if again {
+            self.win.suite_refresh();
+        }
+        if !open {
+            self.suite_list = None;
+        }
+        if let Some((branch, name)) = take {
+            self.suite_list = None;
+            if self.win.suite_take(&branch, &name) == Step::Done {
+                self.after_suite();
+            }
+        }
+        if let Some(branch) = extract {
+            self.suite_list = None;
+            self.win.suite.extract_branch = branch;
+            self.ask(Job::SuiteExtract);
+        }
+    }
+
+    /// The question before a project is written when there is something to agree to.
+    fn suite_confirm_window(&mut self, ctx: &egui::Context) {
+        let Some(pending) = &self.win.suite.pending else {
+            return;
+        };
+        let code = self.win.lang.code();
+        let lines: Vec<String> = pending.warnings.iter().map(|w| w.text(code)).collect();
+        let cancel = Msg::Cancel.tr(self.win.lang);
+        let mut answer = None;
+        egui::Window::new(S::ConfirmTitle.tr(code))
+            .id(egui::Id::unique("suite-confirm"))
+            .collapsible(false)
+            .resizable(false)
+            .anchor(egui::Align2::CENTER_CENTER, Vec2::ZERO)
+            .show(ctx, |ui| {
+                for line in &lines {
+                    ui.label(egui::RichText::new(line.as_str()).color(DANGER));
+                }
+                ui.horizontal(|ui| {
+                    if ui.button(S::Write.tr(code)).clicked() {
+                        answer = Some(true);
+                    }
+                    if ui.button(cancel).clicked() {
+                        answer = Some(false);
+                    }
+                });
+            });
+        match answer {
+            Some(true) => {
+                if self.win.suite_confirm() == Step::Done {
+                    self.after_suite();
+                }
+            }
+            Some(false) => self.win.suite_cancel(),
+            None => {}
+        }
+    }
+
+    /// The work that came from a project is worked out and looked at.
+    fn after_suite(&mut self) {
+        if let Some(file) = &self.win.suite.file {
+            self.recent_added.push(file.display().to_string());
+        }
+        if self.win.done.is_none() && self.win.can_compute() && !self.win.needs_confirmation() {
+            // the line that says what was done with the project stays
+            let said = self.win.status.clone();
+            if self.win.compute() {
+                self.win.status = said;
+                self.fit_pending = true;
+            }
+        }
+    }
+
+    /// What is done at the start of a frame: a file dropped on the window is opened, and a project is read again when the window
+    /// gets the keyboard back, so what another program changed is told.
     fn frame_start(&mut self, ctx: &egui::Context) {
+        let focused = ctx.input(|i| i.focused);
+        if focused && !self.was_focused {
+            self.win.suite_refresh();
+        }
+        self.was_focused = focused;
         let dropped: Vec<PathBuf> = ctx.input(|i| {
             i.raw
                 .dropped_files
@@ -1677,6 +1907,10 @@ impl App {
             Some(Outcome::Pick(path)) => {
                 if self.win.run_job(dialog.job, &path) {
                     match dialog.job {
+                        Job::SuiteOpen | Job::SuiteSaveAs | Job::SuiteImport => {
+                            self.after_suite();
+                        }
+                        Job::SuiteExtract => {}
                         Job::OpenImage => {
                             // the work of the new file is worked out at once
                             self.win.compute();
@@ -1732,7 +1966,16 @@ fn color_of_key(key: &str) -> Option<Color32> {
 fn show_dialog(ctx: &egui::Context, d: &mut Dialog, lang: Lang) -> Option<Outcome> {
     let mut outcome = None;
     let mut open = true;
-    egui::Window::new(d.job.title().tr(lang))
+    let title = d
+        .job
+        .suite_title()
+        .map_or_else(|| d.job.title().tr(lang), |s| s.tr(lang.code()));
+    let accept = match d.job {
+        Job::SuiteSaveAs => S::Write.tr(lang.code()),
+        Job::SuiteExtract => S::Extract.tr(lang.code()),
+        _ => Msg::Export.tr(lang),
+    };
+    egui::Window::new(title)
         .open(&mut open)
         .collapsible(false)
         .default_size([620.0, 460.0])
@@ -1790,7 +2033,7 @@ fn show_dialog(ctx: &egui::Context, d: &mut Dialog, lang: Lang) -> Option<Outcom
                 if let Some(name) = d.export.as_mut() {
                     ui.label(Msg::FileName.tr(lang));
                     ui.add(egui::TextEdit::singleline(name).desired_width(260.0));
-                    if ui.button(Msg::Export.tr(lang)).clicked() && !name.trim().is_empty() {
+                    if ui.button(accept).clicked() && !name.trim().is_empty() {
                         outcome = Some(Outcome::Pick(d.browser.dir.join(name.trim())));
                     }
                 }
@@ -1921,6 +2164,7 @@ impl eframe::App for Shell {
         {
             let mut app = self.app.borrow_mut();
             app.top_bar(ui);
+            app.suite_bar(ui);
             app.status_bar(ui);
             app.safety_bar(ui);
         }
@@ -1932,6 +2176,8 @@ impl eframe::App for Shell {
             let mut app = self.app.borrow_mut();
             app.dialog_window(&ctx);
             app.confirm_window(&ctx);
+            app.suite_list_window(&ctx);
+            app.suite_confirm_window(&ctx);
             app.shot_tick(&ctx);
         }
         // the arrangement is kept in the settings file when it changed (a picture keeps nothing)

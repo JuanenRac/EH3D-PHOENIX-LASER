@@ -105,6 +105,7 @@ Cada línea es una parte de este repositorio y la luz dice hasta dónde llega ho
 * **La curva de tonos** (`src/tone.rs`): antes de hacer los puntos se pueden estirar los grises a todo el rango (`--auto-level`), cambiar el contraste y el brillo, curvarlos con un gamma o invertirlos, con una sola tabla de 256 entradas; con los valores por defecto la imagen no cambia en absoluto.
 * **Un G-code comprobado:** el programa de un dibujo se comprueba línea a línea antes de entregarse: ningún láser encendido durante un movimiento rápido ni sin velocidad, ninguna `S` por encima de la potencia máxima, ningún movimiento fuera de la cama, `M5` al final; el fichero nunca se escribe sobre el dibujo ni sobre los ajustes de los que procede.
 * **Proyectos de la suite** (`src/eh3dfile.rs`, `docs/eh3d-project.md`): `phoenix-laser project` guarda el trabajo en la rama `laser/` de un proyecto `.eh3d`, un solo fichero con una rama por programa: `save` pone allí el dibujo, los ajustes, la biblioteca de materiales y los programas; `import` conserva byte a byte un dibujo de otro programa (LBRN2, LBRN, SVG o DXF) con un informe de lo leído, lo no leído y lo que se pierde al exportar; `take` copia un contorno o una malla de otra rama, como `cad/`, con el hash y el formato de su origen, y `list` y `open` avisan cuando está desactualizado; `open` y `extract` escriben ficheros sin sobrescribir ninguno. Solo se escribe `laser/`: las demás ramas, conocidas o no, conservan sus bytes. Solo se ha probado con proyectos inventados.
+* **El proyecto en la ventana** (`src/suitewin.rs`, `src/suitecore.rs`, `docs/eh3d-project.md`): Archivo > Proyecto de la suite (.eh3d) abre un proyecto, lo guarda y lo guarda con otro nombre conservando todas las ramas, importa un fichero guardando el original, toma un fichero de otra rama, extrae una rama y lista las ramas. Lo desactualizado y lo firmado queda a la vista; antes de escribir sobre un proyecto que no se abrió allí, una rama que cambió desde que se leyó o una firma, la ventana pregunta. Abrir un proyecto nunca relaja los límites, los enclavamientos ni el servidor de los ajustes propios, y un fichero de ajustes con el token del servidor no se pone en un proyecto. La lógica está probada sin pantalla; ninguna persona ha probado las entradas en una pantalla.
 
 ## 🧩 Papel en EH3D
 
@@ -282,6 +283,9 @@ EH3D-PHOENIX-LASER/
 │   ├── dxf.rs                                   el lector de DXF: líneas, polilíneas, arcos, círculos, elipses, splines y bloques, con unidades
 │   ├── eh3dfile.rs                              la rama laser de un proyecto .eh3d: guardar, importar, tomar, abrir, extraer
 │   ├── projcli.rs                               el comando project de la línea de comandos
+│   ├── suitecore.rs                             el estado de un proyecto .eh3d para la ventana: desactualizado, firmado, qué preguntar antes de escribir
+│   ├── suitetext.rs                             los textos de las entradas de proyecto de la ventana en ocho idiomas
+│   ├── suitewin.rs                              el menú Archivo de la ventana para un proyecto .eh3d: abrir, guardar, importar, tomar, extraer
 │   ├── lbrn2.rs                                 el lector de proyectos LBRN2: capas, formas, grupos y curvas
 │   ├── lbrn2_pic.rs                             las imágenes de un proyecto LBRN2: base64, PNG, límites y giro según su colocación
 │   ├── vartext.rs                               el texto variable: un contador y las columnas de un CSV, un texto por fila
@@ -328,6 +332,7 @@ EH3D-PHOENIX-LASER/
 │   ├── window_cli.rs                            pruebas de que una compilación sin la característica gui sigue siendo solo línea de comandos
 │   ├── dockwindow.rs                            pruebas del modelo de la ventana: capas de un proyecto, informe, enclavamientos, disposición y materiales
 │   ├── eh3dfile.rs                              pruebas de la rama del proyecto: ida y vuelta, otras ramas, copias desactualizadas, ficheros dañados
+│   ├── suitewindow.rs                           pruebas del menú de proyecto de la ventana, sin pantalla
 │   ├── reqs.rs                                  pruebas del registro de requisitos
 │   ├── more.rs                                  el G-code releído, los números y la rejilla
 │   ├── more2.rs                                 el grabado en el borde de cada valor
