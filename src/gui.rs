@@ -2290,7 +2290,12 @@ pub fn run(initial: Option<PathBuf>, lang: Lang) -> eframe::Result {
         Box::new(move |cc| {
             install_fonts(&cc.egui_ctx);
             apply_theme(&cc.egui_ctx, ShotTheme::Forge);
-            Ok(Box::new(Shell::new(App::new(lang, initial))))
+            let mut shell = Shell::new(App::new(lang, initial));
+            // the list of recent projects lives in the folder of the user
+            shell
+                .dock
+                .keep_user_recent(eh3d_dock::about::Phoenix::Laser);
+            Ok(Box::new(shell))
         }),
     )
 }
