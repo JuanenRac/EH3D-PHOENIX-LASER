@@ -29,6 +29,8 @@ const BACKGROUND: Color32 = Color32::from_rgb(0x0f, 0x0d, 0x0b);
 /// The strip at the top of the panel of the preview that the key of the colours takes: three rows for the powers, one in a low panel or for a cut.
 const KEY_TALL: f32 = 66.0;
 const KEY_LOW: f32 = 28.0;
+/// The room the word and the box of the language need at the right end of the top bar.
+const LANGUAGE_ROOM: f32 = 220.0;
 /// Under this height of the panel the key of the powers is drawn in one row.
 const KEY_ONE_ROW_BELOW: f32 = 260.0;
 
@@ -187,7 +189,9 @@ impl App {
     fn top_bar(&mut self, ui: &mut egui::Ui) {
         let lang = self.win.lang;
         egui::Panel::top("top").show(ui, |ui| {
-            ui.horizontal(|ui| {
+            // what does not fit goes to a further row, whole: nothing lies over anything else in a narrow window
+            ui.horizontal_wrapped(|ui| {
+                ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
                 let own = program_text(ui.visuals());
                 ui.label(
                     egui::RichText::new("EH3D-PHOENIX-LASER")
@@ -227,18 +231,28 @@ impl App {
                 {
                     self.fit_pending = true;
                 }
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    egui::ComboBox::from_id_salt("language")
-                        .selected_text(self.win.lang.name())
-                        .show_ui(ui, |ui| {
-                            for l in Lang::ALL {
-                                ui.selectable_value(&mut self.win.lang, l, l.name());
-                            }
-                        });
+                // the language stands at the right end of the row while there is room for it there
+                if ui.available_size_before_wrap().x >= LANGUAGE_ROOM {
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        self.language_box(ui);
+                        ui.label(egui::RichText::new(Msg::Language.tr(lang)).color(DIM));
+                    });
+                } else {
                     ui.label(egui::RichText::new(Msg::Language.tr(lang)).color(DIM));
-                });
+                    self.language_box(ui);
+                }
             });
         });
+    }
+
+    fn language_box(&mut self, ui: &mut egui::Ui) {
+        egui::ComboBox::from_id_salt("language")
+            .selected_text(self.win.lang.name())
+            .show_ui(ui, |ui| {
+                for l in Lang::ALL {
+                    ui.selectable_value(&mut self.win.lang, l, l.name());
+                }
+            });
     }
 
     // ------------------------------------------------------------ the panels of the window: each draws what is left of its group
@@ -2633,6 +2647,71 @@ mod tests {
                     }
                 }
                 assert!(lines > 0, "{size:?}: no engraving was drawn");
+                out.drop_without_applying_deltas();
+            }
+        }
+    }
+
+    /// The top bar takes as many rows as it needs: its buttons and the box of the language are whole at every width and in every language.
+    #[test]
+    fn the_top_bar_cuts_nothing_in_a_narrow_window() {
+        for lang in Lang::ALL {
+            let mut app = App::build(lang, None, false);
+            for width in [760.0, 900.0, 1000.0, 1280.0, 1920.0] {
+                let screen = Rect::from_min_size(Pos2::ZERO, Vec2::new(width, 600.0));
+                let ctx = egui::Context::default();
+                let input = || egui::RawInput {
+                    screen_rect: Some(screen),
+                    ..Default::default()
+                };
+                for _ in 0..3 {
+                    ctx.run_ui(input(), |ui| app.top_bar(ui))
+                        .drop_without_applying_deltas();
+                }
+                let out = ctx.run_ui(input(), |ui| app.top_bar(ui));
+                let words = [
+                    Msg::OpenImage.tr(lang),
+                    Msg::OpenSettings.tr(lang),
+                    Msg::OpenGcode.tr(lang),
+                    Msg::Compute.tr(lang),
+                    Msg::ExportGcode.tr(lang),
+                    Msg::Fit.tr(lang),
+                    Msg::Language.tr(lang),
+                    lang.name(),
+                ];
+                let texts: Vec<(&str, Rect, Rect)> = out
+                    .shapes
+                    .iter()
+                    .filter_map(|c| match &c.shape {
+                        egui::Shape::Text(t) => Some((
+                            t.galley.text(),
+                            c.shape.visual_bounding_rect(),
+                            c.clip_rect.intersect(screen),
+                        )),
+                        _ => None,
+                    })
+                    .collect();
+                for word in words {
+                    let found: Vec<_> = texts.iter().filter(|t| t.0 == word).collect();
+                    assert!(!found.is_empty(), "{lang:?} {width}: {word} is not drawn");
+                    for (_, place, room) in found {
+                        assert!(
+                            room.expand(0.5).contains_rect(*place),
+                            "{lang:?} {width}: {word} is cut: {place:?} in {room:?}"
+                        );
+                    }
+                }
+                for (i, a) in texts.iter().enumerate() {
+                    for b in &texts[i + 1..] {
+                        assert!(
+                            !a.1.shrink(0.5).intersects(b.1.shrink(0.5)),
+                            "{lang:?} {width}: {} lies over {}",
+                            a.0,
+                            b.0
+                        );
+                    }
+                }
+                drop(texts);
                 out.drop_without_applying_deltas();
             }
         }
