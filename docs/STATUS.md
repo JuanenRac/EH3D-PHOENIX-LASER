@@ -22,7 +22,7 @@ The official state of each capability is in `REQUIREMENTS.md`. The register has 
 
 ## What it needs from other repositories
 
-* EH3D-COMMON: the docking frame, the server client, the image reader and the project container. The CI takes its main branch until the release that holds what a program does with its branch; the workflows are then pinned to that release.
+* EH3D-COMMON: the docking frame, the server client, the image reader and the project container. The workflows take its tag v0.3.4.
 * EH3D-SERVER: the laser plugin that receives the jobs.
 * A real laser, a material and a person at the machine, for every proof that a check cannot give.
 
