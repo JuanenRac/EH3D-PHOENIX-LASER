@@ -4,6 +4,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+- **The key of the powers no longer lies over the preview of an engraving:** in a low window the key was drawn on top of the picture; it now has its own strip over the preview, the work is fitted and clipped under it, and in a low panel the key takes a single row. A test draws the preview with no screen at several sizes.
+
 - **Escape answers no to the question before a project is written:** the question that the window asks before a write removes a signature (or replaces a branch it did not write) closes with Escape without writing, and Enter does not write; the commands do not ask.
 
 ## [0.1.7] - Attached documents, the shared project from the window and the program colour

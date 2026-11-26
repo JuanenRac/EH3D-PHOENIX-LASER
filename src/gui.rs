@@ -26,6 +26,25 @@ use std::sync::{Arc, Mutex};
 
 // the colours of the theme Forge, the one the other programs of the suite start with: amber on charcoal
 const BACKGROUND: Color32 = Color32::from_rgb(0x0f, 0x0d, 0x0b);
+/// The strip at the top of the panel of the preview that the key of the colours takes: three rows for the powers, one in a low panel or for a cut.
+const KEY_TALL: f32 = 66.0;
+const KEY_LOW: f32 = 28.0;
+/// Under this height of the panel the key of the powers is drawn in one row.
+const KEY_ONE_ROW_BELOW: f32 = 260.0;
+
+/// The panel of the preview in two parts: the strip of the key of the colours and, under it, the room of the work. The key never lies over the work.
+fn view_areas(panel: Rect, drawing: bool) -> (Rect, Rect) {
+    let key = if drawing || panel.height() < KEY_ONE_ROW_BELOW {
+        KEY_LOW
+    } else {
+        KEY_TALL
+    };
+    let edge = panel.min.y + key.min(panel.height());
+    (
+        Rect::from_min_max(panel.min, Pos2::new(panel.max.x, edge)),
+        Rect::from_min_max(Pos2::new(panel.min.x, edge), panel.max),
+    )
+}
 const PANEL: Color32 = Color32::from_rgb(0x17, 0x13, 0x10);
 const RAISED: Color32 = Color32::from_rgb(0x22, 0x1c, 0x17);
 const TEXT: Color32 = Color32::from_rgb(0xf4, 0xec, 0xe0);
@@ -1780,13 +1799,12 @@ impl App {
         ui.scope(|ui| {
             let size = ui.available_size();
             let (response, painter) = ui.allocate_painter(size, egui::Sense::click_and_drag());
-            let rect = response.rect;
-            let (w, h) = (f64::from(rect.width()), f64::from(rect.height()));
-            painter.rect_filled(rect, 0.0, BACKGROUND);
+            let panel = response.rect;
+            painter.rect_filled(panel, 0.0, BACKGROUND);
             self.cursor = None;
             if !self.win.has_work() && self.win.mode == Mode::Engrave {
                 painter.text(
-                    rect.center(),
+                    panel.center(),
                     egui::Align2::CENTER_CENTER,
                     Msg::DropHint.tr(lang),
                     egui::FontId::proportional(18.0),
@@ -1794,6 +1812,9 @@ impl App {
                 );
                 return;
             }
+            let drawing = matches!(self.win.mode, Mode::Cut | Mode::Trace);
+            let (key, rect) = view_areas(panel, drawing);
+            let (w, h) = (f64::from(rect.width()), f64::from(rect.height()));
             if self.fit_pending && w > 40.0 && h > 40.0 {
                 self.win.fit(w, h);
                 self.fit_pending = false;
@@ -1805,7 +1826,7 @@ impl App {
                 let d = response.drag_delta();
                 self.win.viewport.pan_px(f64::from(d.x), f64::from(d.y));
             }
-            if let Some(p) = response.hover_pos() {
+            if let Some(p) = response.hover_pos().filter(|p| rect.contains(*p)) {
                 let at = p - rect.min;
                 let (sx, sy) = (f64::from(at.x), f64::from(at.y));
                 let (scroll, pinch) = ui.input(|i| (i.smooth_scroll_delta.y, i.zoom_delta()));
@@ -1816,6 +1837,7 @@ impl App {
                 self.cursor = Some(self.win.viewport.to_world(sx, sy, w, h));
             }
             self.paint(&painter, rect);
+            self.paint_key(&painter.with_clip_rect(key), key);
         });
     }
 
@@ -1858,15 +1880,15 @@ impl App {
                 Stroke::new(burn_width, color),
             );
         }
-        self.paint_key(&painter, rect);
     }
 
-    /// The key of the colours, in the corner of the picture.
+    /// The key of the colours, in its strip over the picture.
     fn paint_key(&self, painter: &egui::Painter, rect: Rect) {
         if self.win.segs.is_empty() {
             return;
         }
         let lang = self.win.lang;
+        let one_row = rect.height() < KEY_TALL;
         let mut y = rect.min.y + 12.0;
         if matches!(self.win.mode, Mode::Cut | Mode::Trace) {
             painter.rect_filled(
@@ -1883,6 +1905,42 @@ impl App {
             );
             return;
         }
+        let steps: u32 = 32;
+        let ramp = |left: f32, top: f32, width: f32| {
+            let bar = width / steps as f32;
+            for k in 0..steps {
+                let [r, g, b] = fire(f64::from(k) / f64::from(steps - 1));
+                painter.rect_filled(
+                    Rect::from_min_size(
+                        Pos2::new(left + bar * k as f32, top),
+                        Vec2::new(bar + 0.5, 12.0),
+                    ),
+                    0.0,
+                    Color32::from_rgb(r, g, b),
+                );
+            }
+        };
+        if one_row {
+            // low power, the colours, high power: the title is left out
+            let middle = rect.min.y + 14.0;
+            let low = painter.text(
+                Pos2::new(rect.min.x + 12.0, middle),
+                egui::Align2::LEFT_CENTER,
+                Msg::LegendLow.tr(lang),
+                egui::FontId::proportional(12.0),
+                DIM,
+            );
+            let width = (rect.width() * 0.3).min(160.0);
+            ramp(low.max.x + 8.0, middle - 6.0, width);
+            painter.text(
+                Pos2::new(low.max.x + 16.0 + width, middle),
+                egui::Align2::LEFT_CENTER,
+                Msg::LegendHigh.tr(lang),
+                egui::FontId::proportional(12.0),
+                DIM,
+            );
+            return;
+        }
         painter.text(
             Pos2::new(rect.min.x + 12.0, y + 7.0),
             egui::Align2::LEFT_CENTER,
@@ -1891,19 +1949,7 @@ impl App {
             TEXT,
         );
         y += 20.0;
-        let steps: u32 = 32;
-        let bar = 160.0 / steps as f32;
-        for k in 0..steps {
-            let [r, g, b] = fire(f64::from(k) / f64::from(steps - 1));
-            painter.rect_filled(
-                Rect::from_min_size(
-                    Pos2::new(rect.min.x + 12.0 + bar * k as f32, y),
-                    Vec2::new(bar + 0.5, 12.0),
-                ),
-                0.0,
-                Color32::from_rgb(r, g, b),
-            );
-        }
+        ramp(rect.min.x + 12.0, y, 160.0);
         painter.text(
             Pos2::new(rect.min.x + 12.0, y + 24.0),
             egui::Align2::LEFT_CENTER,
@@ -2530,5 +2576,65 @@ mod tests {
         assert_eq!(app.win.suite_confirm(), Step::Refused);
         assert_eq!(std::fs::read(&project).unwrap(), before);
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn the_key_of_the_powers_never_lies_over_the_engraving() {
+        let picture =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/gradient.pgm");
+        for lang in [Lang::En, Lang::De] {
+            for size in [
+                Vec2::new(360.0, 140.0),
+                Vec2::new(700.0, 200.0),
+                Vec2::new(700.0, 300.0),
+                Vec2::new(900.0, 700.0),
+            ] {
+                let mut app = App::build(lang, None, false);
+                assert!(app.win.open_dropped(&picture));
+                assert!(app.win.compute(), "{:?}", app.win.status);
+                app.fit_pending = true;
+                let screen = Rect::from_min_size(Pos2::ZERO, size);
+                let ctx = egui::Context::default();
+                let input = || egui::RawInput {
+                    screen_rect: Some(screen),
+                    ..Default::default()
+                };
+                for _ in 0..3 {
+                    ctx.run_ui(input(), |ui| app.panel_view(ui))
+                        .drop_without_applying_deltas();
+                }
+                let out = ctx.run_ui(input(), |ui| app.panel_view(ui));
+                let words = [Msg::LegendLow.tr(lang), Msg::LegendHigh.tr(lang)];
+                let mut key_foot = 0.0f32;
+                let mut seen = 0;
+                for c in &out.shapes {
+                    if let egui::Shape::Text(t) = &c.shape {
+                        if words.contains(&t.galley.text()) {
+                            let place = c.shape.visual_bounding_rect();
+                            assert!(
+                                c.clip_rect.expand(0.5).contains_rect(place),
+                                "{size:?}: {} is cut",
+                                t.galley.text()
+                            );
+                            key_foot = key_foot.max(place.max.y);
+                            seen += 1;
+                        }
+                    }
+                }
+                assert_eq!(seen, 2, "{size:?}: the key is not whole");
+                let mut lines = 0;
+                for c in &out.shapes {
+                    if matches!(c.shape, egui::Shape::LineSegment { .. }) {
+                        assert!(
+                            c.clip_rect.min.y >= key_foot - 0.5,
+                            "{size:?}: the engraving can lie under the key"
+                        );
+                        lines += 1;
+                    }
+                }
+                assert!(lines > 0, "{size:?}: no engraving was drawn");
+                out.drop_without_applying_deltas();
+            }
+        }
     }
 }
