@@ -56,9 +56,10 @@ jobs:
           out="$GITHUB_WORKSPACE/window-pictures"
           export HOME=/tmp/pictures/home XDG_CONFIG_HOME=/tmp/pictures/config
           mkdir -p "$HOME" "$XDG_CONFIG_HOME" "$out"
-          shot() { xvfb-run -a -s "-screen 0 1920x1080x24" timeout 120 "$exe" gui "$1" --shot "$out/$2" --lang en --theme forge --wait 20; }
-          shot plate.svg window-vector.png
-          shot gradient.pgm window-engrave.png
+          shot() { xvfb-run -a -s "-screen 0 1920x1080x24" timeout 120 "$exe" gui "$1" --shot "$out/$2" --lang en --theme forge --size "$3" --wait 20; }
+          # the engraving is taller, so that its legend does not lie over the preview
+          shot plate.svg window-vector.png 1440x900
+          shot gradient.pgm window-engrave.png 1280x1000
           ls -l "$out"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
