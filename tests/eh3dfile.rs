@@ -9,7 +9,9 @@ use std::process::Command;
 use eh3d_container::{sha256_hex, AtomicOptions};
 use eh3d_phoenix_laser::eh3dfile::{self, Identity, Inputs};
 use eh3d_phoenix_laser::vector::ReadOptions;
-use eh3d_project::{BranchUpdate, NewProject, OpenOptions, Project, SaveOptions, Seal, Writer};
+use eh3d_project::{
+    BranchUpdate, Ed25519Signer, NewProject, OpenOptions, Project, SaveOptions, Seal, Writer,
+};
 
 fn root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -450,6 +452,34 @@ fn fields_and_files_this_version_does_not_know_stay() {
     assert_eq!(manifest["future"]["k"], 1);
     let record = project.branch("laser").unwrap().record.clone().unwrap();
     assert_eq!(record.extra["hint"], "kept");
+}
+
+#[test]
+fn a_signed_branch_is_listed_and_a_change_says_the_signature_is_gone() {
+    let dir = folder("signed");
+    let file = dir.join("job.eh3d");
+    synthetic(&file);
+    eh3dfile::save(&file, &everything(), &Identity::default(), &read_options()).unwrap();
+    let key = Ed25519Signer::from_seed(&[7; 32]);
+    Project::open(&file, &OpenOptions::default())
+        .unwrap()
+        .sign_branch("laser", &key, &SaveOptions::default())
+        .unwrap();
+    let signed = || {
+        eh3dfile::list(&file)
+            .unwrap()
+            .rows
+            .iter()
+            .any(|r| r.id == "laser" && r.notes.contains(&"signed"))
+    };
+    assert!(signed());
+    let notes =
+        eh3dfile::save(&file, &everything(), &Identity::default(), &read_options()).unwrap();
+    assert!(
+        notes.iter().any(|n| n.contains("signature of the branch")),
+        "{notes:?}"
+    );
+    assert!(!signed());
 }
 
 #[test]

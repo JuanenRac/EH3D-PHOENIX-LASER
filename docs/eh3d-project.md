@@ -15,6 +15,8 @@ An `.eh3d` file is the project of the EH3D Fabrication Suite: one ZIP file with 
 
 `--config` of `import`, `open` and `take` gives the `[read]` settings with which a drawing is read. A file that is there is never written over by `open` or `extract`. The project is replaced in one step (a temporary file, then a rename).
 
+What every program does with its branch (open or create, save, import with a report, take, out-of-date notices, list and extract) is the module `appbranch` of the crate `eh3d-project`; this program says what its files are. `list` says when a branch is signed. Writing the branch removes a signature of the project, and a signature of the branch when there is one; the command says so. These commands neither sign nor check signatures: `eh3d-project` of EH3D-COMMON does.
+
 ## What is in the branch
 
 ```
