@@ -801,6 +801,15 @@ fn extension_of(path: &Path) -> String {
         .unwrap_or_default()
 }
 
+/// Whether a file is one the window opens when it is dropped on it (a settings file, a project, a drawing, a picture or a
+/// G-code program): the panel of the attachments leaves those to the window.
+pub fn opens_file(path: &Path) -> bool {
+    matches!(
+        extension_of(path).as_str(),
+        "cfg" | "eh3d" | "svg" | "dxf" | "lbrn2" | "lbrn" | "png" | "pgm" | "nc" | "ngc" | "gcode" | "gc" | "tap"
+    )
+}
+
 /// The bytes of a file, if it is not larger than `max` bytes.
 fn read_file_up_to(path: &Path, max: u64) -> Result<Vec<u8>, String> {
     let shown = path.display();
@@ -3902,6 +3911,16 @@ impl Window {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_files_the_window_opens_are_told_apart_from_the_ones_of_the_attachments() {
+        for own in ["a.cfg", "a.eh3d", "a.SVG", "a.dxf", "a.lbrn2", "a.png", "a.pgm", "a.nc", "a.gcode"] {
+            assert!(opens_file(Path::new(own)), "{own}");
+        }
+        for other in ["sheet.pdf", "notes.txt", "table.csv", "noextension"] {
+            assert!(!opens_file(Path::new(other)), "{other}");
+        }
+    }
     use std::fs;
 
     /// Four rows of eight dots: the left half black, the right half white.

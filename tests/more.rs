@@ -435,7 +435,12 @@ fn pgm(name: &str, w: usize, h: usize, v: u8) -> String {
 
 #[test]
 fn the_help_and_a_missing_command_are_not_errors_and_a_wrong_one_is() {
-    for a in [&[][..], &["help"], &["--help"], &["-h"]] {
+    // a build with the window opens it when there are no arguments, so that way asks for the help only without one
+    let mut ways: Vec<&[&str]> = vec![&["help"], &["--help"], &["-h"]];
+    if !cfg!(feature = "gui") {
+        ways.push(&[]);
+    }
+    for a in ways {
         let (code, out, _) = run(a);
         assert_eq!(code, Some(0));
         assert!(out.contains("phoenix-laser"), "{out}");

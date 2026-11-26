@@ -2,7 +2,7 @@
 
 This register is the single source of the state of each capability: `STATUS.md` and the README files cite it and never state a state that it does not. A state is one of `planned`, `prototype`, `implemented` and `validated`. `validated` means that a person has run the capability on a real machine and the evidence of the manifest says `bench` or `field`; nothing here is validated, because nothing of this program has run on a real laser, a real material or a real server: the G-code is checked by the program's own reader, the server is a stand-in, and the pictures for the marks are simulated.
 
-The register has 140 requirements: 120 implemented, 16 prototype, 4 planned and 0 validated. By progress: 120 done, 16 partial, 0 pending and 4 blocked. High coverage is not proof of correctness, so each row says how it is checked: the test that names it, and what it shows.
+The register has 142 requirements: 122 implemented, 16 prototype, 4 planned and 0 validated. By progress: 122 done, 16 partial, 0 pending and 4 blocked. High coverage is not proof of correctness, so each row says how it is checked: the test that names it, and what it shows.
 
 ## How to read the register
 
@@ -184,3 +184,5 @@ The check is `tests/reqs.rs`: it reads this table, finds each test and fails whe
 | PLAS-138 | A project opened in the window never loosens the limits of the person, and the token of the server never goes into a project. | implemented | done | host-test | `tests/suitewindow::a_project_never_loosens_the_limits_of_the_person_and_no_token_goes_into_one` | - |
 | PLAS-139 | The command line never puts a settings file that holds the token of the server into a project: the save is refused and nothing is written. | implemented | done | host-test | `tests/eh3dfile::the_command_line_never_puts_the_token_of_the_server_in_a_project` | - |
 | PLAS-140 | The window has the panel of the attachments of the project, in the menu File of the project and in a factory workspace. | implemented | done | host-test | `src/panels::the_menu_bar_is_well_made_and_has_no_shortcut_in_conflict_in_any_language` | - |
+| PLAS-141 | The limits of the panel of the attachments are read from the settings file of the person, and the settings of a project never change them. | implemented | done | host-test | `src/vconfig::the_limits_of_the_attachments_are_read_anywhere_and_a_project_never_changes_them` | - |
+| PLAS-142 | A file dropped on the panel of the attachments is attached there, and the files the window opens are left to the window. | implemented | done | host-test | `src/window::the_files_the_window_opens_are_told_apart_from_the_ones_of_the_attachments` | The drop itself is tested in EH3D-COMMON with made-up events, not on a desktop. |

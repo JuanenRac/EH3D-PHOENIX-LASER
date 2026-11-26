@@ -61,3 +61,6 @@ jobs:
         run: cargo clippy --all-targets --no-default-features -- -D warnings
       - name: Tests
         run: cargo test --all-targets
+      # the tests of the window draw it with no screen
+      - name: Tests of the window
+        run: cargo test --all-targets --features gui

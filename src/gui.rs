@@ -848,13 +848,12 @@ impl App {
             self.win.suite_refresh();
         }
         self.was_focused = focused;
-        let dropped: Vec<PathBuf> = ctx.input(|i| {
-            i.raw
-                .dropped_files
-                .iter()
-                .map(|f| f.path().to_path_buf())
-                .collect()
-        });
+        // the limits of the attachments follow the settings; a file dropped on their panel is attached there
+        self.attachments
+            .set_limits(self.win.settings.panel.clone());
+        let dropped = self
+            .attachments
+            .take_drop(ctx, crate::window::opens_file);
         if let Some(p) = dropped.first() {
             self.open_path(p);
         }

@@ -4,6 +4,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+- **The panel «Attachments» reads its limits and takes dropped files:** `attachments.max_mb` and `viewer.max_*_mb` are read from the settings file (the settings of a project never change them), a file can be dropped on the panel while the files the window opens are still opened, and the SHA-256 of a large file no longer stops the window.
+- **The tests of the window run:** `cargo test --features gui` no longer fails on the check of the help, which opened the window, and the CI runs them on Linux and Windows.
 - **The register of requirements and the status page name the panel of the attachments.**
 - **The attachments of the project in the window:** a panel «Attachments» (View, or *File > Suite project*) lists, attaches, links to a part, extracts and removes the data sheets, manuals and other files of the `.eh3d` project, with the viewer beside the list; dangerous and unknown files ask first. The packages carry the PDF library (PDFium) and its licences.
 - **Titles in the colour of the program:** the name in the top bar, the titles of the groups and the headers of the tables are crimson instead of amber, with a contrast of at least 4.5 to 1 on light and dark windows. Amber text is left for cautions only (values that were not tried on a machine); the colours of the drawing and of the path keep their meaning.
