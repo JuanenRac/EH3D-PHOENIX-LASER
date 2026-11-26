@@ -1910,6 +1910,7 @@ impl eframe::App for Shell {
         };
         self.dock.set_language(view_lang(lang));
         self.dock.set_about(Shell::about());
+        self.dock.set_brand(panels::about_brand());
         self.dock
             .set_menu_state(panels::disabled_entries(&facts), Vec::new());
         // the menu bar, then the bars that no workspace can hide, then the frame with the panels
