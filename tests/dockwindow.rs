@@ -509,3 +509,26 @@ mod common {
         assert!(matches!(w.common_answer(), Some(Ok(_))));
     }
 }
+
+#[test]
+fn the_titles_take_the_colour_of_the_program_and_read_on_light_and_dark_windows() {
+    use eh3d_dock::palette::{contrast, TEXT_CONTRAST};
+    // panel, window and the ground of the boxes: the theme Forge, then the dark and the light looks of egui
+    let looks = [
+        [[0x17, 0x13, 0x10], [0x22, 0x1c, 0x17], [0x14, 0x11, 0x0e]],
+        [[0x1b, 0x1b, 0x1b], [0x1b, 0x1b, 0x1b], [0x0a, 0x0a, 0x0a]],
+        [[0xf8, 0xf8, 0xf8], [0xf8, 0xf8, 0xf8], [0xff, 0xff, 0xff]],
+    ];
+    for grounds in looks {
+        let colour = panels::title_colour(grounds);
+        for ground in grounds {
+            assert!(
+                contrast(colour, ground) >= TEXT_CONTRAST,
+                "{colour:?} on {ground:?}"
+            );
+        }
+        // crimson, not amber: much more red than green
+        let [r, g, _] = colour;
+        assert!(u16::from(r) > 2 * u16::from(g), "{colour:?}");
+    }
+}

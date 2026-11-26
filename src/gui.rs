@@ -30,6 +30,8 @@ const RAISED: Color32 = Color32::from_rgb(0x22, 0x1c, 0x17);
 const TEXT: Color32 = Color32::from_rgb(0xf4, 0xec, 0xe0);
 const DIM: Color32 = Color32::from_rgb(0x9c, 0x8d, 0x7a);
 const ACCENT: Color32 = Color32::from_rgb(0xff, 0xb0, 0x00);
+// amber as text is only for what a person should be careful about; titles and the other words that stand out take the colour of the program (`program_text`)
+const CAUTION: Color32 = ACCENT;
 const OK: Color32 = Color32::from_rgb(0x9b, 0xe3, 0x4a);
 const DANGER: Color32 = Color32::from_rgb(0xff, 0x54, 0x70);
 /// The head moving with the laser off, and the edge of the work.
@@ -149,11 +151,12 @@ impl App {
         let lang = self.win.lang;
         egui::Panel::top("top").show(ui, |ui| {
             ui.horizontal(|ui| {
+                let own = program_text(ui.visuals());
                 ui.label(
                     egui::RichText::new("EH3D-PHOENIX-LASER")
                         .strong()
                         .size(18.0)
-                        .color(ACCENT),
+                        .color(own),
                 );
                 ui.separator();
                 if ui.button(Msg::OpenImage.tr(lang)).clicked() {
@@ -260,7 +263,7 @@ impl App {
             }
             ui.label(
                 egui::RichText::new(commonmat::not_verified_note(lang))
-                    .color(ACCENT)
+                    .color(CAUTION)
                     .small(),
             );
             let entries = self.win.common_entries();
@@ -352,7 +355,7 @@ impl App {
                             ui.label(fill(Msg::CommonMatAir.tr(lang), &[on.tr(lang)]));
                         }
                         for note in &answer.notes {
-                            ui.label(egui::RichText::new(note.as_str()).color(ACCENT).small());
+                            ui.label(egui::RichText::new(note.as_str()).color(CAUTION).small());
                         }
                         if ui.button(Msg::CommonMatUse.tr(lang)).clicked() {
                             self.win.use_common_start();
@@ -698,7 +701,8 @@ impl App {
                                         S::ColFiles,
                                         S::ColState,
                                     ] {
-                                        ui.label(egui::RichText::new(word.tr(code)).color(ACCENT));
+                                        let own = program_text(ui.visuals());
+                                        ui.label(egui::RichText::new(word.tr(code)).color(own));
                                     }
                                     ui.end_row();
                                     for b in &view.branches {
@@ -839,10 +843,10 @@ impl App {
     }
 
     /// The title of a group of a panel.
-    fn heading(&self, msg: Msg) -> egui::RichText {
+    fn heading(&self, ui: &egui::Ui, msg: Msg) -> egui::RichText {
         egui::RichText::new(msg.tr(self.win.lang))
             .strong()
-            .color(ACCENT)
+            .color(program_text(ui.visuals()))
     }
 
     /// The settings of one group, each with its name above a box to type in. A setting that does not matter with the choices made is left out.
@@ -896,7 +900,7 @@ impl App {
 
     fn picture_group(&mut self, ui: &mut egui::Ui) {
         let lang = self.win.lang;
-        egui::CollapsingHeader::new(self.heading(Msg::SectionFile))
+        egui::CollapsingHeader::new(self.heading(ui, Msg::SectionFile))
             .default_open(true)
             .show(ui, |ui| {
                 if ui.button(Msg::OpenImage.tr(lang)).clicked() {
@@ -920,7 +924,7 @@ impl App {
 
     fn mode_group(&mut self, ui: &mut egui::Ui) {
         let lang = self.win.lang;
-        egui::CollapsingHeader::new(self.heading(Msg::SectionMode))
+        egui::CollapsingHeader::new(self.heading(ui, Msg::SectionMode))
             .default_open(true)
             .show(ui, |ui| {
                 let mut mode = self.win.mode;
@@ -969,7 +973,7 @@ impl App {
         if names.is_empty() {
             return;
         }
-        egui::CollapsingHeader::new(self.heading(Msg::SectionMachine))
+        egui::CollapsingHeader::new(self.heading(ui, Msg::SectionMachine))
             .default_open(true)
             .show(ui, |ui| {
                 let shown = self
@@ -997,7 +1001,7 @@ impl App {
 
     fn dots_group(&mut self, ui: &mut egui::Ui) {
         let lang = self.win.lang;
-        egui::CollapsingHeader::new(self.heading(Msg::SectionImage))
+        egui::CollapsingHeader::new(self.heading(ui, Msg::SectionImage))
             .default_open(true)
             .show(ui, |ui| {
                 self.fields_of(ui, Section::Image);
@@ -1027,7 +1031,7 @@ impl App {
     /// The library of materials: the file to load it from and the list to take a material from, which fills the boxes of the window.
     fn material_group(&mut self, ui: &mut egui::Ui) {
         let lang = self.win.lang;
-        egui::CollapsingHeader::new(self.heading(Msg::SectionMaterial))
+        egui::CollapsingHeader::new(self.heading(ui, Msg::SectionMaterial))
             .default_open(true)
             .show(ui, |ui| {
                 if ui.button(Msg::OpenMaterials.tr(lang)).clicked() {
@@ -1128,7 +1132,7 @@ impl App {
     /// The outline of the picture: the width of the work, how the ink is told from the paper, how much the line is simplified and whether the shapes are cut or filled with lines.
     fn trace_group(&mut self, ui: &mut egui::Ui) {
         let lang = self.win.lang;
-        egui::CollapsingHeader::new(self.heading(Msg::SectionTrace))
+        egui::CollapsingHeader::new(self.heading(ui, Msg::SectionTrace))
             .default_open(true)
             .show(ui, |ui| {
                 self.field_for(ui, Key::WidthMm);
@@ -1146,7 +1150,7 @@ impl App {
 
     fn laser_group(&mut self, ui: &mut egui::Ui) {
         let lang = self.win.lang;
-        egui::CollapsingHeader::new(self.heading(Msg::SectionLaser))
+        egui::CollapsingHeader::new(self.heading(ui, Msg::SectionLaser))
             .default_open(true)
             .show(ui, |ui| {
                 let mut auto = self.win.overscan_auto;
@@ -1159,7 +1163,7 @@ impl App {
 
     fn calibration_group(&mut self, ui: &mut egui::Ui) {
         let lang = self.win.lang;
-        egui::CollapsingHeader::new(self.heading(Msg::SectionCalibration))
+        egui::CollapsingHeader::new(self.heading(ui, Msg::SectionCalibration))
             .default_open(true)
             .show(ui, |ui| {
                 // the grid from a material of the library: its power and its speed are the middle of the ladder
@@ -1210,7 +1214,7 @@ impl App {
     /// The frame of the work: the margin, the laps, the speed and the pilot power. The laser stays off with a pilot power of 0; with more, the window asks first.
     fn frame_group(&mut self, ui: &mut egui::Ui) {
         let lang = self.win.lang;
-        egui::CollapsingHeader::new(self.heading(Msg::SectionFrame))
+        egui::CollapsingHeader::new(self.heading(ui, Msg::SectionFrame))
             .default_open(true)
             .show(ui, |ui| {
                 self.fields_of(ui, Section::Frame);
@@ -1230,7 +1234,7 @@ impl App {
     /// The program that was opened to be seen: the file, and the full power and the acceleration its time and its warnings are worked out with.
     fn program_group(&mut self, ui: &mut egui::Ui) {
         let lang = self.win.lang;
-        egui::CollapsingHeader::new(self.heading(Msg::ModePreview))
+        egui::CollapsingHeader::new(self.heading(ui, Msg::ModePreview))
             .default_open(true)
             .show(ui, |ui| {
                 if ui.button(Msg::OpenGcode.tr(lang)).clicked() {
@@ -1250,7 +1254,7 @@ impl App {
         }
         let check = self.win.check_lines();
         let energy = self.win.energy_line();
-        egui::CollapsingHeader::new(self.heading(Msg::SectionPreview))
+        egui::CollapsingHeader::new(self.heading(ui, Msg::SectionPreview))
             .default_open(true)
             .show(ui, |ui| {
                 for (k, line) in lines.iter().enumerate() {
@@ -1289,7 +1293,7 @@ impl App {
         pane.refresh();
         let view_lang =
             eh3d_view::texts::Lang::from_code(lang.code()).unwrap_or(eh3d_view::texts::Lang::En);
-        let mut header = egui::CollapsingHeader::new(self.heading(Msg::SectionServer))
+        let mut header = egui::CollapsingHeader::new(self.heading(ui, Msg::SectionServer))
             .default_open(self.win.server_configured() || !lines.is_empty());
         if self.server_open {
             header = header.open(Some(true));
@@ -1392,7 +1396,7 @@ impl App {
     /// The focus test: the lines, the heights and the power and speed they are burnt with. The step of the height has no default, and the test moves Z, which the person is told.
     fn focus_group(&mut self, ui: &mut egui::Ui) {
         let lang = self.win.lang;
-        egui::CollapsingHeader::new(self.heading(Msg::ModeFocus))
+        egui::CollapsingHeader::new(self.heading(ui, Msg::ModeFocus))
             .default_open(true)
             .show(ui, |ui| {
                 self.fields_of(ui, Section::Focus);
@@ -1410,7 +1414,7 @@ impl App {
     /// The text mode: the words to burn in a box of their own, then the height, the gaps, the power, the speed, the passes and the limits that are the keys of `[text]`.
     fn text_group(&mut self, ui: &mut egui::Ui) {
         let lang = self.win.lang;
-        egui::CollapsingHeader::new(self.heading(Msg::ModeText))
+        egui::CollapsingHeader::new(self.heading(ui, Msg::ModeText))
             .default_open(true)
             .show(ui, |ui| {
                 ui.label(Msg::TextWords.tr(lang));
@@ -1462,7 +1466,7 @@ impl App {
     /// The QR mode: the data to burn, the level of error correction and the keys of `[qr]` (the side of a module, the distance between the lines, the power, the speed, the passes and the limits).
     fn qr_group(&mut self, ui: &mut egui::Ui) {
         let lang = self.win.lang;
-        egui::CollapsingHeader::new(self.heading(Msg::ModeQr))
+        egui::CollapsingHeader::new(self.heading(ui, Msg::ModeQr))
             .default_open(true)
             .show(ui, |ui| {
                 ui.label(Msg::QrData.tr(lang));
@@ -1510,7 +1514,7 @@ impl App {
     /// The barcode mode: the data to burn, the switch of the mirror image and the keys of `[barcode]` (the width of the narrowest bar, the height, the distance between the lines, the power, the speed, the passes and the limits).
     fn barcode_group(&mut self, ui: &mut egui::Ui) {
         let lang = self.win.lang;
-        egui::CollapsingHeader::new(self.heading(Msg::ModeBarcode))
+        egui::CollapsingHeader::new(self.heading(ui, Msg::ModeBarcode))
             .default_open(true)
             .show(ui, |ui| {
                 ui.label(Msg::BarcodeData.tr(lang));
@@ -1540,7 +1544,7 @@ impl App {
     /// The marks mode: the size of the rectangle, the cross in the middle and the keys of `[marks]` (the arm of an L, the margin, the power, the speed and the passes).
     fn marks_group(&mut self, ui: &mut egui::Ui) {
         let lang = self.win.lang;
-        egui::CollapsingHeader::new(self.heading(Msg::ModeMarks))
+        egui::CollapsingHeader::new(self.heading(ui, Msg::ModeMarks))
             .default_open(true)
             .show(ui, |ui| {
                 self.fields_of(ui, Section::Marks);
@@ -1572,7 +1576,7 @@ impl App {
 
     /// The settings that are not of one layer: how the file is read and the machine.
     fn vector_group(&mut self, ui: &mut egui::Ui) {
-        egui::CollapsingHeader::new(self.heading(Msg::SectionVector))
+        egui::CollapsingHeader::new(self.heading(ui, Msg::SectionVector))
             .default_open(true)
             .show(ui, |ui| {
                 self.fields_of(ui, Section::Vector);
@@ -1594,7 +1598,7 @@ impl App {
         if self.win.warnings.is_empty() {
             return;
         }
-        egui::CollapsingHeader::new(self.heading(Msg::SectionNotes))
+        egui::CollapsingHeader::new(self.heading(ui, Msg::SectionNotes))
             .default_open(true)
             .show(ui, |ui| {
                 for note in self.win.warnings.iter().take(20) {
@@ -1611,7 +1615,7 @@ impl App {
             return;
         }
         ui.scope(|ui| {
-            ui.label(self.heading(Msg::SectionLayers));
+            ui.label(self.heading(ui, Msg::SectionLayers));
             egui::ScrollArea::both()
                 .auto_shrink([false, true])
                 .show(ui, |ui| {
@@ -1635,7 +1639,8 @@ impl App {
                                 Msg::HatchCross,
                             ];
                             for h in heads {
-                                ui.label(egui::RichText::new(h.tr(lang)).strong().color(ACCENT));
+                                let own = program_text(ui.visuals());
+                                ui.label(egui::RichText::new(h.tr(lang)).strong().color(own));
                             }
                             ui.end_row();
                             for r in 0..self.win.rows.len() {
@@ -2237,6 +2242,13 @@ fn install_fonts(ctx: &egui::Context) {
             return;
         }
     }
+}
+
+/// The colour of the program for the words that stand out, legible on every ground of these visuals (light or dark).
+fn program_text(v: &egui::Visuals) -> Color32 {
+    let grounds = [v.panel_fill, v.window_fill, v.extreme_bg_color].map(|c| [c.r(), c.g(), c.b()]);
+    let [r, g, b] = panels::title_colour(grounds);
+    Color32::from_rgb(r, g, b)
 }
 
 /// The colours of the theme Forge for the controls of egui.

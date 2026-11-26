@@ -17,7 +17,7 @@
 
 ---
 
-**Vérification d'honnêteté - ce qui fonctionne aujourd'hui :** une bibliothèque Rust et un programme en ligne de commande (`phoenix-laser`) avec 1054 tests qui s'exécutent sur un ordinateur : il transforme une image en points par tramage et écrit le G-code d'un laser qui brûle ligne par ligne avec une puissance dynamique et un dépassement, lit des dessins SVG, DXF et LBRN2 et écrit le G-code qui découpe leurs contours (ceux de l'intérieur d'abord, avec la largeur du faisceau, des ponts et plusieurs passes) et grave leurs formes avec des lignes, avec les réglages de chaque calque dans un fichier, brûle du texte, des codes QR et des codes-barres, vérifie un programme contre les limites de la machine et écrit une grille d'essai puissance contre avance. Il a une fenêtre (compilée avec `--features gui`), le cadre de panneaux de la suite avec douze panneaux et quatre espaces de travail, qui ouvre une image ou un dessin, montre le trajet du laser, permet de changer les réglages et exporte le G-code ; la fenêtre n'a pas été vue sur un écran par une personne. Le lecteur de projets LBRN2 a été mesuré sur douze projets réels d'un fabricant de lasers (les douze sont lus et l'unique image qu'ils contiennent est décodée et gravée par points ; le sens de leur axe y n'a jamais été confirmé avec une pièce réelle). Il peut aussi envoyer un programme au plugin laser du serveur EH3D et suivre, suspendre ou arrêter le travail (`phoenix-laser server`), testé seulement contre un double du serveur. **Rien ici n'a tourné sur un vrai laser** : rien de ce qui en est tiré, ni d'autre chose, n'a été découpé ou brûlé sur une machine.
+**Vérification d'honnêteté - ce qui fonctionne aujourd'hui :** une bibliothèque Rust et un programme en ligne de commande (`phoenix-laser`) avec 1055 tests qui s'exécutent sur un ordinateur : il transforme une image en points par tramage et écrit le G-code d'un laser qui brûle ligne par ligne avec une puissance dynamique et un dépassement, lit des dessins SVG, DXF et LBRN2 et écrit le G-code qui découpe leurs contours (ceux de l'intérieur d'abord, avec la largeur du faisceau, des ponts et plusieurs passes) et grave leurs formes avec des lignes, avec les réglages de chaque calque dans un fichier, brûle du texte, des codes QR et des codes-barres, vérifie un programme contre les limites de la machine et écrit une grille d'essai puissance contre avance. Il a une fenêtre (compilée avec `--features gui`), le cadre de panneaux de la suite avec douze panneaux et quatre espaces de travail, qui ouvre une image ou un dessin, montre le trajet du laser, permet de changer les réglages et exporte le G-code ; la fenêtre n'a pas été vue sur un écran par une personne. Le lecteur de projets LBRN2 a été mesuré sur douze projets réels d'un fabricant de lasers (les douze sont lus et l'unique image qu'ils contiennent est décodée et gravée par points ; le sens de leur axe y n'a jamais été confirmé avec une pièce réelle). Il peut aussi envoyer un programme au plugin laser du serveur EH3D et suivre, suspendre ou arrêter le travail (`phoenix-laser server`), testé seulement contre un double du serveur. **Rien ici n'a tourné sur un vrai laser** : rien de ce qui en est tiré, ni d'autre chose, n'a été découpé ou brûlé sur une machine.
 
 ---
 
@@ -30,7 +30,7 @@
 |---|---|
 | Version | `0.1.6` |
 | Maturité | Fonctionnel |
-| Tests | 1054 |
+| Tests | 1055 |
 | Pile technique | Rust |
 | Sur du matériel réel | Non essayé : rien ici n'a fonctionné sur une machine |
 
@@ -46,7 +46,7 @@ Chaque ligne est une partie de ce dépôt et le feu dit où elle en est aujourd'
 |---|---|---|
 | Cœur | 🟡 | transforme une image en points par tramage et écrit le G-code d'un laser qui brûle ligne par ligne avec une puissance dynamique et un dépassement, lit des dessins SVG et DXF et les découpe ou les grave par calque (contours ordonnés, largeur du faisceau, ponts, passes, hachures), et une grille d'essai puissance contre avance ; testé sur un ordinateur avec des entrées normales et abîmées, pas avec une collection de fichiers réels. |
 | Ligne de commande | 🟡 | `phoenix-laser` (`engrave`, `calibrate`, `info`, `cut`, `vector`, `layers`) exécute les mêmes fonctions que la bibliothèque et affiche le résultat ; chaque erreur revient sous forme de message et d'un code de sortie non nul. |
-| Tests | 🟡 | 1054 tests passent (`cargo test`), avec des cas normaux, des cas limites et des entrées abîmées. |
+| Tests | 🟡 | 1055 tests passent (`cargo test`), avec des cas normaux, des cas limites et des entrées abîmées. |
 | Sécurité | 🟡 | Rust sûr et simple (`forbid(unsafe_code)`) : rien ne panique sur les fichiers reçus et une mauvaise valeur est une erreur avec sa raison ; pas de revue indépendante. |
 | Fenêtre | 🟠 | Écrite (egui, `--features gui`) comme le cadre de panneaux de la suite : ouvrir ou déposer une image ou un dessin SVG, DXF ou LBRN2, voir le trajet du laser (la découpe d'une couleur, le déplacement atténué), modifier le tableau des calques, les modes texte, code QR, code-barres, repères, cadre et focale, une grille d'étalonnage, zoom et déplacement, estimer la durée, vérifier, rapport, envoyer au serveur, exporter ; sa logique est testée, mais elle n'a pas été vue sur un écran par une personne. |
 | Matériel réel | 🔴 | Non essayé : rien ici n'a été exécuté sur une machine. |
@@ -230,7 +230,7 @@ Pour prendre une capture de la fenêtre sans l'ouvrir à la main, lancez-la avec
 
 ## 🧪 Tests
 
-La suite compte 1054 tests (`cargo test`, exécutés sous Windows et Linux dans le CI). Ils vérifient les cas normaux, les cas limites et les entrées abîmées : fichiers vides, bruit et fichiers coupés ne font jamais paniquer. Le CI exécute aussi `cargo fmt --check`, `cargo clippy` avec les avertissements comme erreurs et `python -I tools/ci_validate.py`.
+La suite compte 1055 tests (`cargo test`, exécutés sous Windows et Linux dans le CI). Ils vérifient les cas normaux, les cas limites et les entrées abîmées : fichiers vides, bruit et fichiers coupés ne font jamais paniquer. Le CI exécute aussi `cargo fmt --check`, `cargo clippy` avec les avertissements comme erreurs et `python -I tools/ci_validate.py`.
 
 ## 🏗️ Compilation et publication
 
