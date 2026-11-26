@@ -14,7 +14,7 @@ The laser program of the PHOENIX family: it engraves a picture dot by dot, cuts 
 * Checks a G-code program, its own or another's, as text and never runs it: limit of power and of speed, laser on during a rapid move, work outside the bed, forbidden zones, the emergency stop and the interlocks, and gives the SHA-256 of the exact file.
 * Keeps every tuned value in a settings file, a library of materials (all unverified until a person verifies them) and profiles of machines, and offers the starting points of the common database of materials with the note that nobody tried them.
 * Sends a program, a vector job or a test fire to the laser plugin of the EH3D server and follows, holds or stops the job; the stop is the emergency stop.
-* Shows the work in a docking window of twelve panels and four workspaces for tasks, in eight languages.
+* Shows the work in a docking window of thirteen panels and four workspaces for tasks, in eight languages.
 
 ## What it will not do
 

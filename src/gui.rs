@@ -15,6 +15,7 @@ use crate::window::{fire, Job, Key, Kind, LayerField, Mode, Section, Window, MAX
 use eframe::egui::{
     self, Color32, FontData, FontDefinitions, FontFamily, Pos2, Rect, Stroke, Vec2,
 };
+use eh3d_attachpanel::{AttachPanel, Program};
 use eh3d_dock::core::AboutInfo;
 use eh3d_dock::gui::Dock;
 use eh3d_dock::menu::{Chosen, DockAction, MenuBar, StdAction};
@@ -87,6 +88,8 @@ struct App {
     pending_dock: Vec<DockAction>,
     /// The files that were opened, for the list of recent files of the frame.
     recent_added: Vec<String>,
+    /// The panel of the attachments of the project of the suite.
+    attachments: AttachPanel,
 }
 
 impl App {
@@ -122,6 +125,21 @@ impl App {
             server_open: false,
             pending_dock: Vec::new(),
             recent_added: Vec::new(),
+            attachments: AttachPanel::new(Program::new(
+                crate::eh3dfile::BRANCH,
+                env!("CARGO_PKG_VERSION"),
+            )),
+        }
+    }
+
+    /// The attachments of the project of the window; what it writes is read again by the window.
+    fn panel_attachments(&mut self, ui: &mut egui::Ui) {
+        let file = self.win.suite.file.clone();
+        if self
+            .attachments
+            .show(ui, file.as_deref(), self.win.lang.code())
+        {
+            self.win.suite_refresh();
         }
     }
 
@@ -2076,7 +2094,7 @@ impl Shell {
         let source = app.win.layout_source();
         let app = Rc::new(RefCell::new(app));
         let mut dock = Dock::new(panels::defs(), panels::workspaces());
-        let draw: [(&str, PanelDraw); 12] = [
+        let draw: [(&str, PanelDraw); 13] = [
             (pid::VIEW, App::panel_view),
             (pid::LAYERS, App::panel_layers),
             (pid::CUT_SETTINGS, App::panel_cut_settings),
@@ -2089,6 +2107,7 @@ impl Shell {
             (pid::JOB, App::panel_job),
             (pid::REPORT, App::panel_report),
             (pid::CONSOLE, App::panel_console),
+            (pid::ATTACHMENTS, App::panel_attachments),
         ];
         for (name, f) in draw {
             let a = app.clone();

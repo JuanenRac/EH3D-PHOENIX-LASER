@@ -19,7 +19,7 @@ path = "src/main.rs"
 [features]
 default = ["common-machining"]
 # the window (egui, with the icon of the program): `cargo run --release --features gui`
-gui = ["dep:eframe", "dep:png", "eh3d-view/gui", "eh3d-dock/gui"]
+gui = ["dep:eframe", "dep:png", "eh3d-view/gui", "eh3d-dock/gui", "eh3d-attachpanel/gui"]
 # the starting points of the common database of materials (the family of workpieces of eh3d-materials), on by default; `--no-default-features` leaves them out
 common-machining = ["dep:eh3d-materials"]
 
@@ -44,6 +44,9 @@ eh3d-materials = { version = ">=0.0.1", path = "../EH3D-COMMON/crates/materials"
 eh3d-project = { version = ">=0.0.1", path = "../EH3D-COMMON/crates/project" }
 eh3d-container = { version = ">=0.0.1", path = "../EH3D-COMMON/crates/container" }
 serde_json = "1"
+
+# the panel of the attachments of a project, shared by the programs: list, attach, link to a part, extract with a question and the viewer beside
+eh3d-attachpanel = { version = ">=0.0.1", path = "../EH3D-COMMON/crates/attachpanel" }
 
 # the window
 eframe = { version = "0.37.0", default-features = false, features = ["glow", "default_fonts"], optional = true }

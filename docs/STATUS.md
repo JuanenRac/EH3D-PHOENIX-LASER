@@ -2,7 +2,7 @@
 
 ## Current state
 
-EH3D-PHOENIX-LASER works on a computer: the command line engraves pictures, cuts and engraves drawings, burns text, QR codes and barcodes, checks programs and sends them to a stand-in of the server; a docking window of twelve panels does the same with boxes. The reader of LBRN2 projects was measured on twelve real projects of one laser maker (all twelve are read; the one picture inside them, a PNG, is decoded and engraved by dots) and nothing made from them was cut or engraved on a machine; the direction of their y axis was never confirmed with a real part. A series of texts from a CSV file or a counter writes one program for each row. Nothing has run on a real laser.
+EH3D-PHOENIX-LASER works on a computer: the command line engraves pictures, cuts and engraves drawings, burns text, QR codes and barcodes, checks programs and sends them to a stand-in of the server; a docking window of thirteen panels does the same with boxes. The reader of LBRN2 projects was measured on twelve real projects of one laser maker (all twelve are read; the one picture inside them, a PNG, is decoded and engraved by dots) and nothing made from them was cut or engraved on a machine; the direction of their y axis was never confirmed with a real part. A series of texts from a CSV file or a counter writes one program for each row. Nothing has run on a real laser.
 
 ## Recent work
 

@@ -10,7 +10,7 @@ use crate::suitetext::S;
 use eh3d_dock::about::{AboutBrand, Phoenix};
 use eh3d_dock::core::PanelDef;
 use eh3d_dock::geom::Side;
-use eh3d_dock::menu::{Entry, Item, Label, Menu, MenuBar, StdAction};
+use eh3d_dock::menu::{DockAction, Entry, Item, Label, Menu, MenuBar, StdAction};
 use eh3d_dock::model::{Layout, Node};
 use eh3d_dock::palette;
 use eh3d_dock::sectors::{titles, Sector};
@@ -65,8 +65,11 @@ pub mod id {
     /// What the program has to say: the state, the notes of the reading, the lines of the server.
     pub const CONSOLE: &str = "console";
 
+    /// The attachments of the project of the suite: data sheets, manuals and other files, with their viewer.
+    pub const ATTACHMENTS: &str = eh3d_attachpanel::PANEL_ID;
+
     /// Every panel, in the order of the View menu.
-    pub const ALL: [&str; 12] = [
+    pub const ALL: [&str; 13] = [
         VIEW,
         LAYERS,
         CUT_SETTINGS,
@@ -79,6 +82,7 @@ pub mod id {
         JOB,
         REPORT,
         CONSOLE,
+        ATTACHMENTS,
     ];
 }
 
@@ -140,6 +144,7 @@ pub fn defs() -> Vec<PanelDef> {
         140.0,
     ));
     v.push(def(id::REPORT, titles::REPORT, "R", 260.0, 160.0));
+    v.push(eh3d_attachpanel::panel_def());
     v
 }
 
@@ -156,7 +161,11 @@ pub fn workspaces() -> Vec<Workspace> {
             WS_PREPARE,
             Node::row(
                 0.22,
-                Node::column(0.4, t(&[id::PROPERTIES]), t(&[id::LIBRARY, id::MATERIALS])),
+                Node::column(
+                    0.4,
+                    t(&[id::PROPERTIES, id::ATTACHMENTS]),
+                    t(&[id::LIBRARY, id::MATERIALS]),
+                ),
                 Node::row(
                     0.74,
                     Node::column(0.66, t(&[id::VIEW]), t(&[id::LAYERS, id::CONSOLE])),
@@ -269,6 +278,11 @@ fn suite_menu() -> Menu<Cmd> {
             "file.suite.branches",
             S::MenuBranches,
             Cmd::SuiteBranches,
+        ))
+        .entry(Entry::dock(
+            "file.suite.attachments",
+            Label::Own(eh3d_attachpanel::panel_title()),
+            DockAction::ShowPanel(id::ATTACHMENTS.to_string()),
         ))
 }
 
@@ -445,7 +459,7 @@ mod tests {
     #[test]
     fn the_panels_have_names_that_hold_and_titles_in_the_eight_languages() {
         let d = defs();
-        assert_eq!(d.len(), 12);
+        assert_eq!(d.len(), 13);
         let mut names: Vec<&str> = d.iter().map(|p| p.id.as_str()).collect();
         names.sort_unstable();
         let mut want = id::ALL.to_vec();
@@ -623,6 +637,7 @@ mod tests {
             "file.suite.take",
             "file.suite.extract",
             "file.suite.branches",
+            "file.suite.attachments",
             "edit.preferences",
             "tools.compute",
             "tools.fit",
