@@ -17,7 +17,7 @@
 
 ---
 
-**诚实性检查 - 今天实际能运行的内容：**一个 Rust 库和一个命令行程序（`phoenix-laser`），带有 1029 个在计算机上运行的测试：它通过抖动把图像变成点，并写出逐行烧蚀、带动态功率和过扫的激光 G 代码；读取 SVG、DXF 和 LBRN2 图纸，写出切割其轮廓的 G 代码（先切内部轮廓，考虑光束宽度，带连接桥，可多道），并用线条雕刻其图形，每个图层的设置放在文件中；烧蚀文字、二维码和条形码；按机器的限制检查程序；并写出功率对进给的测试网格。它有一个窗口（用 `--features gui` 构建），即套件的停靠面板框架，有十二个面板和四个工作区，可打开图片或图纸，显示激光路径，允许修改设置并导出 G 代码；窗口还没有人在屏幕上看过。LBRN2 工程读取器用某激光器厂商的十二个真实工程测量过（十二个都能读取，其中唯一的图片会被解码并逐点雕刻；它们的 y 轴方向从未用真实零件确认过）。它还可以把程序发送到 EH3D 服务器的激光插件，并跟踪、暂停或停止作业（`phoenix-laser server`），只针对服务器的替身测试过。**这里没有任何内容在真实激光器上运行过**：用这些工程或其他任何东西做出的东西都没有在机器上切割或烧蚀过。
+**诚实性检查 - 今天实际能运行的内容：**一个 Rust 库和一个命令行程序（`phoenix-laser`），带有 1043 个在计算机上运行的测试：它通过抖动把图像变成点，并写出逐行烧蚀、带动态功率和过扫的激光 G 代码；读取 SVG、DXF 和 LBRN2 图纸，写出切割其轮廓的 G 代码（先切内部轮廓，考虑光束宽度，带连接桥，可多道），并用线条雕刻其图形，每个图层的设置放在文件中；烧蚀文字、二维码和条形码；按机器的限制检查程序；并写出功率对进给的测试网格。它有一个窗口（用 `--features gui` 构建），即套件的停靠面板框架，有十二个面板和四个工作区，可打开图片或图纸，显示激光路径，允许修改设置并导出 G 代码；窗口还没有人在屏幕上看过。LBRN2 工程读取器用某激光器厂商的十二个真实工程测量过（十二个都能读取，其中唯一的图片会被解码并逐点雕刻；它们的 y 轴方向从未用真实零件确认过）。它还可以把程序发送到 EH3D 服务器的激光插件，并跟踪、暂停或停止作业（`phoenix-laser server`），只针对服务器的替身测试过。**这里没有任何内容在真实激光器上运行过**：用这些工程或其他任何东西做出的东西都没有在机器上切割或烧蚀过。
 
 ---
 
@@ -30,7 +30,7 @@
 |---|---|
 | 版本 | `0.1.6` |
 | 成熟度 | 可用 |
-| 测试 | 1029 |
+| 测试 | 1043 |
 | 技术栈 | Rust |
 | 真实硬件 | 未试过：这里的任何内容都没有在机器上运行过 |
 
@@ -46,7 +46,7 @@
 |---|---|---|
 | 核心 | 🟡 | 用抖动把图像变成点，并写出逐行烧蚀、带动态功率和超程的激光 G 代码；读取 SVG 和 DXF 图纸并按图层切割或雕刻（轮廓排序、光束宽度、连接桥、遍数、填充）；还有功率对进给的测试网格；已在计算机上用正常和损坏的输入测试，没有用一批真实文件检查。 |
 | 命令行 | 🟡 | `phoenix-laser`（`engrave`、`calibrate`、`info`、`cut`、`vector`、`layers`）运行与库相同的函数并打印结果；每个错误都以消息和非零退出码返回。 |
-| 测试 | 🟡 | 1029 个测试通过（`cargo test`），包含正常情况、边界情况和损坏的输入。 |
+| 测试 | 🟡 | 1043 个测试通过（`cargo test`），包含正常情况、边界情况和损坏的输入。 |
 | 安全 | 🟡 | 纯安全 Rust（`forbid(unsafe_code)`）：处理收到的文件时不会 panic，错误的值会返回带原因的错误；没有独立审查。 |
 | 窗口 | 🟠 | 已编写（egui，`--features gui`），作为套件的停靠面板框架：打开或拖入图像或 SVG、DXF、LBRN2 图纸，查看激光路径（切割为单一颜色，空移变淡），编辑图层表，文字、二维码、条形码、标记、取景框和焦点模式，校准网格，缩放与平移，估算时间，检查，报告，发送到服务器，导出；其逻辑已测试，但还没有人在屏幕上看过。 |
 | 真实硬件 | 🔴 | 未试过：这里的任何内容都没有在机器上运行过。 |
@@ -104,6 +104,7 @@
 * **有序抖动**（`src/dither.rs`）：`--dither bayer`（窗口中也可选）用 8 x 8 的拜耳矩阵，仅凭每个点的位置和灰度决定它是否烧蚀，因此图案规则，相同的灰度总是烧同样的点；测试检查矩阵的每个级别各出现一次，并且灰度的深浅得以保持。
 * **色调曲线**（`src/tone.rs`）：生成点阵之前，可以把灰度拉伸到整个范围（`--auto-level`）、调整对比度和亮度、用伽马曲线弯曲或反相，只用一张 256 项的表；使用默认值时图像完全不变。
 * **经过检查的 G 代码：**图纸的程序在交出之前逐行检查：快速移动时或没有速度时激光不会开启，`S` 不会超过满功率，不会移动到床面之外，结尾是 `M5`；文件绝不会写在它所来自的图纸或设置之上。
+* **套件工程**（`src/eh3dfile.rs`、`docs/eh3d-project.md`）：`phoenix-laser project` 将工作保存在 `.eh3d` 工程的 `laser/` 分支中（一个文件，每个程序一个分支）：`save` 放入图纸、设置、材料库和程序；`import` 逐字节保留其他程序的图纸（LBRN2、LBRN、SVG 或 DXF），并附带已读取、未读取以及导出时丢失内容的报告；`take` 从其他分支（如 `cad/`）复制轮廓或网格，记录来源的哈希和格式，当来源变化时 `list` 和 `open` 会提示已过期；`open` 和 `extract` 写出文件时从不覆盖现有文件。只写入 `laser/`：其他分支（无论是否认识）字节保持不变。目前只用虚构的工程测试过。
 
 ## 🧩 在 EH3D 中的角色
 
@@ -191,6 +192,10 @@ phoenix-laser frame OUT.nc --size W,H | --gcode PROGRAM.nc [--origin X,Y] [--mar
 phoenix-laser verify PROGRAM.nc [--config FILE] [--profile NAME] [--smax N] [--max-power P] [--max-speed MM/MIN] [--bed X,Y] [--overscan-mm MM] [--accel 1000] [--expect-sha256 HASH] [--json]
 phoenix-laser report PROGRAM.nc [--config FILE] [--profile NAME] [--lang CODE] [--material NAME --materials FILE]
 phoenix-laser settings [--json]
+phoenix-laser project list FILE.eh3d [--json]
+phoenix-laser project save FILE.eh3d [--drawing D] [--config FILE] [--materials FILE] [--program P.nc] [--name NAME] [--id ID]
+phoenix-laser project import FILE.eh3d DRAWING [--name NAME] [--id ID]
+phoenix-laser project open FILE.eh3d [--into DIR] | take FILE.eh3d BRANCH NAME | extract FILE.eh3d BRANCH DIR
 phoenix-laser preview PROGRAM.nc [OUT.svg] [--accel 1000] [--rapid 6000] [--smax N] [--laser-watts W] [--bed X,Y] [--width-px 900] [--config FILE] [--profile NAME]
 phoenix-laser align PICTURE.pgm|png --size W,H --px-per-mm S [--origin X,Y] [--arm-mm 5] [--margin-mm 0] [--centre-cross|--no-centre-cross] [--threshold 128] [--max-shift-mm 20] [--max-angle-deg 5]
               [--config FILE] [--profile NAME] | --simulate OUT.pgm --size W,H --px-per-mm S [--shift DX,DY] [--turn DEG] [--picture-px W,H]
@@ -224,7 +229,7 @@ cargo run --release --features gui -- --shot screen.png examples/plate.svg   # a
 
 ## 🧪 测试
 
-测试套件有 1029 个测试（`cargo test`，CI 在 Windows 和 Linux 上运行）。它们检查正常情况、边界情况和损坏的输入：空文件、乱码和被截断的文件绝不会 panic。CI 还运行 `cargo fmt --check`、把警告当作错误的 `cargo clippy` 以及 `python -I tools/ci_validate.py`。
+测试套件有 1043 个测试（`cargo test`，CI 在 Windows 和 Linux 上运行）。它们检查正常情况、边界情况和损坏的输入：空文件、乱码和被截断的文件绝不会 panic。CI 还运行 `cargo fmt --check`、把警告当作错误的 `cargo clippy` 以及 `python -I tools/ci_validate.py`。
 
 ## 🏗️ 构建与发布
 
@@ -275,6 +280,8 @@ EH3D-PHOENIX-LASER/
 │   ├── svg.rs                                   SVG 读取器：安全子集，不含脚本、图像和实体
 │   ├── testfiles.rs                             功率对速度矩阵和 Y 轴测试，以工程形式
 │   ├── dxf.rs                                   DXF 读取器：直线、多段线、圆弧、圆、椭圆、样条和块，含单位
+│   ├── eh3dfile.rs                              .eh3d 工程的 laser 分支：保存、导入、引用、打开、提取
+│   ├── projcli.rs                               命令行的 project 命令
 │   ├── lbrn2.rs                                 LBRN2 工程文件读取：图层、图形、分组和曲线
 │   ├── lbrn2_pic.rs                             LBRN2 工程中的图片：base64、PNG、限制，按摆放方向转动
 │   ├── vartext.rs                               可变文字：计数器和 CSV 的列，每行一个文字
@@ -320,6 +327,7 @@ EH3D-PHOENIX-LASER/
 │   ├── server_cli.rs                            针对激光插件替身的 server 命令
 │   ├── window_cli.rs                            测试没有 gui 特性的构建仍然只是命令行
 │   ├── dockwindow.rs                            窗口模型测试：工程图层、报告、联锁、布局和材料
+│   ├── eh3dfile.rs                              工程分支测试：往返、其他分支、过期副本、损坏文件
 │   ├── reqs.rs                                  需求登记表的测试
 │   ├── more.rs                                  回读 G 代码、数字和网格
 │   ├── more2.rs                                 每个值边界上的雕刻
@@ -342,6 +350,7 @@ EH3D-PHOENIX-LASER/
 │   ├── structure.json                           结构图数据
 │   ├── vector-settings.md                       矢量作业设置文件，逐项说明
 │   ├── materials.md                             材料库，逐项说明
+│   ├── eh3d-project.md                          .eh3d 工程与 laser 分支
 │   └── lbrn2.md                                 LBRN2 读取器读取什么、忽略什么以及如何测量
 ├── tools/                                       CI 和 README 检查及绘图工具
 ├── images/                                      横幅图、README 图片及窗口截图
