@@ -10,7 +10,7 @@ The command `project` keeps the work in the branch `laser/` of an `.eh3d` projec
 
 ## Capabilities
 
-The official state of each capability is in `REQUIREMENTS.md`. The register has 133 requirements: 113 implemented, 16 prototype, 4 planned and 0 validated. By progress: 113 done, 16 partial, 0 pending and 4 blocked. This page never states a state that `REQUIREMENTS.md` does not.
+The official state of each capability is in `REQUIREMENTS.md`. The register has 134 requirements: 114 implemented, 16 prototype, 4 planned and 0 validated. By progress: 114 done, 16 partial, 0 pending and 4 blocked. This page never states a state that `REQUIREMENTS.md` does not.
 
 ## Open questions
 
@@ -20,7 +20,7 @@ The official state of each capability is in `REQUIREMENTS.md`. The register has 
 
 ## What it needs from other repositories
 
-* EH3D-COMMON: the docking frame, the server client and the image reader.
+* EH3D-COMMON: the docking frame, the server client, the image reader and the project container. The CI takes its main branch until the release that holds what a program does with its branch; the workflows are then pinned to that release.
 * EH3D-SERVER: the laser plugin that receives the jobs.
 * A real laser, a material and a person at the machine, for every proof that a check cannot give.
 
