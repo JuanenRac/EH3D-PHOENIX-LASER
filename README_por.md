@@ -17,7 +17,7 @@
 
 ---
 
-**Verificação de honestidade - o que funciona hoje:** uma biblioteca Rust e um programa de linha de comandos (`phoenix-laser`) com 1045 testes que correm num computador: converte uma imagem em pontos por tramagem e escreve o G-code de um laser que queima linha a linha com potência dinâmica e sobrecurso, lê desenhos SVG, DXF e LBRN2 e escreve o G-code que corta os seus contornos (os de dentro primeiro, com a largura do feixe, pontes e várias passagens) e grava as suas formas com linhas, com as definições de cada camada num ficheiro, queima texto, códigos QR e códigos de barras, verifica um programa contra os limites da máquina e escreve uma grelha de teste de potência contra avanço. Tem uma janela (compilada com `--features gui`), a moldura de painéis da suite com doze painéis e quatro espaços de trabalho, que abre uma imagem ou um desenho, mostra o percurso do laser, permite alterar as definições e exporta o G-code; a janela não foi vista por uma pessoa num ecrã. O leitor de projetos LBRN2 foi medido com doze projetos reais de um fabricante de lasers (os doze são lidos e a única imagem que contêm é descodificada e gravada por pontos; o sentido do seu eixo y nunca foi confirmado com uma peça real). Também pode enviar um programa para o plugin laser do servidor EH3D e seguir, segurar ou parar o trabalho (`phoenix-laser server`), testado apenas contra um substituto do servidor. **Nada disto correu num laser real**: nada feito com esses projetos nem com outra coisa foi cortado ou queimado numa máquina.
+**Verificação de honestidade - o que funciona hoje:** uma biblioteca Rust e um programa de linha de comandos (`phoenix-laser`) com 1055 testes que correm num computador: converte uma imagem em pontos por tramagem e escreve o G-code de um laser que queima linha a linha com potência dinâmica e sobrecurso, lê desenhos SVG, DXF e LBRN2 e escreve o G-code que corta os seus contornos (os de dentro primeiro, com a largura do feixe, pontes e várias passagens) e grava as suas formas com linhas, com as definições de cada camada num ficheiro, queima texto, códigos QR e códigos de barras, verifica um programa contra os limites da máquina e escreve uma grelha de teste de potência contra avanço. Tem uma janela (compilada com `--features gui`), a moldura de painéis da suite com doze painéis e quatro espaços de trabalho, que abre uma imagem ou um desenho, mostra o percurso do laser, permite alterar as definições e exporta o G-code; a janela não foi vista por uma pessoa num ecrã. O leitor de projetos LBRN2 foi medido com doze projetos reais de um fabricante de lasers (os doze são lidos e a única imagem que contêm é descodificada e gravada por pontos; o sentido do seu eixo y nunca foi confirmado com uma peça real). Também pode enviar um programa para o plugin laser do servidor EH3D e seguir, segurar ou parar o trabalho (`phoenix-laser server`), testado apenas contra um substituto do servidor. **Nada disto correu num laser real**: nada feito com esses projetos nem com outra coisa foi cortado ou queimado numa máquina.
 
 ---
 
@@ -30,7 +30,7 @@
 |---|---|
 | Versão | `0.1.6` |
 | Maturidade | Funcional |
-| Testes | 1045 |
+| Testes | 1055 |
 | Tecnologias | Rust |
 | Em hardware real | Não experimentado: nada disto correu numa máquina |
 
@@ -46,7 +46,7 @@ Cada linha é uma parte deste repositório e a luz diz até onde chega hoje. É 
 |---|---|---|
 | Núcleo | 🟡 | converte uma imagem em pontos por tramagem e escreve o G-code de um laser que queima linha a linha com potência dinâmica e sobrecurso, lê desenhos SVG e DXF e corta-os ou grava-os por camada (contornos ordenados, largura do feixe, pontes, passagens, hachura), e uma grelha de teste de potência contra avanço; testado num computador com entradas normais e danificadas, não com uma coleção de ficheiros reais. |
 | Linha de comandos | 🟡 | `phoenix-laser` (`engrave`, `calibrate`, `info`, `cut`, `vector`, `layers`) executa as mesmas funções que a biblioteca e imprime o resultado; cada erro volta como mensagem e código de saída diferente de zero. |
-| Testes | 🟡 | 1045 testes passam (`cargo test`), com casos normais, casos-limite e entradas danificadas. |
+| Testes | 🟡 | 1055 testes passam (`cargo test`), com casos normais, casos-limite e entradas danificadas. |
 | Segurança | 🟡 | Rust seguro e simples (`forbid(unsafe_code)`): nada entra em pânico com os ficheiros recebidos e um valor mau é um erro com o seu motivo; sem revisão independente. |
 | Janela | 🟠 | Escrita (egui, `--features gui`) como a moldura de painéis da suite: abrir ou largar uma imagem ou um desenho SVG, DXF ou LBRN2, ver o percurso do laser (o corte numa cor, a deslocação atenuada), editar a tabela de camadas, os modos de texto, código QR, código de barras, marcas, moldura e foco, uma grelha de calibração, zoom e deslocamento, estimar o tempo, verificar, relatório, enviar para o servidor, exportar; a sua lógica está testada, mas a janela não foi vista por uma pessoa num ecrã. |
 | Hardware real | 🔴 | Não experimentado: nada disto foi executado numa máquina. |
@@ -230,7 +230,7 @@ Para tirar uma captura da janela sem a abrir à mão, execute-o com `--shot FICH
 
 ## 🧪 Testes
 
-O conjunto tem 1045 testes (`cargo test`, executados em Windows e Linux no CI). Verificam os casos normais, os casos-limite e as entradas danificadas: ficheiros vazios, lixo e ficheiros cortados nunca provocam pânico. O CI executa ainda `cargo fmt --check`, `cargo clippy` com avisos como erros e `python -I tools/ci_validate.py`.
+O conjunto tem 1055 testes (`cargo test`, executados em Windows e Linux no CI). Verificam os casos normais, os casos-limite e as entradas danificadas: ficheiros vazios, lixo e ficheiros cortados nunca provocam pânico. O CI executa ainda `cargo fmt --check`, `cargo clippy` com avisos como erros e `python -I tools/ci_validate.py`.
 
 ## 🏗️ Compilação e publicação
 

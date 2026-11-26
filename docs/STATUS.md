@@ -26,7 +26,7 @@ The official state of each capability is in `REQUIREMENTS.md`. The register has 
 
 ## Known technical debt and omitted tests
 
-* 1044 tests (`#[test]` lines of `src/` and `tests/`; nine of them keep this register true), all on a computer, with fixed seeds where chance is involved.
+* 1054 tests (`#[test]` lines of `src/` and `tests/`; nine of them keep this register true), all on a computer, with fixed seeds where chance is involved.
 * Nothing has been burnt: the checks read the program as text and the server is a stand-in.
 * The window has not been looked at on a screen by a person.
 * The QR code and the barcode are read back by readers of the program's own; no scanner has read a burnt symbol.
