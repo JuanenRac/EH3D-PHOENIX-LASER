@@ -3,6 +3,7 @@
 All notable changes to this project are documented here.
 
 ## [Unreleased]
+- **The work can live in the branch `laser/` of an `.eh3d` project (`phoenix-laser project list|save|import|open|take|extract`, `docs/eh3d-project.md`):** `save` puts the drawing, the settings, the materials and the programs there, `import` keeps an LBRN2, LBRN, SVG or DXF file of another program byte for byte with a report of the conversion, `take` copies an outline or a mesh of another branch with a reference that tells when it is out of date, and every other branch keeps its bytes. A branch of a newer format or a sealed one is not written. The build now needs the project crates of EH3D-COMMON.
 - **The checks of power and speed, the gate before a vector job leaves and the percent of a job are stricter:** a negative power or speed passed `check_power` and `check_speed`; a vector job with a power or speed that was not a number, a negative power, a speed of 0 or less, or a point that was not a number was sent when no bed was set (a comparison with a number that is not a number is never true); the percent of a job overflowed when the server answered a huge count of lines. 43 new tests keep them, and cover the ids that go into a request, the forbidden zones at their edges and the energy of a layer.
 
 ## [0.1.6] - Hatch and legacy project reading, power and speed matrix and Y axis test projects, project layers as settings, preset book as text

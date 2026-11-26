@@ -13,6 +13,7 @@ pub mod contract;
 pub mod cut;
 pub mod dither;
 pub mod dxf;
+pub mod eh3dfile;
 pub mod energy;
 pub mod export;
 pub mod flatten;

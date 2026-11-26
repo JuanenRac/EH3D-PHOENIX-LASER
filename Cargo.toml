@@ -40,6 +40,11 @@ eh3d-dock = { version = ">=0.0.1", path = "../EH3D-COMMON/crates/dock", default-
 # the materials a laser works, with their starting points (verified = false until somebody tries them on a machine), behind the feature `common-machining` (on by default)
 eh3d-materials = { version = ">=0.0.1", path = "../EH3D-COMMON/crates/materials", optional = true }
 
+# the `.eh3d` project of the suite, one file with a branch for each program: this program writes only `laser/`
+eh3d-project = { version = ">=0.0.1", path = "../EH3D-COMMON/crates/project" }
+eh3d-container = { version = ">=0.0.1", path = "../EH3D-COMMON/crates/container" }
+serde_json = "1"
+
 # the window
 eframe = { version = "0.37.0", default-features = false, features = ["glow", "default_fonts"], optional = true }
 png = { version = "0.17", optional = true }

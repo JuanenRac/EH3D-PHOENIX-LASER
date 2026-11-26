@@ -17,7 +17,7 @@
 
 ---
 
-**Vérification d'honnêteté - ce qui fonctionne aujourd'hui :** une bibliothèque Rust et un programme en ligne de commande (`phoenix-laser`) avec 1029 tests qui s'exécutent sur un ordinateur : il transforme une image en points par tramage et écrit le G-code d'un laser qui brûle ligne par ligne avec une puissance dynamique et un dépassement, lit des dessins SVG, DXF et LBRN2 et écrit le G-code qui découpe leurs contours (ceux de l'intérieur d'abord, avec la largeur du faisceau, des ponts et plusieurs passes) et grave leurs formes avec des lignes, avec les réglages de chaque calque dans un fichier, brûle du texte, des codes QR et des codes-barres, vérifie un programme contre les limites de la machine et écrit une grille d'essai puissance contre avance. Il a une fenêtre (compilée avec `--features gui`), le cadre de panneaux de la suite avec douze panneaux et quatre espaces de travail, qui ouvre une image ou un dessin, montre le trajet du laser, permet de changer les réglages et exporte le G-code ; la fenêtre n'a pas été vue sur un écran par une personne. Le lecteur de projets LBRN2 a été mesuré sur douze projets réels d'un fabricant de lasers (les douze sont lus et l'unique image qu'ils contiennent est décodée et gravée par points ; le sens de leur axe y n'a jamais été confirmé avec une pièce réelle). Il peut aussi envoyer un programme au plugin laser du serveur EH3D et suivre, suspendre ou arrêter le travail (`phoenix-laser server`), testé seulement contre un double du serveur. **Rien ici n'a tourné sur un vrai laser** : rien de ce qui en est tiré, ni d'autre chose, n'a été découpé ou brûlé sur une machine.
+**Vérification d'honnêteté - ce qui fonctionne aujourd'hui :** une bibliothèque Rust et un programme en ligne de commande (`phoenix-laser`) avec 1043 tests qui s'exécutent sur un ordinateur : il transforme une image en points par tramage et écrit le G-code d'un laser qui brûle ligne par ligne avec une puissance dynamique et un dépassement, lit des dessins SVG, DXF et LBRN2 et écrit le G-code qui découpe leurs contours (ceux de l'intérieur d'abord, avec la largeur du faisceau, des ponts et plusieurs passes) et grave leurs formes avec des lignes, avec les réglages de chaque calque dans un fichier, brûle du texte, des codes QR et des codes-barres, vérifie un programme contre les limites de la machine et écrit une grille d'essai puissance contre avance. Il a une fenêtre (compilée avec `--features gui`), le cadre de panneaux de la suite avec douze panneaux et quatre espaces de travail, qui ouvre une image ou un dessin, montre le trajet du laser, permet de changer les réglages et exporte le G-code ; la fenêtre n'a pas été vue sur un écran par une personne. Le lecteur de projets LBRN2 a été mesuré sur douze projets réels d'un fabricant de lasers (les douze sont lus et l'unique image qu'ils contiennent est décodée et gravée par points ; le sens de leur axe y n'a jamais été confirmé avec une pièce réelle). Il peut aussi envoyer un programme au plugin laser du serveur EH3D et suivre, suspendre ou arrêter le travail (`phoenix-laser server`), testé seulement contre un double du serveur. **Rien ici n'a tourné sur un vrai laser** : rien de ce qui en est tiré, ni d'autre chose, n'a été découpé ou brûlé sur une machine.
 
 ---
 
@@ -30,7 +30,7 @@
 |---|---|
 | Version | `0.1.6` |
 | Maturité | Fonctionnel |
-| Tests | 1029 |
+| Tests | 1043 |
 | Pile technique | Rust |
 | Sur du matériel réel | Non essayé : rien ici n'a fonctionné sur une machine |
 
@@ -46,7 +46,7 @@ Chaque ligne est une partie de ce dépôt et le feu dit où elle en est aujourd'
 |---|---|---|
 | Cœur | 🟡 | transforme une image en points par tramage et écrit le G-code d'un laser qui brûle ligne par ligne avec une puissance dynamique et un dépassement, lit des dessins SVG et DXF et les découpe ou les grave par calque (contours ordonnés, largeur du faisceau, ponts, passes, hachures), et une grille d'essai puissance contre avance ; testé sur un ordinateur avec des entrées normales et abîmées, pas avec une collection de fichiers réels. |
 | Ligne de commande | 🟡 | `phoenix-laser` (`engrave`, `calibrate`, `info`, `cut`, `vector`, `layers`) exécute les mêmes fonctions que la bibliothèque et affiche le résultat ; chaque erreur revient sous forme de message et d'un code de sortie non nul. |
-| Tests | 🟡 | 1029 tests passent (`cargo test`), avec des cas normaux, des cas limites et des entrées abîmées. |
+| Tests | 🟡 | 1043 tests passent (`cargo test`), avec des cas normaux, des cas limites et des entrées abîmées. |
 | Sécurité | 🟡 | Rust sûr et simple (`forbid(unsafe_code)`) : rien ne panique sur les fichiers reçus et une mauvaise valeur est une erreur avec sa raison ; pas de revue indépendante. |
 | Fenêtre | 🟠 | Écrite (egui, `--features gui`) comme le cadre de panneaux de la suite : ouvrir ou déposer une image ou un dessin SVG, DXF ou LBRN2, voir le trajet du laser (la découpe d'une couleur, le déplacement atténué), modifier le tableau des calques, les modes texte, code QR, code-barres, repères, cadre et focale, une grille d'étalonnage, zoom et déplacement, estimer la durée, vérifier, rapport, envoyer au serveur, exporter ; sa logique est testée, mais elle n'a pas été vue sur un écran par une personne. |
 | Matériel réel | 🔴 | Non essayé : rien ici n'a été exécuté sur une machine. |
@@ -104,6 +104,7 @@ Chaque ligne est une partie de ce dépôt et le feu dit où elle en est aujourd'
 * **Tramage ordonné** (`src/dither.rs`) : `--dither bayer` (aussi dans la fenêtre) décide chaque point selon sa place et son gris avec une matrice de Bayer 8 x 8, donc le motif est régulier et le même gris brûle toujours les mêmes points ; les tests vérifient que chaque niveau de la matrice apparaît une fois et que le noircissement d'un gris est conservé.
 * **La courbe de tons** (`src/tone.rs`) : avant de fabriquer les points, les niveaux de gris peuvent être étirés sur toute la plage (`--auto-level`), recevoir plus ou moins de contraste et de luminosité, être courbés par un gamma ou inversés, avec une seule table de 256 entrées ; avec les valeurs par défaut l'image n'est pas modifiée du tout.
 * **Un G-code vérifié :** le programme d'un dessin est vérifié ligne par ligne avant d'être livré : aucun laser allumé pendant un déplacement rapide ou sans vitesse, aucun `S` au-dessus de la pleine puissance, aucun déplacement hors du plateau, `M5` à la fin ; le fichier n'est jamais écrit sur le dessin ni sur les réglages dont il provient.
+* **Projets de la suite** (`src/eh3dfile.rs`, `docs/eh3d-project.md`) : `phoenix-laser project` garde le travail dans la branche `laser/` d'un projet `.eh3d`, un seul fichier avec une branche par programme : `save` y place le dessin, les réglages, la bibliothèque de matériaux et les programmes ; `import` conserve octet pour octet un dessin d'un autre programme (LBRN2, LBRN, SVG ou DXF) avec un rapport de ce qui a été lu, de ce qui ne l'a pas été et de ce qui se perd à l'export ; `take` copie un contour ou un maillage d'une autre branche, comme `cad/`, avec l'empreinte et le format de sa source, et `list` et `open` signalent quand elle est périmée ; `open` et `extract` écrivent des fichiers sans en écraser aucun. Seule `laser/` est écrite : les autres branches, connues ou non, gardent leurs octets. Cela n'a été essayé qu'avec des projets inventés.
 
 ## 🧩 Rôle dans EH3D
 
@@ -191,6 +192,10 @@ phoenix-laser frame OUT.nc --size W,H | --gcode PROGRAM.nc [--origin X,Y] [--mar
 phoenix-laser verify PROGRAM.nc [--config FILE] [--profile NAME] [--smax N] [--max-power P] [--max-speed MM/MIN] [--bed X,Y] [--overscan-mm MM] [--accel 1000] [--expect-sha256 HASH] [--json]
 phoenix-laser report PROGRAM.nc [--config FILE] [--profile NAME] [--lang CODE] [--material NAME --materials FILE]
 phoenix-laser settings [--json]
+phoenix-laser project list FILE.eh3d [--json]
+phoenix-laser project save FILE.eh3d [--drawing D] [--config FILE] [--materials FILE] [--program P.nc] [--name NAME] [--id ID]
+phoenix-laser project import FILE.eh3d DRAWING [--name NAME] [--id ID]
+phoenix-laser project open FILE.eh3d [--into DIR] | take FILE.eh3d BRANCH NAME | extract FILE.eh3d BRANCH DIR
 phoenix-laser preview PROGRAM.nc [OUT.svg] [--accel 1000] [--rapid 6000] [--smax N] [--laser-watts W] [--bed X,Y] [--width-px 900] [--config FILE] [--profile NAME]
 phoenix-laser align PICTURE.pgm|png --size W,H --px-per-mm S [--origin X,Y] [--arm-mm 5] [--margin-mm 0] [--centre-cross|--no-centre-cross] [--threshold 128] [--max-shift-mm 20] [--max-angle-deg 5]
               [--config FILE] [--profile NAME] | --simulate OUT.pgm --size W,H --px-per-mm S [--shift DX,DY] [--turn DEG] [--picture-px W,H]
@@ -224,7 +229,7 @@ Pour prendre une capture de la fenêtre sans l'ouvrir à la main, lancez-la avec
 
 ## 🧪 Tests
 
-La suite compte 1029 tests (`cargo test`, exécutés sous Windows et Linux dans le CI). Ils vérifient les cas normaux, les cas limites et les entrées abîmées : fichiers vides, bruit et fichiers coupés ne font jamais paniquer. Le CI exécute aussi `cargo fmt --check`, `cargo clippy` avec les avertissements comme erreurs et `python -I tools/ci_validate.py`.
+La suite compte 1043 tests (`cargo test`, exécutés sous Windows et Linux dans le CI). Ils vérifient les cas normaux, les cas limites et les entrées abîmées : fichiers vides, bruit et fichiers coupés ne font jamais paniquer. Le CI exécute aussi `cargo fmt --check`, `cargo clippy` avec les avertissements comme erreurs et `python -I tools/ci_validate.py`.
 
 ## 🏗️ Compilation et publication
 
@@ -275,6 +280,8 @@ EH3D-PHOENIX-LASER/
 │   ├── svg.rs                                   le lecteur SVG : un sous-ensemble sûr, sans scripts, images ni entités
 │   ├── testfiles.rs                             la matrice puissance contre vitesse et l'essai de l'axe Y, comme projets
 │   ├── dxf.rs                                   le lecteur DXF : lignes, polylignes, arcs, cercles, ellipses, splines et blocs, avec unités
+│   ├── eh3dfile.rs                              la branche laser d'un projet .eh3d : enregistrer, importer, prendre, ouvrir, extraire
+│   ├── projcli.rs                               la commande project de la ligne de commande
 │   ├── lbrn2.rs                                 le lecteur des projets LBRN2 : calques, formes, groupes et courbes
 │   ├── lbrn2_pic.rs                             les images d'un projet LBRN2 : base64, PNG, limites, tournées comme placées
 │   ├── vartext.rs                               le texte variable : un compteur et les colonnes d'un CSV, un texte par ligne
@@ -320,6 +327,7 @@ EH3D-PHOENIX-LASER/
 │   ├── server_cli.rs                            la commande server contre un double du plugin laser
 │   ├── window_cli.rs                            tests qu'une compilation sans la fonctionnalité gui reste une ligne de commande
 │   ├── dockwindow.rs                            tests du modèle de la fenêtre : calques d'un projet, rapport, verrouillages, disposition et matériaux
+│   ├── eh3dfile.rs                              tests de la branche du projet : aller-retour, autres branches, copies périmées, fichiers abîmés
 │   ├── reqs.rs                                  tests du registre des exigences
 │   ├── more.rs                                  le G-code relu, les nombres et la grille
 │   ├── more2.rs                                 la gravure au bord de chaque valeur
@@ -342,6 +350,7 @@ EH3D-PHOENIX-LASER/
 │   ├── structure.json                           données de l'image de Structure
 │   ├── vector-settings.md                       le fichier de réglages du travail vectoriel, clé par clé
 │   ├── materials.md                             la bibliothèque de matériaux, clé par clé
+│   ├── eh3d-project.md                          le projet .eh3d et la branche laser
 │   └── lbrn2.md                                 ce que lit le lecteur LBRN2, ce qu'il laisse de côté et comment il a été mesuré
 ├── tools/                                       contrôle de la CI et du README et outils d'images
 ├── images/                                      bannière, images du README et captures de la fenêtre

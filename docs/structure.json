@@ -405,6 +405,32 @@
           }
         },
         {
+          "name": "eh3dfile.rs",
+          "desc": {
+            "en": "the branch laser of an .eh3d project: save, import, take, open, extract",
+            "es": "la rama laser de un proyecto .eh3d: guardar, importar, tomar, abrir, extraer",
+            "de": "der Zweig laser eines .eh3d-Projekts: speichern, importieren, übernehmen, öffnen, entnehmen",
+            "fr": "la branche laser d'un projet .eh3d : enregistrer, importer, prendre, ouvrir, extraire",
+            "it": "il ramo laser di un progetto .eh3d: salvare, importare, prendere, aprire, estrarre",
+            "ja": ".eh3d プロジェクトの laser ブランチ：保存、取り込み、参照、展開、取り出し",
+            "zh": ".eh3d 工程的 laser 分支：保存、导入、引用、打开、提取",
+            "pt": "o ramo laser de um projeto .eh3d: guardar, importar, tomar, abrir, extrair"
+          }
+        },
+        {
+          "name": "projcli.rs",
+          "desc": {
+            "en": "the command project of the command line",
+            "es": "el comando project de la línea de comandos",
+            "de": "der Befehl project der Kommandozeile",
+            "fr": "la commande project de la ligne de commande",
+            "it": "il comando project della riga di comando",
+            "ja": "コマンドラインの project コマンド",
+            "zh": "命令行的 project 命令",
+            "pt": "o comando project da linha de comandos"
+          }
+        },
+        {
           "name": "lbrn2.rs",
           "desc": {
             "en": "the reader of LBRN2 project files: layers, shapes, groups and curves",
@@ -984,6 +1010,19 @@
           }
         },
         {
+          "name": "eh3dfile.rs",
+          "desc": {
+            "en": "tests of the project branch: round trip, other branches, stale copies, damaged files",
+            "es": "pruebas de la rama del proyecto: ida y vuelta, otras ramas, copias desactualizadas, ficheros dañados",
+            "de": "Tests des Projektzweigs: Hin und zurück, andere Zweige, veraltete Kopien, beschädigte Dateien",
+            "fr": "tests de la branche du projet : aller-retour, autres branches, copies périmées, fichiers abîmés",
+            "it": "test del ramo del progetto: andata e ritorno, altri rami, copie superate, file danneggiati",
+            "ja": "プロジェクトブランチのテスト：往復、他のブランチ、古いコピー、破損ファイル",
+            "zh": "工程分支测试：往返、其他分支、过期副本、损坏文件",
+            "pt": "testes do ramo do projeto: ida e volta, outros ramos, cópias desatualizadas, ficheiros danificados"
+          }
+        },
+        {
           "name": "reqs.rs",
           "desc": {
             "en": "tests of the register of requirements",
@@ -1255,6 +1294,19 @@
             "ja": "素材ライブラリをキーごとに説明",
             "zh": "材料库，逐项说明",
             "pt": "a biblioteca de materiais, chave a chave"
+          }
+        },
+        {
+          "name": "eh3d-project.md",
+          "desc": {
+            "en": "the .eh3d project and the branch laser",
+            "es": "el proyecto .eh3d y la rama laser",
+            "de": "das .eh3d-Projekt und der Zweig laser",
+            "fr": "le projet .eh3d et la branche laser",
+            "it": "il progetto .eh3d e il ramo laser",
+            "ja": ".eh3d プロジェクトと laser ブランチ",
+            "zh": ".eh3d 工程与 laser 分支",
+            "pt": "o projeto .eh3d e o ramo laser"
           }
         },
         {
