@@ -6,11 +6,13 @@ EH3D-PHOENIX-LASER works on a computer: the command line engraves pictures, cuts
 
 ## Recent work
 
+The window has a panel «Attachments» (the shared `eh3d-attachpanel`): the data sheets, manuals and other files of the project are listed, attached, linked to a part, extracted and removed after a question, and shown beside the list (`eh3d-project.md`). The panel itself is tested in EH3D-COMMON; it has not been tried on a screen by a person.
+
 The menu File of the window opens, saves, imports, takes and extracts an `.eh3d` project and asks before it writes one that is not its own. The command `project` keeps the work in the branch `laser/` of an `.eh3d` project (`eh3d-project.md`): the other branches keep their bytes, copies taken from them are told as out of date and imported files keep their original with a report. The window became the docking frame of the suite with four workspaces for tasks, the reader of LBRN2 projects was added with the layers of a project filling the table of layers, a tool that reads a folder of projects and says what the reader leaves out was added, and the common database of materials now gives starting points that are shown as untried. The DXF reader draws the outline of hatches and solids, projects of the older format (`.lbrn`) are read with their texts, the layers of a project can give the command line their power and speed, and the program writes the power-against-speed matrix and the test of the y axis as projects. A book of presets can be kept as text. A layer can now be worked in several passes with their own settings (sub-layers), the work can be placed by any of nine points of its box, framed with the laser off and timed as a range, the presets of a material can be assigned or linked to a layer, and the live adjustment of power and speed is a calculation held by four limits. The README files, this page and the register of requirements agree on what exists and what is missing; the register is the one that says it.
 
 ## Capabilities
 
-The official state of each capability is in `REQUIREMENTS.md`. The register has 139 requirements: 119 implemented, 16 prototype, 4 planned and 0 validated. By progress: 119 done, 16 partial, 0 pending and 4 blocked. This page never states a state that `REQUIREMENTS.md` does not.
+The official state of each capability is in `REQUIREMENTS.md`. The register has 140 requirements: 120 implemented, 16 prototype, 4 planned and 0 validated. By progress: 120 done, 16 partial, 0 pending and 4 blocked. This page never states a state that `REQUIREMENTS.md` does not.
 
 ## Open questions
 
