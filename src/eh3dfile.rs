@@ -189,6 +189,13 @@ pub fn save_contents(
         None => None,
     };
     if let Some(held) = &contents.config {
+        // a project is a file that is passed on: the token of the server never goes into it
+        if eh3d_project::suiteview::sets_key(&held.bytes, "server_token") {
+            return Err(format!(
+                "{}: it holds server_token, the token of the server, so it is not put in the project (take the line out or leave the settings out)",
+                held.name
+            ));
+        }
         vconfig::parse(&text_of(&held.bytes)).map_err(|e| format!("{}: {e}", held.name))?;
     }
     if let Some(held) = &contents.materials {

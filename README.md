@@ -17,7 +17,7 @@
 
 ---
 
-**Honesty check - what actually runs today:** a Rust library and a command line program (`phoenix-laser`) with 1055 tests that run on a computer: it turns an image into dots by dithering and writes the G-code of a laser that burns line by line with dynamic power and overscan, reads SVG, DXF and LBRN2 drawings and writes the G-code that cuts their contours (the inside ones first, the width of the beam taken into account, bridges, several passes) and engraves their shapes with lines, with the settings of each layer in a file, burns text, QR codes and barcodes, checks a program against the limits of the machine, and writes a power-against-feed test grid. It has a window (built with `--features gui`), the docking frame of the suite with twelve panels and four workspaces, that opens a picture or a drawing, shows the path of the laser, lets the settings be changed and exports the G-code; the window has not been looked at on a screen by a person. The reader of LBRN2 projects was measured on twelve real projects of one laser maker (all twelve are read, and the one picture among them is decoded and engraved by dots; the direction of their y axis was never confirmed with a real part). It can also send a program to the laser plugin of the EH3D server and follow, hold or stop the job (`phoenix-laser server`), tested against a stand-in of the server only. **Nothing here has run on a real laser**: nothing made from those projects or from anything else was cut or burnt on a machine.
+**Honesty check - what actually runs today:** a Rust library and a command line program (`phoenix-laser`) with 1054 tests that run on a computer: it turns an image into dots by dithering and writes the G-code of a laser that burns line by line with dynamic power and overscan, reads SVG, DXF and LBRN2 drawings and writes the G-code that cuts their contours (the inside ones first, the width of the beam taken into account, bridges, several passes) and engraves their shapes with lines, with the settings of each layer in a file, burns text, QR codes and barcodes, checks a program against the limits of the machine, and writes a power-against-feed test grid. It has a window (built with `--features gui`), the docking frame of the suite with twelve panels and four workspaces, that opens a picture or a drawing, shows the path of the laser, lets the settings be changed and exports the G-code; the window has not been looked at on a screen by a person. The reader of LBRN2 projects was measured on twelve real projects of one laser maker (all twelve are read, and the one picture among them is decoded and engraved by dots; the direction of their y axis was never confirmed with a real part). It can also send a program to the laser plugin of the EH3D server and follow, hold or stop the job (`phoenix-laser server`), tested against a stand-in of the server only. **Nothing here has run on a real laser**: nothing made from those projects or from anything else was cut or burnt on a machine.
 
 ---
 
@@ -30,7 +30,7 @@
 |---|---|
 | Version | `0.1.6` |
 | Maturity | Functional |
-| Tests | 1055 |
+| Tests | 1054 |
 | Stack | Rust |
 | On real hardware | Not tried: nothing here has run on a machine |
 
@@ -46,7 +46,7 @@ Each line is one part of this repository and the light says how far it is today.
 |---|---|---|
 | Core | 🟡 | turns an image into dots by dithering and writes the G-code of a laser that burns line by line with dynamic power and overscan, reads SVG and DXF drawings and cuts or engraves them by layer (ordered contours, beam width, bridges, passes, hatch), and a power-against-feed test grid; tested on a computer with normal and damaged input, not with a collection of real files. |
 | Command line | 🟡 | `phoenix-laser` (`engrave`, `calibrate`, `info`, `cut`, `vector`, `layers`) runs the same functions as the library and prints the result; every error comes back as a message and a non-zero exit code. |
-| Tests | 🟡 | 1055 tests pass (`cargo test`), with normal cases, edge cases and damaged input. |
+| Tests | 🟡 | 1054 tests pass (`cargo test`), with normal cases, edge cases and damaged input. |
 | Security | 🟡 | Plain safe Rust (`forbid(unsafe_code)`): nothing panics on the files it is given and a bad value is an error with its reason; no independent review. |
 | Window | 🟠 | Written (egui, `--features gui`) as the docking frame of the suite: open or drop a picture or an SVG, DXF or LBRN2 drawing, see the path of the laser (the cut in one colour, the travel dim), edit the table of layers, the modes for text, QR code, barcode, marks, frame and focus, a calibration grid, zoom and pan, estimate the time, check, report, send to the server, export; its logic is tested, but it has not been looked at on a screen by a person. |
 | Real hardware | 🔴 | Not tried: nothing here has been run on a machine. |
@@ -105,7 +105,7 @@ Each line is one part of this repository and the light says how far it is today.
 * **The tone curve** (`src/tone.rs`): before the dots are made the grey levels can be stretched to the full range (`--auto-level`), given more or less contrast and brightness, bent with a gamma or inverted, with one table of 256 entries; with the default values the picture is not changed at all.
 * **A checked G-code:** the program of a drawing is checked line by line before it is given: no laser on during a rapid move or at no speed, no `S` above full power, no move outside of the bed, `M5` at the end; the file is never written over the drawing or the settings it comes from.
 * **Projects of the suite** (`src/eh3dfile.rs`, `docs/eh3d-project.md`): `phoenix-laser project` keeps the work in the branch `laser/` of an `.eh3d` project, one file with a branch for each program: `save` puts the drawing, the settings, the library of materials and the programs there; `import` keeps a drawing of another program (LBRN2, LBRN, SVG or DXF) byte for byte with a report of what was read, what was not and what is lost on export; `take` copies an outline or a mesh from another branch, such as `cad/`, with the hash and the format of its source, so `list` and `open` say when it is out of date; `open` and `extract` write files without writing over any. Only `laser/` is written: every other branch, known or not, keeps its bytes. It has only been tried with made-up projects.
-* **The project in the window** (`src/suitewin.rs`, `src/suitecore.rs`, `docs/eh3d-project.md`): File > Suite project (.eh3d) opens a project, saves it and saves it under another name keeping every branch, imports a file keeping the original, takes a file of another branch, extracts a branch and lists the branches. What is out of date and what is signed stays in sight; before a project that was not opened there, a branch that changed since it was read or a signature is written over, the window asks. Opening a project never loosens the limits, the interlocks or the server of the person's own settings, and a settings file with the token of the server is not put into a project. The logic is tested without a screen; the entries have not been tried on a screen by a person.
+* **The project in the window** (`src/suitewin.rs`, `eh3d_project::suiteview`, `docs/eh3d-project.md`): File > Suite project (.eh3d) opens a project, saves it and saves it under another name keeping every branch, imports a file keeping the original, takes a file of another branch, extracts a branch and lists the branches. What is out of date and what is signed stays in sight; before a project that was not opened there, a branch that changed since it was read or a signature is written over, the window asks. Opening a project never loosens the limits, the interlocks or the server of the person's own settings, and a settings file with the token of the server is not put into a project. The logic is tested without a screen; the entries have not been tried on a screen by a person.
 
 ## 🧩 Role in EH3D
 
@@ -230,7 +230,7 @@ To take a picture of the window without opening it by hand, run it with `--shot 
 
 ## 🧪 Testing
 
-The suite has 1055 tests (`cargo test`, run on Windows and Linux in the CI). They check the normal cases, the edge cases and damaged input: empty files, garbage and cut files never panic. The CI also runs `cargo fmt --check`, `cargo clippy` with warnings as errors and `python -I tools/ci_validate.py`.
+The suite has 1054 tests (`cargo test`, run on Windows and Linux in the CI). They check the normal cases, the edge cases and damaged input: empty files, garbage and cut files never panic. The CI also runs `cargo fmt --check`, `cargo clippy` with warnings as errors and `python -I tools/ci_validate.py`.
 
 ## 🏗️ Build & Release
 
@@ -283,8 +283,6 @@ EH3D-PHOENIX-LASER/
 │   ├── dxf.rs                                   the DXF reader: lines, polylines, arcs, circles, ellipses, splines and blocks, with units
 │   ├── eh3dfile.rs                              the branch laser of an .eh3d project: save, import, take, open, extract
 │   ├── projcli.rs                               the command project of the command line
-│   ├── suitecore.rs                             the state of an .eh3d project for the window: out of date, signed, what to ask before a write
-│   ├── suitetext.rs                             the words of the project entries of the window in eight languages
 │   ├── suitewin.rs                              the menu File of the window for an .eh3d project: open, save, import, take, extract
 │   ├── lbrn2.rs                                 the reader of LBRN2 project files: layers, shapes, groups and curves
 │   ├── lbrn2_pic.rs                             the pictures of an LBRN2 project: base64, PNG, limits, turned as placed
