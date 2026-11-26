@@ -5,6 +5,7 @@
 // branch is a copy with a reference that remembers the content hash and the format of its source, so that a later change of the source is told as out of date. Every other branch, known
 // or not, keeps its bytes. Nothing in a project is run.
 
+use std::collections::BTreeMap;
 use std::path::Path;
 
 use eh3d_project::appbranch::{
@@ -12,6 +13,7 @@ use eh3d_project::appbranch::{
     Conversion, Notice,
 };
 use eh3d_project::meta::ConversionReport;
+use eh3d_project::Project;
 
 use crate::dxf::read_dxf;
 use crate::lbrn2::read_project;
@@ -67,6 +69,40 @@ pub struct Opened {
     pub warnings: Vec<String>,
     /// The files written out, when the branch was taken out.
     pub written: Option<usize>,
+    /// The bytes of every file of the branch, by its name inside it.
+    pub files: BTreeMap<String, Vec<u8>>,
+}
+
+/// A file on its way into the branch: the name it is told by and its bytes.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Held {
+    /// The name of the file, or the path it was read from.
+    pub name: String,
+    /// What it holds.
+    pub bytes: Vec<u8>,
+}
+
+/// What [`save_contents`] puts into the branch: only what is there replaces what the branch holds.
+#[derive(Debug, Default, Clone)]
+pub struct Contents {
+    /// The drawing, under the name of its file.
+    pub drawing: Option<Held>,
+    /// The settings file.
+    pub config: Option<Held>,
+    /// The library of materials.
+    pub materials: Option<Held>,
+    /// Programs of the laser, each under the name of its file.
+    pub programs: Vec<Held>,
+}
+
+impl Contents {
+    /// Whether there is nothing to put.
+    pub fn is_empty(&self) -> bool {
+        self.drawing.is_none()
+            && self.config.is_none()
+            && self.materials.is_none()
+            && self.programs.is_empty()
+    }
 }
 
 fn describe(e: BranchError) -> String {
@@ -75,6 +111,12 @@ fn describe(e: BranchError) -> String {
 
 fn said(notices: Vec<Notice>) -> Vec<String> {
     notices.iter().map(ToString::to_string).collect()
+}
+
+/// The text of a settings file or of a library, as its loader reads it.
+pub(crate) fn text_of(bytes: &[u8]) -> String {
+    let text = String::from_utf8_lossy(bytes);
+    text.strip_prefix('\u{feff}').unwrap_or(&text).to_owned()
 }
 
 fn parse_drawing(name: &str, bytes: &[u8], opts: &ReadOptions) -> Result<Drawing, String> {
@@ -103,50 +145,60 @@ pub fn save(
     identity: &Identity,
     read: &ReadOptions,
 ) -> Result<Vec<String>, String> {
-    if inputs.drawing.is_none()
-        && inputs.config.is_none()
-        && inputs.materials.is_none()
-        && inputs.programs.is_empty()
-    {
+    let mut contents = Contents::default();
+    if let Some(file) = &inputs.drawing {
+        let bytes =
+            read_bounded(Path::new(file), read.limits.max_file_bytes as u64).map_err(describe)?;
+        let name = file_name(Path::new(file)).map_err(describe)?;
+        contents.drawing = Some(Held { name, bytes });
+    }
+    let small = |file: &String| -> Result<Held, String> {
+        let bytes = read_bounded(Path::new(file), MAX_SETTINGS_BYTES).map_err(describe)?;
+        Ok(Held {
+            name: file.clone(),
+            bytes,
+        })
+    };
+    contents.config = inputs.config.as_ref().map(small).transpose()?;
+    contents.materials = inputs.materials.as_ref().map(small).transpose()?;
+    for file in &inputs.programs {
+        let bytes = read_bounded(Path::new(file), MAX_PROGRAM_BYTES).map_err(describe)?;
+        let name = file_name(Path::new(file)).map_err(describe)?;
+        contents.programs.push(Held { name, bytes });
+    }
+    save_contents(path, &contents, identity, read)
+}
+
+/// The same as [`save`] with the files already read, which is how the window gives what it holds. Everything is checked before anything is written.
+pub fn save_contents(
+    path: &Path,
+    contents: &Contents,
+    identity: &Identity,
+    read: &ReadOptions,
+) -> Result<Vec<String>, String> {
+    if contents.is_empty() {
         return Err(
             "there is nothing to save: give a drawing, settings, materials or a program".into(),
         );
     }
-    // every file is read and checked before anything is written
-    let drawing = match &inputs.drawing {
-        Some(file) => {
-            let bytes = read_bounded(Path::new(file), read.limits.max_file_bytes as u64)
-                .map_err(describe)?;
-            let name = file_name(Path::new(file)).map_err(describe)?;
-            parse_drawing(&name, &bytes, read)?;
-            Some((format!("{DRAWING_DIR}{name}"), bytes))
+    let drawing = match &contents.drawing {
+        Some(held) => {
+            parse_drawing(&held.name, &held.bytes, read)?;
+            Some((format!("{DRAWING_DIR}{}", held.name), held.bytes.clone()))
         }
         None => None,
     };
-    let config = match &inputs.config {
-        Some(file) => {
-            let bytes = read_bounded(Path::new(file), MAX_SETTINGS_BYTES).map_err(describe)?;
-            vconfig::load(Path::new(file))?;
-            Some(bytes)
-        }
-        None => None,
-    };
-    let library = match &inputs.materials {
-        Some(file) => {
-            let bytes = read_bounded(Path::new(file), MAX_SETTINGS_BYTES).map_err(describe)?;
-            materials::load(Path::new(file))?;
-            Some(bytes)
-        }
-        None => None,
-    };
-    let mut programs = Vec::new();
-    for file in &inputs.programs {
-        let bytes = read_bounded(Path::new(file), MAX_PROGRAM_BYTES).map_err(describe)?;
-        programs.push((
-            format!("programs/{}", file_name(Path::new(file)).map_err(describe)?),
-            bytes,
-        ));
+    if let Some(held) = &contents.config {
+        vconfig::parse(&text_of(&held.bytes)).map_err(|e| format!("{}: {e}", held.name))?;
     }
+    if let Some(held) = &contents.materials {
+        materials::parse(&text_of(&held.bytes)).map_err(|e| format!("{}: {e}", held.name))?;
+    }
+    let programs: Vec<(String, Vec<u8>)> = contents
+        .programs
+        .iter()
+        .map(|held| (format!("programs/{}", held.name), held.bytes.clone()))
+        .collect();
     for (rel, _) in drawing.iter().chain(programs.iter()) {
         KIT.check_name(rel).map_err(describe)?;
     }
@@ -157,12 +209,12 @@ pub fn save(
                 copy.put(&rel, bytes)?;
                 copy.choose("drawing", DRAWING_DIR, &rel);
             }
-            if let Some(bytes) = config {
-                copy.put("settings/laser.cfg", bytes)?;
+            if let Some(held) = &contents.config {
+                copy.put("settings/laser.cfg", held.bytes.clone())?;
                 copy.set("settings", "settings/laser.cfg");
             }
-            if let Some(bytes) = library {
-                copy.put("settings/materials.cfg", bytes)?;
+            if let Some(held) = &contents.materials {
+                copy.put("settings/materials.cfg", held.bytes.clone())?;
                 copy.set("materials", "settings/materials.cfg");
             }
             for (rel, bytes) in programs {
@@ -300,25 +352,37 @@ pub fn list(path: &Path) -> Result<Listing, String> {
     appbranch::list(path).map_err(describe)
 }
 
-/// Opens the branch `laser/`: reads and checks what it holds and, with `into`, writes its files there (a file that is there is never written over).
-pub fn open(path: &Path, into: Option<&Path>, read: &ReadOptions) -> Result<Opened, String> {
-    let (mut project, copy, warnings) = KIT.open(path).map_err(describe)?;
-    let mut opened = Opened {
+fn read_branch(path: &Path) -> Result<(Project, Opened), String> {
+    let (project, copy, warnings) = KIT.open(path).map_err(describe)?;
+    let opened = Opened {
         drawing: copy.text("drawing"),
         settings: copy.text("settings"),
         materials: copy.text("materials"),
         programs: copy.list("programs"),
         warnings,
+        report: copy.report().map_err(describe)?,
+        files: copy.files().clone(),
         ..Opened::default()
     };
+    Ok((project, opened))
+}
+
+/// What the branch `laser/` holds, with the bytes of its files and without reading the drawing.
+pub fn held(path: &Path) -> Result<Opened, String> {
+    read_branch(path).map(|(_, opened)| opened)
+}
+
+/// Opens the branch `laser/`: reads and checks what it holds and, with `into`, writes its files there (a file that is there is never written over).
+pub fn open(path: &Path, into: Option<&Path>, read: &ReadOptions) -> Result<Opened, String> {
+    let (mut project, mut opened) = read_branch(path)?;
     if let Some(rel) = &opened.drawing {
-        let bytes = copy
-            .file(rel)
+        let bytes = opened
+            .files
+            .get(rel)
             .ok_or_else(|| format!("{BRANCH}/{rel}: the drawing is not in the branch"))?;
         let drawing = parse_drawing(rel, bytes, read)?;
         opened.shapes = Some((drawing.shapes.len(), drawing.keys(GroupBy::Auto).len()));
     }
-    opened.report = copy.report().map_err(describe)?;
     if let Some(dir) = into {
         opened.written = Some(
             project

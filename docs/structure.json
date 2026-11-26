@@ -431,6 +431,45 @@
           }
         },
         {
+          "name": "suitecore.rs",
+          "desc": {
+            "en": "the state of an .eh3d project for the window: out of date, signed, what to ask before a write",
+            "es": "el estado de un proyecto .eh3d para la ventana: desactualizado, firmado, qué preguntar antes de escribir",
+            "de": "der Stand eines .eh3d-Projekts für das Fenster: veraltet, signiert, was vor dem Schreiben gefragt wird",
+            "fr": "l'état d'un projet .eh3d pour la fenêtre : périmé, signé, quoi demander avant d'écrire",
+            "it": "lo stato di un progetto .eh3d per la finestra: non aggiornato, firmato, cosa chiedere prima di scrivere",
+            "ja": "ウィンドウ用の .eh3d プロジェクトの状態：古い内容、署名、書き込み前の確認",
+            "zh": "供窗口使用的 .eh3d 工程状态：过期、签名、写入前的确认",
+            "pt": "o estado de um projeto .eh3d para a janela: desatualizado, assinado, o que perguntar antes de escrever"
+          }
+        },
+        {
+          "name": "suitetext.rs",
+          "desc": {
+            "en": "the words of the project entries of the window in eight languages",
+            "es": "los textos de las entradas de proyecto de la ventana en ocho idiomas",
+            "de": "die Texte der Projekteinträge des Fensters in acht Sprachen",
+            "fr": "les textes des entrées de projet de la fenêtre en huit langues",
+            "it": "i testi delle voci di progetto della finestra in otto lingue",
+            "ja": "ウィンドウのプロジェクト項目の文言（8 言語）",
+            "zh": "窗口中工程菜单项的八种语言文字",
+            "pt": "os textos das entradas de projeto da janela em oito línguas"
+          }
+        },
+        {
+          "name": "suitewin.rs",
+          "desc": {
+            "en": "the menu File of the window for an .eh3d project: open, save, import, take, extract",
+            "es": "el menú Archivo de la ventana para un proyecto .eh3d: abrir, guardar, importar, tomar, extraer",
+            "de": "das Menü Datei des Fensters für ein .eh3d-Projekt: öffnen, speichern, importieren, übernehmen, entpacken",
+            "fr": "le menu Fichier de la fenêtre pour un projet .eh3d : ouvrir, enregistrer, importer, prendre, extraire",
+            "it": "il menu File della finestra per un progetto .eh3d: aprire, salvare, importare, prendere, estrarre",
+            "ja": "ウィンドウのファイルメニューによる .eh3d の操作：開く、保存、取り込み、参照、展開",
+            "zh": "窗口“文件”菜单对 .eh3d 工程的操作：打开、保存、导入、取用、提取",
+            "pt": "o menu Ficheiro da janela para um projeto .eh3d: abrir, guardar, importar, obter, extrair"
+          }
+        },
+        {
           "name": "lbrn2.rs",
           "desc": {
             "en": "the reader of LBRN2 project files: layers, shapes, groups and curves",
@@ -1020,6 +1059,19 @@
             "ja": "プロジェクトブランチのテスト：往復、他のブランチ、古いコピー、破損ファイル",
             "zh": "工程分支测试：往返、其他分支、过期副本、损坏文件",
             "pt": "testes do ramo do projeto: ida e volta, outros ramos, cópias desatualizadas, ficheiros danificados"
+          }
+        },
+        {
+          "name": "suitewindow.rs",
+          "desc": {
+            "en": "tests of the project menu of the window, without a screen",
+            "es": "pruebas del menú de proyecto de la ventana, sin pantalla",
+            "de": "Tests des Projektmenüs des Fensters ohne Bildschirm",
+            "fr": "tests du menu de projet de la fenêtre, sans écran",
+            "it": "test del menu di progetto della finestra, senza schermo",
+            "ja": "ウィンドウのプロジェクトメニューのテスト（画面なし）",
+            "zh": "窗口工程菜单的测试（无需屏幕）",
+            "pt": "testes do menu de projeto da janela, sem ecrã"
           }
         },
         {

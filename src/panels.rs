@@ -6,6 +6,7 @@
 //! The workspaces stand for tasks (what the person is doing), never for levels of experience: every setting is in the window in all of them.
 
 use crate::lang::{Lang, Msg};
+use crate::suitetext::S;
 use eh3d_dock::about::{AboutBrand, Phoenix};
 use eh3d_dock::core::PanelDef;
 use eh3d_dock::geom::Side;
@@ -101,6 +102,12 @@ pub fn t8(m: Msg) -> Text8 {
     ])
 }
 
+/// A word of the project of the suite as the text of the frame, in the order of [`t8`].
+pub fn s8(s: S) -> Text8 {
+    let [en, es, de, fr, it, ja, zh, pt] = s.words();
+    Text8([en, es, it, de, fr, pt, zh, ja])
+}
+
 fn def(id: &str, title: Text8, icon: &'static str, w: f32, h: f32) -> PanelDef {
     PanelDef::new(id, title).icon(icon).min(w, h)
 }
@@ -194,6 +201,20 @@ pub enum Cmd {
     OpenMaterials,
     /// Make a new library of materials in a file that is not there.
     NewMaterials,
+    /// Open a project file of the suite.
+    SuiteOpen,
+    /// Save into the project of the window.
+    SuiteSave,
+    /// Save the project under another name.
+    SuiteSaveAs,
+    /// Import a drawing into the project, keeping the original.
+    SuiteImport,
+    /// Take a file of another branch.
+    SuiteTake,
+    /// Write the files of a branch into a folder.
+    SuiteExtract,
+    /// List the branches of the project.
+    SuiteBranches,
     /// Work out the program for what is chosen.
     Compute,
     /// Write the program to a file.
@@ -216,6 +237,29 @@ impl From<StdAction> for Cmd {
 
 fn own(id: &str, m: Msg, cmd: Cmd) -> Entry<Cmd> {
     Entry::app(id, Label::Own(t8(m)), cmd)
+}
+
+/// The entries of the project file of the suite, a submenu of File.
+fn suite_menu() -> Menu<Cmd> {
+    let entry = |id: &str, word: S, cmd: Cmd| Entry::app(id, Label::Own(s8(word)), cmd);
+    Menu::new("file.suite", Label::Own(s8(S::Menu)))
+        .entry(entry("file.suite.open", S::MenuOpen, Cmd::SuiteOpen))
+        .entry(entry("file.suite.save", S::MenuSave, Cmd::SuiteSave))
+        .entry(entry("file.suite.save_as", S::MenuSaveAs, Cmd::SuiteSaveAs))
+        .sep()
+        .entry(entry("file.suite.import", S::MenuImport, Cmd::SuiteImport))
+        .entry(entry("file.suite.take", S::MenuTake, Cmd::SuiteTake))
+        .entry(entry(
+            "file.suite.extract",
+            S::MenuExtract,
+            Cmd::SuiteExtract,
+        ))
+        .sep()
+        .entry(entry(
+            "file.suite.branches",
+            S::MenuBranches,
+            Cmd::SuiteBranches,
+        ))
 }
 
 /// The menu bar: File, Edit, View, Tools, Window and Help.
@@ -249,9 +293,11 @@ pub fn menu_bar() -> MenuBar<Cmd> {
             Cmd::NewMaterials,
         ),
     ];
+    let after_opens = at + opens.len();
     for (k, e) in opens.into_iter().enumerate() {
         file.items.insert(at + k, Item::Entry(e));
     }
+    file.items.insert(after_opens, Item::Submenu(suite_menu()));
     for item in &mut file.items {
         if let Item::Entry(e) = item {
             if e.id == "file.export" {
@@ -285,6 +331,8 @@ pub struct MenuFacts {
     pub can_send: bool,
     /// A job that was sent is being followed.
     pub server_active: bool,
+    /// The window works on a project file of the suite.
+    pub has_suite: bool,
 }
 
 /// The ids of the entries that cannot be chosen now. The ones for things the program does not have (new, save, undo, redo, cut, copy, paste) are always off.
@@ -310,6 +358,15 @@ pub fn disabled_entries(f: &MenuFacts) -> Vec<String> {
     when(!f.has_done, &["tools.report"]);
     when(!f.can_send || f.server_active, &["tools.send"]);
     when(!f.server_active, &["tools.stop"]);
+    when(
+        !f.has_suite,
+        &[
+            "file.suite.import",
+            "file.suite.take",
+            "file.suite.extract",
+            "file.suite.branches",
+        ],
+    );
     let mut v: Vec<String> = off.into_iter().map(str::to_string).collect();
     v.sort();
     v.dedup();
@@ -549,6 +606,13 @@ mod tests {
             "file.new_materials",
             "file.export",
             "file.quit",
+            "file.suite.open",
+            "file.suite.save",
+            "file.suite.save_as",
+            "file.suite.import",
+            "file.suite.take",
+            "file.suite.extract",
+            "file.suite.branches",
             "edit.preferences",
             "tools.compute",
             "tools.fit",
@@ -613,6 +677,11 @@ mod tests {
         ] {
             assert!(nothing.iter().any(|x| x == id), "{id}");
         }
+        for id in ["file.suite.import", "file.suite.take", "file.suite.extract"] {
+            assert!(nothing.iter().any(|x| x == id), "{id}");
+        }
+        assert!(!nothing.iter().any(|x| x == "file.suite.open"));
+        assert!(!nothing.iter().any(|x| x == "file.suite.save"));
         // every id that can be off is an entry of the bar
         let ids = bar_ids(&menu_bar());
         for off in &nothing {
@@ -625,6 +694,7 @@ mod tests {
             has_done: true,
             can_send: true,
             server_active: false,
+            has_suite: true,
         });
         assert_eq!(
             all,

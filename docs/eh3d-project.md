@@ -17,6 +17,17 @@ An `.eh3d` file is the project of the EH3D Fabrication Suite: one ZIP file with 
 
 What every program does with its branch (open or create, save, import with a report, take, out-of-date notices, list and extract) is the module `appbranch` of the crate `eh3d-project`; this program says what its files are. `list` says when a branch is signed. Writing the branch removes a signature of the project, and a signature of the branch when there is one; the command says so. These commands neither sign nor check signatures: `eh3d-project` of EH3D-COMMON does.
 
+## In the window
+
+File > Suite project (.eh3d) does the same with the window: Open suite project, Save suite project, Save suite project as, Import a file and keep the original, Take from another branch, Extract a branch and Branches of the project. A project can also be dropped on the window or given on the command line.
+
+- Open replaces the work of the window with what `laser/` holds: the drawing, the settings, the library of materials and, with no drawing, the first program. A project without `laser/` is taken as it is, with no work, and Save puts the work there. A project that cannot be read changes nothing.
+- Save puts the drawing, the settings file and the library that were chosen in the window (or that the project held) and the program that was worked out and is up to date. A file the window read by itself when it started is not put, and neither is a settings file with the token of the server. What the project holds already is not written again, so a file taken from another branch keeps its reference. What is typed in the boxes is not kept, and a picture to engrave has no place in the branch: only its program goes.
+- Save as to a new file copies the whole project first, so every branch goes with it. A file that is there keeps its own branches: only `laser/` is written, after a question.
+- The window asks before writing a project it did not open, a `laser/` that changed since it was read, or one whose signature (of the project or of the branch) the write removes.
+- A bar under the toolbar names the project and says what is OUT OF DATE and what is signed. It is read again when the window gets the keyboard back.
+- The settings of a project are applied over those of the person, and never loosen them: the server, what is held back before a send, the interlocks and the machine profiles stay as the person has them, the limits of power and speed are the lower of the two and the forbidden zones of both hold.
+
 ## What is in the branch
 
 ```
