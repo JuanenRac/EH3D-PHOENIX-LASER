@@ -2,7 +2,7 @@
 
 This register is the single source of the state of each capability: `STATUS.md` and the README files cite it and never state a state that it does not. A state is one of `planned`, `prototype`, `implemented` and `validated`. `validated` means that a person has run the capability on a real machine and the evidence of the manifest says `bench` or `field`; nothing here is validated, because nothing of this program has run on a real laser, a real material or a real server: the G-code is checked by the program's own reader, the server is a stand-in, and the pictures for the marks are simulated.
 
-The register has 138 requirements: 118 implemented, 16 prototype, 4 planned and 0 validated. By progress: 118 done, 16 partial, 0 pending and 4 blocked. High coverage is not proof of correctness, so each row says how it is checked: the test that names it, and what it shows.
+The register has 139 requirements: 119 implemented, 16 prototype, 4 planned and 0 validated. By progress: 119 done, 16 partial, 0 pending and 4 blocked. High coverage is not proof of correctness, so each row says how it is checked: the test that names it, and what it shows.
 
 ## How to read the register
 
@@ -182,3 +182,4 @@ The check is `tests/reqs.rs`: it reads this table, finds each test and fails whe
 | PLAS-136 | The window asks before it writes a project it did not open, a branch that changed or a signed one, and says that a signature was removed. | implemented | done | host-test | `tests/suitewindow::a_branch_that_changed_or_is_signed_is_asked_about_and_the_signature_is_told` | - |
 | PLAS-137 | The window takes a file of another branch, keeps what is out of date in sight and keeps the reference when it saves. | implemented | done | host-test | `tests/suitewindow::a_file_taken_from_cad_is_told_as_out_of_date_and_a_save_keeps_its_reference` | - |
 | PLAS-138 | A project opened in the window never loosens the limits of the person, and the token of the server never goes into a project. | implemented | done | host-test | `tests/suitewindow::a_project_never_loosens_the_limits_of_the_person_and_no_token_goes_into_one` | - |
+| PLAS-139 | The command line never puts a settings file that holds the token of the server into a project: the save is refused and nothing is written. | implemented | done | host-test | `tests/eh3dfile::the_command_line_never_puts_the_token_of_the_server_in_a_project` | - |

@@ -13,6 +13,8 @@ An `.eh3d` file is the project of the EH3D Fabrication Suite: one ZIP file with 
 | `project open FILE.eh3d [--into DIR]` | reads and checks `laser/` and says what it holds; with `--into` writes its files |
 | `project extract FILE.eh3d BRANCH DIR` | writes the files of any branch, byte for byte |
 
+`save` refuses a settings file that gives a value to `server_token`, whatever its section, and writes nothing: a project is passed on and the token must not travel in it. Take the line out (the token can be given in `PHOENIX_LASER_SERVER_TOKEN`) or save without `--config`.
+
 `--config` of `import`, `open` and `take` gives the `[read]` settings with which a drawing is read. A file that is there is never written over by `open` or `extract`. The project is replaced in one step (a temporary file, then a rename).
 
 What every program does with its branch (open or create, save, import with a report, take, out-of-date notices, list and extract) is the module `appbranch` of the crate `eh3d-project`; this program says what its files are. `list` says when a branch is signed. Writing the branch removes a signature of the project, and a signature of the branch when there is one; the command says so. These commands neither sign nor check signatures: `eh3d-project` of EH3D-COMMON does.

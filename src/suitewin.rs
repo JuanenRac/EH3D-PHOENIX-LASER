@@ -406,10 +406,10 @@ impl Window {
             programs: Vec::new(),
         };
         // the project is a file that is passed on: the token of the server never goes into it
-        let has_token = contents.config.as_ref().is_some_and(|held| {
-            vconfig::parse(&eh3dfile::text_of(&held.bytes))
-                .is_ok_and(|s| !s.server.server_token.is_empty())
-        });
+        let has_token = contents
+            .config
+            .as_ref()
+            .is_some_and(|held| suitecore::sets_key(&held.bytes, "server_token"));
         if has_token {
             contents.config = None;
             notes.push(Said::plain(S::SettingsWithToken));

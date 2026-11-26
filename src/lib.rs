@@ -42,8 +42,9 @@ pub mod safety;
 pub mod server;
 pub mod shot;
 pub mod sublayers;
-pub mod suitecore;
-pub mod suitetext;
+// what the window shows and asks about an `.eh3d` project, and its words, are shared by the programs (crate `eh3d-project` of EH3D-COMMON)
+pub use eh3d_project::suitetext;
+pub use eh3d_project::suiteview as suitecore;
 pub mod suitewin;
 pub mod svg;
 pub mod testfiles;
