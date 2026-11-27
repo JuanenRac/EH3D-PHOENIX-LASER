@@ -49,6 +49,20 @@ pub struct Program {
     pub notes: Vec<String>,
     /// What makes a check of the program fail: something dangerous, or something that cannot be judged. They are at the head of `notes` too, so that a list of notes that is full never loses one.
     pub faults: Vec<String>,
+    /// What the burns with constant power (M3) look like.
+    pub constant: Constant,
+}
+
+/// The burns of a program that are made with constant power (M3), for the advice of the check.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Constant {
+    pub burns: usize,
+    /// Burns that begin where the head starts from rest or turns by more than 45 degrees.
+    pub slow: usize,
+    /// The line of the first of them (0 when there is none).
+    pub first_slow_line: usize,
+    /// The first line that turns the beam on, or changes its power, while nothing moves (0 when there is none).
+    pub standing_line: usize,
 }
 
 /// The longest line, without spaces and comments, that GRBL takes.
@@ -89,7 +103,7 @@ struct LineRead {
     unreadable: bool,
     /// The line holds `$`: a command of the controller itself.
     system: bool,
-    /// A character that GRBL obeys at once (`!`, `~`, `?`, a control character or one outside of ASCII), in the code or in a comment.
+    /// A character that GRBL obeys at once: in the code `!`, `~`, `?`, a control character or one outside of ASCII; in a comment `!`, `~`, `?` or a control character.
     realtime_code: bool,
     realtime_comment: bool,
     /// The length without spaces and comments.
@@ -168,6 +182,39 @@ fn is_realtime(c: char) -> bool {
         || (c.is_ascii_control() && !matches!(c, '\t' | '\r'))
 }
 
+/// The characters of a comment that GRBL obeys at once if the comment reaches the controller. Accented letters and the other characters outside of ASCII are taken in a comment: what is
+/// sent to a machine is cleaned first (see [`clean_comments`]).
+fn obeyed_in_comment(c: char) -> bool {
+    matches!(c, '!' | '~' | '?') || (c.is_control() && !matches!(c, '\t' | '\r'))
+}
+
+/// A program as it is sent to a machine: inside the comments `!`, `~`, `?`, the control characters and every character outside of ASCII (GRBL takes some of their bytes as commands)
+/// become `_`, and a byte order mark at the start goes. The code is left as it is.
+pub fn clean_comments(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let (mut inside, mut rest) = (false, false);
+    for c in text.strip_prefix('\u{feff}').unwrap_or(text).chars() {
+        if matches!(c, '\n' | '\r') {
+            (inside, rest) = (false, false);
+            out.push(c);
+            continue;
+        }
+        if rest || (inside && c != ')') {
+            let plain = c == '\t' || (c.is_ascii() && !obeyed_in_comment(c));
+            out.push(if plain { c } else { '_' });
+            continue;
+        }
+        match c {
+            ';' | '*' => rest = true,
+            '(' => inside = true,
+            ')' => inside = false,
+            _ => {}
+        }
+        out.push(c);
+    }
+    out
+}
+
 /// Reads a line as GRBL does: a comment in brackets ends at the first `)` (they do not nest), a `;` starts a comment that goes to the end, and what follows a `*` is a checksum.
 fn read_line(line: &str) -> LineRead {
     let mut r = LineRead::default();
@@ -175,12 +222,10 @@ fn read_line(line: &str) -> LineRead {
     let (mut inside, mut rest) = (false, false);
     for c in line.chars() {
         let in_comment = rest || inside || matches!(c, ';' | '(' | ')');
-        if is_realtime(c) {
-            if in_comment {
-                r.realtime_comment = true;
-            } else {
-                r.realtime_code = true;
-            }
+        if in_comment {
+            r.realtime_comment |= obeyed_in_comment(c);
+        } else {
+            r.realtime_code |= is_realtime(c);
         }
         if rest {
             continue;
@@ -326,6 +371,8 @@ pub fn read_with(text: &str, arc_tolerance_mm: f64) -> Program {
     let mut constant = false;
     // some writers begin a file with a byte order mark, which the controller throws away
     let text = text.strip_prefix('\u{feff}').unwrap_or(text);
+    // a carriage return alone ends a line for the controller too: what follows it is not part of a comment
+    let text = text.replace("\r\n", "\n").replace('\r', "\n");
     for (n, raw) in text.lines().enumerate() {
         if n >= MAX_LINES {
             fault(
@@ -348,7 +395,7 @@ pub fn read_with(text: &str, arc_tolerance_mm: f64) -> Program {
         if read.realtime_comment {
             note(
                 &mut p.notes,
-                format!("line {line}: a comment holds a character that GRBL obeys at once if the comment reaches it (!, ~, ?, a control character or one outside of ASCII)"),
+                format!("line {line}: a comment holds a character that GRBL obeys at once if the comment reaches it (!, ~, ? or a control character)"),
             );
         }
         if read.system {
@@ -544,6 +591,11 @@ pub fn read_with(text: &str, arc_tolerance_mm: f64) -> Program {
                 format!("line {line}: only the height moves with the laser on at constant power (M3): it burns one spot"),
             );
         }
+        // in the laser mode a power that is set on a line with no move reaches the beam while the head stands
+        let turned_on = ws.iter().any(|&(l, v)| l == 'S' || (l == 'M' && v == 3.0));
+        if held && turned_on && nx.is_none() && ny.is_none() && p.constant.standing_line == 0 {
+            p.constant.standing_line = line;
+        }
         if table_line {
             (nx, ny) = (None, None);
         }
@@ -658,6 +710,19 @@ pub fn read_with(text: &str, arc_tolerance_mm: f64) -> Program {
                         feed,
                         line,
                     });
+                    if burning && constant {
+                        let k = p.moves.len() - 1;
+                        let slow = p.moves[..k]
+                            .last()
+                            .is_none_or(|a| a.rapid || turn_degrees(a, &p.moves[k]) > 45.0);
+                        p.constant.burns += 1;
+                        if slow {
+                            p.constant.slow += 1;
+                            if p.constant.first_slow_line == 0 {
+                                p.constant.first_slow_line = line;
+                            }
+                        }
+                    }
                 }
                 x = to.0;
                 y = to.1;

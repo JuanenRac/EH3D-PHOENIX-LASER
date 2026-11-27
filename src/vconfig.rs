@@ -7,6 +7,7 @@
 
 use crate::guard::{Interlocks, Zone, ZoneKind, MAX_ZONES};
 use crate::job::{Anchor, JobSettings};
+use crate::lasermode::LaserMode;
 use crate::live::LiveSettings;
 use crate::sublayers::{SubLayer, MAX_SUBLAYERS};
 use crate::tone::Tone;
@@ -191,6 +192,8 @@ pub struct Machine {
     pub max_power_percent: f64,
     /// The limit of speed (mm/min): a layer or a command that asks for more is an error, never lowered without a word.
     pub max_speed_mm_min: f64,
+    /// Dynamic power (`m4`) or constant power (`m3`) in the programs that are written; `m3` needs `overscan_mm` for its run-ups.
+    pub laser_mode: LaserMode,
 }
 
 impl Default for Machine {
@@ -206,6 +209,7 @@ impl Default for Machine {
             max_passes: 50,
             max_power_percent: crate::safety::DEFAULT_MAX_POWER_PERCENT,
             max_speed_mm_min: crate::safety::DEFAULT_MAX_SPEED_MM_MIN,
+            laser_mode: LaserMode::Dynamic,
         }
     }
 }
@@ -228,6 +232,8 @@ pub struct Profile {
     pub s_max: Option<u32>,
     /// The optical power of the laser at full power, in watts.
     pub laser_watts: Option<f64>,
+    /// Dynamic or constant power.
+    pub laser_mode: Option<LaserMode>,
 }
 
 impl Profile {
@@ -240,6 +246,7 @@ impl Profile {
         m.max_speed_mm_min = self.max_speed_mm_min.unwrap_or(m.max_speed_mm_min);
         m.s_max = self.s_max.unwrap_or(m.s_max);
         m.laser_watts = self.laser_watts.unwrap_or(m.laser_watts);
+        m.laser_mode = self.laser_mode.unwrap_or(m.laser_mode);
     }
 
     pub fn validate(&self) -> Result<(), String> {
@@ -1343,6 +1350,15 @@ fn whole(value: &str) -> Result<u64, String> {
         .map_err(|_| format!("'{}' is not a whole number", value.trim()))
 }
 
+fn laser_mode(value: &str) -> Result<LaserMode, String> {
+    LaserMode::from_word(value).ok_or_else(|| {
+        format!(
+            "'{}' is not m4 (dynamic power) or m3 (constant power)",
+            value.trim()
+        )
+    })
+}
+
 fn switch(value: &str) -> Result<bool, String> {
     match value.trim().to_ascii_lowercase().as_str() {
         "on" | "true" | "yes" | "1" => Ok(true),
@@ -1433,6 +1449,7 @@ fn set_global(s: &mut Settings, section: &str, key: &str, value: &str) -> Result
         ("machine", "overscan_mm") => s.machine.overscan_mm = number(value)?,
         ("machine", "rapid_mm_min") => s.machine.rapid_mm_min = number(value)?,
         ("machine", "laser_watts") => s.machine.laser_watts = number(value)?,
+        ("machine", "laser_mode") => s.machine.laser_mode = laser_mode(value)?,
         ("machine", "origin_x") => s.machine.origin.0 = number(value)?,
         ("machine", "origin_y") => s.machine.origin.1 = number(value)?,
         ("machine", "focus_z_mm") => s.machine.focus_z_mm = number(value)?,
@@ -1632,6 +1649,7 @@ fn set_profile(p: &mut Profile, key: &str, value: &str) -> Result<(), String> {
                 Some(u32::try_from(whole(value)?).map_err(|_| "s_max is too large".to_string())?)
         }
         "laser_watts" => p.laser_watts = Some(number(value)?),
+        "laser_mode" => p.laser_mode = Some(laser_mode(value)?),
         _ => return Err(format!("'{key}' is not a setting of a profile")),
     }
     Ok(())

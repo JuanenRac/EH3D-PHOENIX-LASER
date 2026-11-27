@@ -380,6 +380,13 @@ pub static ENTRIES: &[Entry] = &[
     },
     Entry {
         section: "machine",
+        key: "laser_mode",
+        kind: Kind::Word,
+        default: "m4",
+        safety: true,
+    },
+    Entry {
+        section: "machine",
         key: "focus_z_mm",
         kind: Kind::Number,
         default: "0",
@@ -1119,6 +1126,13 @@ pub static ENTRIES: &[Entry] = &[
         kind: Kind::Number,
         default: "not given",
         safety: false,
+    },
+    Entry {
+        section: "profile",
+        key: "laser_mode",
+        kind: Kind::Word,
+        default: "not given",
+        safety: true,
     },
     Entry {
         section: "zone",

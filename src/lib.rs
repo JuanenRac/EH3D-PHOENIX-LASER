@@ -27,6 +27,7 @@ pub mod guard;
 pub mod gui;
 pub mod job;
 pub mod lang;
+pub mod lasermode;
 pub mod lbrn2;
 pub mod lbrn2_pic;
 pub mod linkpane;

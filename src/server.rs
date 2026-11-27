@@ -225,14 +225,14 @@ impl MachineInfo {
     }
 }
 
-/// The request that makes a G-code job on a machine of the `laser` plugin.
+/// The request that makes a G-code job on a machine of the `laser` plugin. The comments of the program are cleaned of what the controller could obey.
 pub fn job_request(machine: &str, name: &str, gcode: &str) -> String {
     format!(
         "{{\"machine\":{},\"name\":{},\"app\":{},\"request\":{{\"kind\":\"gcode\",\"text\":{}}}}}",
         quote(machine),
         quote(name),
         quote(APP),
-        quote(gcode)
+        quote(&crate::preview::clean_comments(gcode))
     )
 }
 

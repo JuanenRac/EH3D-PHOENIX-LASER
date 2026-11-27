@@ -561,6 +561,19 @@
           }
         },
         {
+          "name": "lasermode.rs",
+          "desc": {
+            "en": "dynamic (M4) or constant (M3) power, with run-ups",
+            "es": "potencia dinámica (M4) o constante (M3), con entradas",
+            "de": "dynamische (M4) oder konstante (M3) Leistung mit Anlauf",
+            "fr": "puissance dynamique (M4) ou constante (M3), avec élans",
+            "it": "potenza dinamica (M4) o costante (M3), con rincorse",
+            "ja": "動的（M4）または一定（M3）の出力と助走",
+            "zh": "动态（M4）或恒定（M3）功率及引入段",
+            "pt": "potência dinâmica (M4) ou constante (M3), com entradas"
+          }
+        },
+        {
           "name": "live.rs",
           "desc": {
             "en": "the live adjustment of power and speed, held by four limits (no machine is touched)",
@@ -981,6 +994,19 @@
             "ja": "追加パスのテスト：順序、上限、固定シードの破損ファイル",
             "zh": "额外道次测试：顺序、上限、固定种子的损坏文件",
             "pt": "testes das passagens extra: ordem, limites, ficheiros danificados com semente fixa"
+          }
+        },
+        {
+          "name": "lasermode.rs",
+          "desc": {
+            "en": "tests of M4 and M3 power, comments and what is sent",
+            "es": "pruebas de potencia M4 y M3, comentarios y lo enviado",
+            "de": "Tests: M4 und M3, Kommentare und das Gesendete",
+            "fr": "tests de M4 et M3, des commentaires et de l'envoi",
+            "it": "test di M4 e M3, dei commenti e di ciò che si invia",
+            "ja": "M4 と M3、コメント、送信内容のテスト",
+            "zh": "M4 与 M3、注释和发送内容的测试",
+            "pt": "testes de M4 e M3, comentários e o que é enviado"
           }
         },
         {

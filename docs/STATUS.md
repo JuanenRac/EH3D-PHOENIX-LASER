@@ -16,7 +16,7 @@ The menu File of the window opens, saves, imports, takes and extracts an `.eh3d`
 
 ## Capabilities
 
-The official state of each capability is in `REQUIREMENTS.md`. The register has 165 requirements: 143 implemented, 18 prototype, 4 planned and 0 validated. By progress: 143 done, 18 partial, 0 pending and 4 blocked. This page never states a state that `REQUIREMENTS.md` does not.
+The official state of each capability is in `REQUIREMENTS.md`. The register has 169 requirements: 147 implemented, 18 prototype, 4 planned and 0 validated. By progress: 147 done, 18 partial, 0 pending and 4 blocked. This page never states a state that `REQUIREMENTS.md` does not.
 
 ## Open questions
 

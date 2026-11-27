@@ -816,15 +816,16 @@ pub fn plan(drawing: &Drawing, s: &Settings) -> Result<Plan, String> {
     out.line("M5");
     out.line("M2");
     verify_gcode(&out.g, s.machine.s_max, s.machine.bed_mm)?;
+    let written = s.machine.laser_mode.apply(&out.g, s.machine.overscan_mm)?;
     Ok(Plan {
-        gcode: out.g,
+        gcode: written.gcode,
         stats: Stats {
             layers: work.len(),
             contours,
             cut_mm: out.cut_mm,
             engrave_mm: out.engrave_mm,
-            travel_mm: out.travel_mm,
-            seconds: out.seconds,
+            travel_mm: out.travel_mm + written.extra_mm,
+            seconds: out.seconds + written.extra_seconds,
         },
         warnings: notes,
     })

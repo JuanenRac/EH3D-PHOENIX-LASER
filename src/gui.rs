@@ -4,6 +4,7 @@
 use crate::browse::{self, Browser};
 use crate::commonmat;
 use crate::lang::{fill, Lang, Msg};
+use crate::lasermode::LaserMode;
 use crate::materials;
 use crate::panels::{self, id as pid, Cmd, LayoutWatch, MenuFacts};
 use crate::shot::{ShotRequest, ShotTheme, ShotWindow, PATIENCE_FRAMES};
@@ -291,6 +292,7 @@ impl App {
             ui.add_space(4.0);
             self.picture_group(ui);
             self.machine_group(ui);
+            self.power_mode_group(ui);
         });
     }
 
@@ -1051,6 +1053,58 @@ impl App {
                     });
                 if mode != self.win.mode {
                     self.win.set_mode(mode);
+                }
+            });
+    }
+
+    /// Dynamic or constant power in the programs, with what each does. With constant power the run-up (the overscan) is asked for in the modes that show no box of it.
+    fn power_mode_group(&mut self, ui: &mut egui::Ui) {
+        // an opened program is not written again, and the frame lights the laser the same way in both
+        if matches!(self.win.mode, Mode::Preview | Mode::Frame) {
+            return;
+        }
+        let lang = self.win.lang;
+        egui::CollapsingHeader::new(self.heading(ui, Msg::LaserModeHead))
+            .default_open(true)
+            .show(ui, |ui| {
+                let name = |m: LaserMode| match m {
+                    LaserMode::Dynamic => Msg::LaserModeDynamic,
+                    LaserMode::Constant => Msg::LaserModeConstant,
+                };
+                let mut mode = self.win.laser_mode;
+                egui::ComboBox::from_id_salt("laser-mode")
+                    .selected_text(name(mode).tr(lang))
+                    .show_ui(ui, |ui| {
+                        for m in LaserMode::ALL {
+                            ui.selectable_value(&mut mode, m, name(m).tr(lang));
+                        }
+                    });
+                if mode != self.win.laser_mode {
+                    self.win.set_laser_mode(mode);
+                }
+                if self.win.laser_mode == LaserMode::Dynamic {
+                    ui.label(
+                        egui::RichText::new(Msg::LaserModeDynamicHelp.tr(lang))
+                            .color(DIM)
+                            .small(),
+                    );
+                    return;
+                }
+                ui.label(
+                    egui::RichText::new(Msg::LaserModeConstantHelp.tr(lang))
+                        .color(DANGER)
+                        .small(),
+                );
+                if matches!(
+                    self.win.mode,
+                    Mode::Calibrate
+                        | Mode::Focus
+                        | Mode::Text
+                        | Mode::Qr
+                        | Mode::Barcode
+                        | Mode::Marks
+                ) {
+                    self.field_for(ui, Key::Overscan);
                 }
             });
     }
