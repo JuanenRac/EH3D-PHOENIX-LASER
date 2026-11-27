@@ -772,7 +772,7 @@ fn every_setting_the_file_reads_is_documented_and_every_documented_setting_is_re
         }
     }
     assert_eq!(layer_keys, 13, "{keys:?}");
-    assert_eq!(keys.len(), 13 + 134 + 11, "{keys:?}");
+    assert_eq!(keys.len(), 13 + 135 + 12, "{keys:?}");
     for k in &keys {
         assert!(
             doc.contains(&format!("`{k}`")),
