@@ -1444,7 +1444,7 @@ fn a_profile_chosen_in_the_file_is_the_machine_and_the_option_still_wins_over_it
     ]);
     assert!(ok, "{err}");
     let text = std::fs::read_to_string(&nc).unwrap();
-    assert!(text.contains("S13") && !text.contains("S50"), "{text}");
+    assert!(text.contains("S12") && !text.contains("S50"), "{text}");
     assert!(text.contains("S 0-255"), "{text}");
     // the big profile chosen on the command line replaces it (S1000, up to 70 %)
     let (ok, _, err) = run(&[

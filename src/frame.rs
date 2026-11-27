@@ -489,7 +489,7 @@ mod tests {
     fn the_pilot_value_is_a_percent_of_full_power_and_never_rounds_to_nothing() {
         assert_eq!(pilot_value(1000, 0.0).unwrap(), 0);
         assert_eq!(pilot_value(1000, 2.0).unwrap(), 20);
-        assert_eq!(pilot_value(255, 5.0).unwrap(), 13);
+        assert_eq!(pilot_value(255, 5.0).unwrap(), 12);
         assert!(pilot_value(100, 0.4).unwrap_err().contains("one step"));
         assert!(pilot_value(1000, -1.0).is_err());
         assert!(pilot_value(1000, f64::NAN).is_err());

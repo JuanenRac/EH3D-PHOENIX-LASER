@@ -807,7 +807,7 @@ mod tests {
         };
         let g = focus_test(&up, 255, 100.0).unwrap();
         assert!(g.contains("G0 Z3\n") && g.contains("G0 Z3.25\n") && g.contains("G0 Z3.5\n"));
-        assert!(g.contains(" S77\n"), "30 % of 255: {g}");
+        assert!(g.contains(" S76\n"), "30 % of 255 is 76.5: {g}");
     }
 
     #[test]

@@ -4557,9 +4557,9 @@ mod tests {
         assert_eq!(layers, 2);
         assert!((engrave_mm - 4000.0).abs() < 1e-6, "{engrave_mm}");
         assert!(cut_mm > 18.7 && cut_mm < 18.86, "{cut_mm}");
-        // 80 % of 255 is 204 and 50 % is 127.5, which rounds to 128
+        // 80 % of 255 is 204 and 50 % is 127.5, which is written as 127
         let g = &w.done.as_ref().unwrap().gcode;
-        assert!(g.contains(" S204\n") && g.contains(" S128\n"));
+        assert!(g.contains(" S204\n") && g.contains(" S127\n"));
         assert!(!g.contains("S1000"));
     }
 

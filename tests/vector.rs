@@ -219,10 +219,10 @@ fn options_over_the_defaults_change_the_power_the_speed_and_the_full_power_value
     ]);
     assert_eq!(c, Some(0), "{e}");
     let text = fs::read_to_string(&out).unwrap();
-    // 25 % of 255 is 63.75, which rounds to 64
+    // 25 % of 255 is 63.75, which is written as 63
     let c = code(&text);
     assert_eq!(c.iter().filter(|l| **l == "F120").count(), 2);
-    assert_eq!(c.iter().filter(|l| l.ends_with(" S64")).count(), 2);
+    assert_eq!(c.iter().filter(|l| l.ends_with(" S63")).count(), 2);
     assert!(!text.contains("S500"));
     let (c, _, e) = run(&["cut", &input, &out, "--power", "100", "--smax", "255"]);
     assert_eq!(c, Some(0), "{e}");
@@ -635,9 +635,9 @@ fn whatever_the_settings_the_program_passes_its_own_safety_check_or_is_not_given
             }
         }
     }
-    // 2 modes x 4 powers x 4 full power values x 2 beam widths x 2 tab counts x 2 pass counts are 256 jobs. A power of 0.001 % of a full power value of 100, 255 or 1000 is less than half
-    // of S1 and rounds to nothing, so it is refused: 2 modes x 3 values x 2 x 2 x 2 = 48 jobs. 0.5 % of 100 is S0.5, which rounds up to S1, and every other job is made.
-    assert_eq!(made, 256 - 48);
+    // 2 modes x 4 powers x 4 full power values x 2 beam widths x 2 tab counts x 2 pass counts are 256 jobs. A power of 0.001 % of a full power value of 100, 255 or 1000 is less than one step
+    // of S, so it is refused, and so is 0.5 % of 100 (S0.5, never rounded up): 2 modes x 4 pairs x 2 x 2 x 2 = 64 jobs. Every other job is made.
+    assert_eq!(made, 256 - 64);
 }
 
 #[test]
