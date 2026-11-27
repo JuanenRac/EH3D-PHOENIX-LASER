@@ -17,7 +17,7 @@
 
 ---
 
-**Honesty check - what actually runs today:** a Rust library and a command line program (`phoenix-laser`) with 1108 tests that run on a computer: it turns an image into dots by dithering and writes the G-code of a laser that burns line by line with dynamic power and overscan, reads SVG, DXF and LBRN2 drawings and writes the G-code that cuts their contours (the inside ones first, the width of the beam taken into account, bridges, several passes) and engraves their shapes with lines, with the settings of each layer in a file, burns text, QR codes and barcodes, checks a program against the limits of the machine, and writes a power-against-feed test grid. It has a window (built with `--features gui`), the docking frame of the suite with thirteen panels and four workspaces, that opens a picture or a drawing, shows the path of the laser, lets the settings be changed and exports the G-code; the window has not been looked at on a screen by a person. The reader of LBRN2 projects was measured on twelve real projects of one laser maker (all twelve are read, and the one picture among them is decoded and engraved by dots; the direction of their y axis was never confirmed with a real part). It can also send a program to the laser plugin of the EH3D server and follow, hold or stop the job (`phoenix-laser server`), tested against a stand-in of the server only. **Nothing here has run on a real laser**: nothing made from those projects or from anything else was cut or burnt on a machine.
+**Honesty check - what actually runs today:** a Rust library and a command line program (`phoenix-laser`) with 1121 tests that run on a computer: it turns an image into dots by dithering and writes the G-code of a laser that burns line by line with dynamic power and overscan, reads SVG, DXF and LBRN2 drawings and writes the G-code that cuts their contours (the inside ones first, the width of the beam taken into account, bridges, several passes) and engraves their shapes with lines, with the settings of each layer in a file, burns text, QR codes and barcodes, checks a program against the limits of the machine, and writes a power-against-feed test grid. It has a window (built with `--features gui`), the docking frame of the suite with thirteen panels and four workspaces, that opens a picture or a drawing, shows the path of the laser, lets the settings be changed and exports the G-code; the window has not been looked at on a screen by a person. The reader of LBRN2 projects was measured on twelve real projects of one laser maker (all twelve are read, and the one picture among them is decoded and engraved by dots; the direction of their y axis was never confirmed with a real part). It can also send a program to the laser plugin of the EH3D server and follow, hold or stop the job (`phoenix-laser server`), tested against a stand-in of the server only. **Nothing here has run on a real laser**: nothing made from those projects or from anything else was cut or burnt on a machine.
 
 ---
 
@@ -30,7 +30,7 @@
 |---|---|
 | Version | `0.1.8` |
 | Maturity | Functional |
-| Tests | 1108 |
+| Tests | 1121 |
 | Stack | Rust |
 | On real hardware | Not tried: nothing here has run on a machine |
 
@@ -46,7 +46,7 @@ Each line is one part of this repository and the light says how far it is today.
 |---|---|---|
 | Core | 🟡 | turns an image into dots by dithering and writes the G-code of a laser that burns line by line with dynamic power and overscan, reads SVG and DXF drawings and cuts or engraves them by layer (ordered contours, beam width, bridges, passes, hatch), and a power-against-feed test grid; tested on a computer with normal and damaged input, not with a collection of real files. |
 | Command line | 🟡 | `phoenix-laser` (`engrave`, `calibrate`, `info`, `cut`, `vector`, `layers`) runs the same functions as the library and prints the result; every error comes back as a message and a non-zero exit code. |
-| Tests | 🟡 | 1108 tests pass (`cargo test`), with normal cases, edge cases and damaged input. |
+| Tests | 🟡 | 1121 tests pass (`cargo test`), with normal cases, edge cases and damaged input. |
 | Security | 🟡 | Plain safe Rust (`forbid(unsafe_code)`): nothing panics on the files it is given and a bad value is an error with its reason; no independent review. |
 | Window | 🟠 | Written (egui, `--features gui`) as the docking frame of the suite: open or drop a picture or an SVG, DXF or LBRN2 drawing, see the path of the laser (the cut in one colour, the travel dim), edit the table of layers, the modes for text, QR code, barcode, marks, frame and focus, a calibration grid, zoom and pan, estimate the time, check, report, send to the server, export; its logic is tested, but it has not been looked at on a screen by a person. |
 | Real hardware | 🔴 | Not tried: nothing here has been run on a machine. |
@@ -241,7 +241,7 @@ To take a picture of the window without opening it by hand, run it with `--shot 
 
 ## 🧪 Testing
 
-The suite has 1108 tests (`cargo test`, run on Windows and Linux in the CI). They check the normal cases, the edge cases and damaged input: empty files, garbage and cut files never panic. The CI also runs `cargo fmt --check`, `cargo clippy` with warnings as errors and `python -I tools/ci_validate.py`.
+The suite has 1121 tests (`cargo test`, run on Windows and Linux in the CI). They check the normal cases, the edge cases and damaged input: empty files, garbage and cut files never panic. The CI also runs `cargo fmt --check`, `cargo clippy` with warnings as errors and `python -I tools/ci_validate.py`.
 
 ## 🏗️ Build & Release
 
