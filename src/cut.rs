@@ -297,6 +297,91 @@ pub fn split_by_tabs(ring: &[Pt], count: u32, width: f64) -> Option<Vec<Vec<Pt>>
     Some(pieces)
 }
 
+// ---------------------------------------------------------------- perforation and lines cut once
+
+/// The most dashes a perforated operation may be cut into.
+pub const MAX_DASHES: usize = 100_000;
+
+/// A path as the dashes of a perforation: `cut` mm burnt and then at least `gap` mm left whole. On a closed path (its last point is the first one) the dashes are spread evenly round it, so
+/// that no bridge is shorter than `gap`, the one at the start included. None when a closed path is too short for one dash and one bridge. `room` is how many dashes may still be made.
+pub fn perforate(
+    path: &[Pt],
+    closed: bool,
+    cut: f64,
+    gap: f64,
+    room: usize,
+) -> Result<Option<Vec<Vec<Pt>>>, String> {
+    if !(cut.is_finite() && gap.is_finite() && cut > 0.0 && gap > 0.0) || path.len() < 2 {
+        return Ok(None);
+    }
+    let mut cum = vec![0.0];
+    for w in path.windows(2) {
+        cum.push(cum[cum.len() - 1] + dist(w[0], w[1]));
+    }
+    let total = cum[cum.len() - 1];
+    let period = cut + gap;
+    let count = if closed {
+        (total / period).floor()
+    } else {
+        (total / period).ceil()
+    };
+    if !count.is_finite() || count > room as f64 {
+        return Err(format!(
+            "the perforation would take more than {MAX_DASHES} dashes: use a longer perf_cut or perf_gap"
+        ));
+    }
+    let count = count as usize;
+    if count == 0 {
+        return Ok(None);
+    }
+    let step = if closed { total / count as f64 } else { period };
+    Ok(Some(
+        (0..count)
+            .map(|i| {
+                let from = i as f64 * step;
+                sub_path(path, &cum, from, (from + cut).min(total))
+            })
+            .filter(|d| d.len() >= 2)
+            .collect(),
+    ))
+}
+
+/// The pieces with every segment that an earlier piece (or this one) already has left out, whichever way round it is drawn (ends within a hundredth of a millimetre), and how many were left
+/// out. The order of the pieces is the one given, so the inside ones stay first. Segments that only overlap in part are not found.
+pub fn cut_once(pieces: Vec<(Vec<Pt>, bool)>) -> (Vec<(Vec<Pt>, bool)>, usize) {
+    let key = |p: Pt| ((p.0 * 100.0).round() as i64, (p.1 * 100.0).round() as i64);
+    let mut seen = std::collections::BTreeSet::new();
+    let mut left_out = 0;
+    let mut out = Vec::with_capacity(pieces.len());
+    for (piece, closed) in pieces {
+        let mut runs: Vec<Vec<Pt>> = Vec::new();
+        let mut run: Vec<Pt> = Vec::new();
+        let mut touched = false;
+        for w in piece.windows(2) {
+            let (a, b) = (key(w[0]), key(w[1]));
+            if a != b && !seen.insert((a.min(b), a.max(b))) {
+                left_out += 1;
+                touched = true;
+                if run.len() >= 2 {
+                    runs.push(std::mem::take(&mut run));
+                }
+                run.clear();
+                continue;
+            }
+            if run.is_empty() {
+                run.push(w[0]);
+            }
+            run.push(w[1]);
+        }
+        if run.len() >= 2 {
+            runs.push(run);
+        }
+        // a piece that lost a segment is no longer a closed one
+        out.extend(runs.into_iter().map(|r| (r, closed && !touched)));
+    }
+    (out, left_out)
+}
+
 // ---------------------------------------------------------------- hatch
 
 /// The lines that fill closed shapes: lines `spacing` apart at `angle_deg`, the first half a spacing inside the box of the shapes, cut by the even-odd rule so that a shape inside
@@ -552,7 +637,20 @@ fn cut_layer(out: &mut Out, layer: &Layer, notes: &mut Vec<String>) -> Result<us
     let p = &layer.params;
     let power = power_value(p, s.machine.s_max)?;
     let doubled = doubled_segments(layer.contours.iter());
-    if doubled > 0 {
+    let tabbed = p.tabs > 0 && p.tab_width_mm > 0.0;
+    let perforated = p.perf_cut_mm > 0.0 && p.perf_gap_mm > 0.0;
+    // the bridges of the tabs and of a perforation would be burnt through by the second copy of a line, so lines are cut once only without them
+    let once = s.merge_doubled && !tabbed && !perforated;
+    if s.merge_doubled && !once && doubled > 0 {
+        note(
+            notes,
+            format!(
+                "layer {}: lines drawn twice are not merged in a layer with tabs or a perforation",
+                comment_text(&layer.name())
+            ),
+        );
+    }
+    if doubled > 0 && !once {
         note(
             notes,
             format!(
@@ -607,7 +705,7 @@ fn cut_layer(out: &mut Out, layer: &Layer, notes: &mut Vec<String>) -> Result<us
     }
     let visits = visits_for(&items, parents.as_deref(), out.head, s, notes);
     // the pieces of every contour, with the tabs left out
-    let mut pieces: Vec<Vec<Pt>> = Vec::new();
+    let mut pieces: Vec<(Vec<Pt>, bool)> = Vec::new();
     for v in &visits {
         let pts = v.points(&items);
         let c = &items[v.index];
@@ -618,7 +716,7 @@ fn cut_layer(out: &mut Out, layer: &Layer, notes: &mut Vec<String>) -> Result<us
             let ring = &pts[..pts.len() - 1];
             match split_by_tabs(ring, p.tabs, p.tab_width_mm) {
                 Some(parts) => {
-                    pieces.extend(parts);
+                    pieces.extend(parts.into_iter().map(|part| (part, false)));
                     continue;
                 }
                 None => note(
@@ -632,7 +730,40 @@ fn cut_layer(out: &mut Out, layer: &Layer, notes: &mut Vec<String>) -> Result<us
                 ),
             }
         }
-        pieces.push(pts);
+        pieces.push((pts, c.closed));
+    }
+    if once {
+        let (kept, left_out) = cut_once(pieces);
+        pieces = kept;
+        if left_out > 0 {
+            note(
+                notes,
+                format!(
+                    "layer {}: {left_out} piece(s) drawn twice are cut once (merge_doubled)",
+                    comment_text(&layer.name())
+                ),
+            );
+        }
+    }
+    if perforated {
+        let mut dashes: Vec<(Vec<Pt>, bool)> = Vec::new();
+        for (piece, closed) in pieces {
+            let room = MAX_DASHES.saturating_sub(dashes.len());
+            match perforate(&piece, closed, p.perf_cut_mm, p.perf_gap_mm, room)? {
+                Some(parts) => dashes.extend(parts.into_iter().map(|part| (part, false))),
+                None => {
+                    note(
+                        notes,
+                        format!(
+                            "layer {}: a contour is too short for the perforation: it is cut whole",
+                            comment_text(&layer.name())
+                        ),
+                    );
+                    dashes.push((piece, closed));
+                }
+            }
+        }
+        pieces = dashes;
     }
     for pass in 0..p.passes {
         out.line(&format!("; pass {} of {}", pass + 1, p.passes));
@@ -640,7 +771,7 @@ fn cut_layer(out: &mut Out, layer: &Layer, notes: &mut Vec<String>) -> Result<us
         if p.focus_step_mm != 0.0 {
             out.focus(s.machine.focus_z_mm + p.focus_step_mm * f64::from(pass))?;
         }
-        for piece in &pieces {
+        for (piece, _) in &pieces {
             if piece.len() < 2 {
                 continue;
             }

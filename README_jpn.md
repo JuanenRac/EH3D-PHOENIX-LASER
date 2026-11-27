@@ -17,7 +17,7 @@
 
 ---
 
-**正直さの確認 - 現在実際に動くもの：**Rust のライブラリとコマンドラインプログラム（`phoenix-laser`）で、コンピューター上で動く 1121 件のテストがあります。画像をディザリングでドットにして、ダイナミック出力とオーバースキャンで 1 行ずつ焼くレーザーの G コードを書き、SVG・DXF・LBRN2 の図面を読み、その輪郭を切る G コード（内側の輪郭が先、ビーム幅を考慮、ブリッジ、複数パス）を書き、図形を線で彫刻します。各レイヤーの設定はファイルに置きます。文字、QR コード、バーコードも焼き、プログラムをマシンの上限に照らして検査し、出力と送りのテスト格子を書きます。ウィンドウ（`--features gui` でビルド）はスイートのドッキングフレームで、13 のパネルと 4 つのワークスペースがあり、画像や図面を開き、レーザーの経路を表示し、設定を変更でき、G コードを書き出します。ウィンドウは、人が画面で確認したことがありません。LBRN2 プロジェクトのリーダーはレーザーメーカーの実在する 12 のプロジェクトで測定しました（12 件とも読め、その中の唯一の画像はデコードされてドットとして彫刻されます。y 軸の向きは実際の部品で確認されたことがありません）。プログラムを EH3D サーバーのレーザープラグインへ送り、ジョブを追跡・保留・停止することもできます（`phoenix-laser server`）が、サーバーの代役に対してのみテスト済みです。**ここにあるものは実際のレーザーで実行されたことがありません**。これらのプロジェクトやほかのものから作ったものを、機械で切ったり焼いたりしたこともありません。
+**正直さの確認 - 現在実際に動くもの：**Rust のライブラリとコマンドラインプログラム（`phoenix-laser`）で、コンピューター上で動く 1134 件のテストがあります。画像をディザリングでドットにして、ダイナミック出力とオーバースキャンで 1 行ずつ焼くレーザーの G コードを書き、SVG・DXF・LBRN2 の図面を読み、その輪郭を切る G コード（内側の輪郭が先、ビーム幅を考慮、ブリッジ、複数パス）を書き、図形を線で彫刻します。各レイヤーの設定はファイルに置きます。文字、QR コード、バーコードも焼き、プログラムをマシンの上限に照らして検査し、出力と送りのテスト格子を書きます。ウィンドウ（`--features gui` でビルド）はスイートのドッキングフレームで、13 のパネルと 4 つのワークスペースがあり、画像や図面を開き、レーザーの経路を表示し、設定を変更でき、G コードを書き出します。ウィンドウは、人が画面で確認したことがありません。LBRN2 プロジェクトのリーダーはレーザーメーカーの実在する 12 のプロジェクトで測定しました（12 件とも読め、その中の唯一の画像はデコードされてドットとして彫刻されます。y 軸の向きは実際の部品で確認されたことがありません）。プログラムを EH3D サーバーのレーザープラグインへ送り、ジョブを追跡・保留・停止することもできます（`phoenix-laser server`）が、サーバーの代役に対してのみテスト済みです。**ここにあるものは実際のレーザーで実行されたことがありません**。これらのプロジェクトやほかのものから作ったものを、機械で切ったり焼いたりしたこともありません。
 
 ---
 
@@ -30,7 +30,7 @@
 |---|---|
 | バージョン | `0.1.8` |
 | 成熟度 | 機能する |
-| テスト | 1121 |
+| テスト | 1134 |
 | 技術スタック | Rust |
 | 実機での動作 | 未試験：ここにあるものは機械で動かしたことがありません |
 
@@ -46,7 +46,7 @@
 |---|---|---|
 | コア | 🟡 | 画像をディザリングで点に変換し、動的出力とオーバースキャンで1行ずつ照射するレーザーの G コードを書き、SVG と DXF の図面を読んでレイヤーごとに切断または彫刻し（輪郭の順序、ビーム幅、タブ、パス、ハッチ）、出力対送り速度のテスト格子も作ります。コンピューター上で通常入力と壊れた入力を使ってテスト済みで、実際のファイルの集まりでは確認していません。 |
 | コマンドライン | 🟡 | `phoenix-laser`（`engrave`、`calibrate`、`info`、`cut`、`vector`、`layers`）はライブラリと同じ関数を実行して結果を表示します。エラーはすべてメッセージと 0 以外の終了コードで返ります。 |
-| テスト | 🟡 | 1121 件のテストが通ります（`cargo test`）。通常ケース、境界ケース、破損入力を含みます。 |
+| テスト | 🟡 | 1134 件のテストが通ります（`cargo test`）。通常ケース、境界ケース、破損入力を含みます。 |
 | セキュリティ | 🟡 | 安全な Rust のみ（`forbid(unsafe_code)`）。受け取ったファイルでパニックせず、不正な値は理由付きのエラーになります。独立したレビューはありません。 |
 | ウィンドウ | 🟠 | スイートのドッキングフレームとして作成済み（egui、`--features gui`）：画像または SVG・DXF・LBRN2 の図面を開く／ドロップする、レーザーの経路（切断は1色、移動は薄く）を見る、レイヤーの表を編集する、文字・QR コード・バーコード・マーク・枠・フォーカスの各モード、キャリブレーション格子、拡大縮小と移動、時間の見積り、検査、レポート、サーバーへの送信、書き出し。ロジックはテスト済みですが、人が画面で確認したことはありません。 |
 | 実機 | 🔴 | 未試験：ここにあるものは機械で実行したことがありません。 |
@@ -106,6 +106,7 @@
 * **コントローラの設定とアラーム**（`src/grblset.rs`、`src/grblcodes.rs`）：`phoenix-laser controller` は保存した `$$` の応答を機械（レーザーモード、最大出力 `$30`、最小出力、インチ、移動範囲）と比べ、`verify --controller` は判定に加え、`phoenix-laser explain` はアラームやエラーの意味を 8 言語で示します。機械には何も送らず、実機の一覧やアラームでは試していません。
 * **動的出力と一定出力**（`src/lasermode.rs`）：`[machine]`、プロファイル、またはウィンドウの `laser_mode = m4|m3`。既定は `M4` です。`M3` ではレーザーを消した助走と抜けがプログラムに加わり、検査は一定出力で強く焼ける箇所を知らせます。どちらでもコントローラはレーザーモード（`$32=1`）にしてください。機械では未検証です。
 * **線間隔とビーム幅のテスト**（`src/calibrate.rs`）：`phoenix-laser interval` は間隔の異なる正方形を一列に塗り、`phoenix-laser kerf` は長方形を短冊に切ってその隙間からビーム幅を求めます。検査に合格した場合だけ書き出し、実際には何も焼いていません。
+* **機械の前で、そしてテストの後で**（`src/winshop.rs`、`src/libedit.rs`）：ウィンドウは保存した `$$` の応答を読み込み、それに反するものは書き出しも送信もしません。アラームを説明し、レイヤーの追加パスを扱います。`report --controller` はコントローラの応答、または未読であることを示します。`record` と `merge` は確認なしに上書きせずに材料ライブラリを増やします。切断はミシン目（`perf_cut`、`perf_gap`）にでき、重複した線は一度だけ切れます（`merge_doubled`）。スイッチ `s_max_mismatch_warns`（既定はオフ）は異なる `$30` を警告にします：出力の換算が違うと焼きすぎることがあります。機械では何も試していません。
 * **追加のディザリングと二重切断の警告**（`src/dither.rs`、`src/cut.rs`）：Jarvis、Stucki、Sierra、Burkes（ウィンドウでも選べます）と、切断レイヤーの区間が二重に描かれている場合の警告。
 * **トーンカーブ**（`src/tone.rs`）：ドットを作る前に、グレー階調を全範囲に伸ばす（`--auto-level`）、コントラストと明るさを変える、ガンマで曲げる、反転する、といった調整を 256 項目の 1 つの表で行います。既定値では画像はまったく変わりません。
 * **検証済みの G コード：**図面のプログラムは渡す前に1行ずつ検証されます。早送り中や速度なしでレーザーが点灯せず、`S` は全出力を超えず、ベッド外への移動はなく、最後は `M5` です。元の図面や設定の上にファイルが書かれることはありません。
@@ -136,6 +137,10 @@ EH3D-PHOENIX-LASER は EH3D Fabrication Suite のプログラムの一つです�
 
 <p align="center">
   <img src="images/screens/window-engrave.png" alt="画像の彫刻：サンプルのグラデーションの点を出力で色分けしたもの" width="100%">
+</p>
+
+<p align="center">
+  <img src="images/screens/window-run.png" alt="マシンパネル：保存したコントローラの応答、そのスイッチ、アラームを説明する欄" width="100%">
 </p>
 
 ## ✨ 機能
@@ -193,11 +198,13 @@ phoenix-laser layers DRAWING [--config FILE] [--project-layers] [--dpi N] [--acc
 phoenix-laser convert DRAWING OUT.svg|dxf [--config FILE] [--dpi N] [--tolerance MM]
 phoenix-laser trace IMAGE OUT.nc --width-mm W [--threshold 128] [--invert] [--simplify MM] [--min-area MM2] [--engrave] [the options of cut]
 phoenix-laser materials FILE
+phoenix-laser record LIBRARY --material NAME [--power P] [--speed MM/MIN] [--passes N] [--kerf MM | --gap MM [--strips 10]] [--replace] [--max-power P] [--max-speed MM/MIN] [--config FILE] [--profile NAME]
+phoenix-laser merge LIBRARY OTHER [--keep-mine|--take-theirs]
 phoenix-laser focus OUT.nc --z-step MM [--z-start MM] [--steps 9] [--length 10] [--spacing 2] [--feed 1000] [--power 30 | --powers 10,20,30] [--smax 1000] [--max-power P] [--max-speed MM/MIN] [--config FILE] [--profile NAME]
 phoenix-laser frame OUT.nc --size W,H | --gcode PROGRAM.nc [--origin X,Y] [--margin MM] [--feed 3000] [--laps 1] [--bed X,Y] [--smax N]
               [--pilot P --confirm-laser-on] [--max-power P] [--max-speed MM/MIN] [--config FILE] [--profile NAME]
 phoenix-laser verify PROGRAM.nc [--config FILE] [--profile NAME] [--smax N] [--max-power P] [--max-speed MM/MIN] [--bed X,Y] [--overscan-mm MM] [--accel 1000] [--expect-sha256 HASH] [--controller SETTINGS.txt] [--json]
-phoenix-laser report PROGRAM.nc [--config FILE] [--profile NAME] [--lang CODE] [--material NAME --materials FILE]
+phoenix-laser report PROGRAM.nc [--config FILE] [--profile NAME] [--lang CODE] [--material NAME --materials FILE] [--controller SETTINGS.txt]
 phoenix-laser controller SETTINGS.txt [--config FILE] [--profile NAME] [--smax N] [--bed X,Y] [--lang CODE]
 phoenix-laser explain ALARM:n|error:n [--lang CODE]
 phoenix-laser interval OUT.nc --spacings 0.08:0.2:0.02 --power P --feed MM/MIN [--square-mm 8] [--gap-mm 3] [--label-mm 2|--no-labels] [--smax N] [--max-power P] [--max-speed MM/MIN] [--bed X,Y] [--config FILE] [--profile NAME]
@@ -241,7 +248,7 @@ cargo run --release --features gui -- --shot screen.png examples/plate.svg   # a
 
 ## 🧪 テスト
 
-テストは 1121 件あります（`cargo test`、CI では Windows と Linux で実行）。通常ケース、境界ケース、破損入力を確認し、空のファイル、ゴミデータ、途中で切れたファイルでもパニックしません。CI は `cargo fmt --check`、警告をエラーにした `cargo clippy`、`python -I tools/ci_validate.py` も実行します。
+テストは 1134 件あります（`cargo test`、CI では Windows と Linux で実行）。通常ケース、境界ケース、破損入力を確認し、空のファイル、ゴミデータ、途中で切れたファイルでもパニックしません。CI は `cargo fmt --check`、警告をエラーにした `cargo clippy`、`python -I tools/ci_validate.py` も実行します。
 
 ## 🏗️ ビルドとリリース
 
@@ -269,7 +276,7 @@ EH3D-PHOENIX-LASER/
 │   ├── cli_args.rs                              コマンドライン引数：小さなツールすべてで同じファイル
 │   ├── grblset.rs                               保存したコントローラ設定と機械の比較
 │   ├── grblcodes.rs                             GRBL のアラームとエラーの意味（8 言語）
-│   ├── testcli.rs                               interval、kerf、controller、explain コマンド
+│   ├── testcli.rs                               interval, kerf, controller, explain, record, merge
 │   ├── dither.rs                                グレーからドットへ：しきい値、Bayer、6 種の誤差拡散
 │   ├── materials.rs                             素材ライブラリ：出力、速度、パス、ドット、トーン
 │   ├── commonmat.rs                             共通の材料データベースの開始点（値はそのまま）
@@ -301,6 +308,7 @@ EH3D-PHOENIX-LASER/
 │   ├── suitewin.rs                              ウィンドウのファイルメニューによる .eh3d の操作：開く、保存、取り込み、参照、展開
 │   ├── lbrn2.rs                                 LBRN2プロジェクトの読み取り：レイヤー、図形、グループ、曲線
 │   ├── lbrn2_pic.rs                             LBRN2プロジェクトの画像：base64、PNG、上限、配置どおりの向き
+│   ├── libedit.rs                               テスト結果と別ライブラリをライブラリへ
 │   ├── vartext.rs                               可変テキスト：カウンターとCSVの列、1行につき1つのテキスト
 │   ├── sublayers.rs                             レイヤーへの追加パス：個別設定、上限、作業順序
 │   ├── job.rs                                   作業の開始位置、それを示す枠、範囲で示す所要時間
@@ -319,7 +327,8 @@ EH3D-PHOENIX-LASER/
 │   ├── panels.rs                                ウィンドウのパネル、ワークスペース、メニューをデータとして定義
 │   ├── lang.rs                                  ウィンドウの文言（8言語）
 │   ├── viewport.rs                              画像の拡大縮小と移動（単純な数値）
-│   └── window.rs                                画面なしのウィンドウの状態：画像または図面、設定、レイヤー、パス、書き出し
+│   ├── window.rs                                画面なしのウィンドウの状態：画像または図面、設定、レイヤー、パス、書き出し
+│   └── winshop.rs                               ウィンドウ：コントローラ、追加パス、結果
 ├── tests/
 │   ├── fuzz.rs                                  固定シードのテスト：壊れたファイル、途中切れ、異常な数値
 │   ├── dry_run.rs                               --dry-runのテスト：同じ数を数え、何も書かない
@@ -348,6 +357,7 @@ EH3D-PHOENIX-LASER/
 │   ├── samples.rs                               サンプルのフォルダーを指定したときのリーダーのテスト
 │   ├── guard.rs                                 禁止ゾーン、インターロック、材料の上限、レポート、設定一覧のテスト
 │   ├── server_cli.rs                            レーザープラグインの代役に対する server コマンド
+│   ├── shopfloor.rs                             ミシン目、ライブラリ、コントローラのテスト
 │   ├── window_cli.rs                            gui 機能なしのビルドがコマンドラインのままであることのテスト
 │   ├── dockwindow.rs                            ウィンドウモデルのテスト：レイヤー、レポート、インターロック、配置、材料
 │   ├── eh3dfile.rs                              プロジェクトブランチのテスト：往復、他のブランチ、古いコピー、破損ファイル
@@ -398,7 +408,7 @@ EH3D-PHOENIX-LASER/
 * LBRN2 プロジェクトのリーダーはレーザーメーカーの実在する 12 のプロジェクトでのみ測定しました。プロジェクト内の画像、その中になかった種類の図形、y 軸の向き、長方形の角丸は確認していません。
 * 図面は安全なサブセットで読み込みます（別のファイルへの `use`、テキスト、グラデーション、セレクターつきスタイルは対象外。DXF のハッチ、文字、寸法も対象外）。ビームより細い輪郭は切断されず、プログラムがそう伝えます。レーザーは `M4`/`M3` を使う GRBL コントローラーのものです。
 * QR コードとバーコードは、プログラム自身のリーダーで読み戻しています。焼いた記号をスキャナーで読んだことはなく、ウィンドウも人が画面で確認したことがありません。
-* サブレイヤー、プリセットのリンク、ライブ調整はまだウィンドウに置き場所がありません。プリセットのリンクは設定ファイルではなくメモリ上にあり、ライブ調整の内容は何も機械に送信されません。
+* プリセットのリンクと実行中の調整は、まだウィンドウにありません。リンクはメモリ内だけで設定ファイルには保存されず、実行中の調整は機械に何も送りません。ウィンドウの追加パスは設定ファイルに書き込まれません。
 
 **次のステップ**
 

@@ -58,6 +58,8 @@ jobs:
           # the engraving is taller, so that its legend does not lie over the preview
           shot plate.svg window-vector.png 1440x900
           shot gradient.pgm window-engrave.png 1280x1000
+          # the machine: the saved answer of the controller and the alarms
+          xvfb-run -a -s "-screen 0 1920x1080x24" timeout 120 "$exe" gui plate.svg --shot "$out/window-run.png" --lang en --theme forge --size 1440x900 --window Run --wait 20
           ls -l "$out"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:

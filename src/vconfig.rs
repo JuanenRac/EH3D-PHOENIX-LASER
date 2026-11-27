@@ -104,6 +104,10 @@ pub struct LayerParams {
     /// Bridges that are left uncut on the outline of a piece so that it does not fall (0 for none).
     pub tabs: u32,
     pub tab_width_mm: f64,
+    /// Perforation of a cut: the length that is burnt (mm), 0 for a line cut whole.
+    pub perf_cut_mm: f64,
+    /// Perforation of a cut: the bridge that is left after each burnt length (mm).
+    pub perf_gap_mm: f64,
     /// The angle of the lines of the hatch, in degrees.
     pub hatch_angle_deg: f64,
     pub hatch_spacing_mm: f64,
@@ -125,6 +129,8 @@ impl Default for LayerParams {
             kerf_side: KerfSide::None,
             tabs: 0,
             tab_width_mm: 1.0,
+            perf_cut_mm: 0.0,
+            perf_gap_mm: 0.0,
             hatch_angle_deg: 0.0,
             hatch_spacing_mm: 0.1,
             hatch_cross: false,
@@ -151,6 +157,14 @@ impl LayerParams {
         range("focus_step", self.focus_step_mm, -20.0, 20.0)?;
         range("kerf", self.kerf_mm, 0.0, 5.0)?;
         range("tab_width", self.tab_width_mm, 0.0, 100.0)?;
+        range("perf_cut", self.perf_cut_mm, 0.0, 100.0)?;
+        range("perf_gap", self.perf_gap_mm, 0.0, 100.0)?;
+        let (cut, gap) = (self.perf_cut_mm, self.perf_gap_mm);
+        if (cut != 0.0 || gap != 0.0) && (cut < 0.1 || gap < 0.1) {
+            return Err(format!(
+                "perf_cut is {cut} and perf_gap is {gap}: a perforation needs both, from 0.1 mm each (0 and 0 for none)"
+            ));
+        }
         range("hatch_angle", self.hatch_angle_deg, -360.0, 360.0)?;
         range("hatch_spacing", self.hatch_spacing_mm, 0.01, 5.0)?;
         if self.passes == 0 || self.passes > max_passes {
@@ -999,6 +1013,8 @@ pub struct VerifySettings {
     pub overscan_mm: f64,
     /// How far (mm) the straight pieces that an arc (G2 or G3) of a program is cut into may lie from the true arc.
     pub arc_tolerance_mm: f64,
+    /// A full power of the controller (`$30`) that is not `s_max` is only a warning. Off by default: a wrongly scaled power can burn more than asked.
+    pub s_max_mismatch_warns: bool,
 }
 
 impl Default for VerifySettings {
@@ -1006,6 +1022,7 @@ impl Default for VerifySettings {
         VerifySettings {
             overscan_mm: 0.0,
             arc_tolerance_mm: crate::preview::DEFAULT_ARC_TOLERANCE_MM,
+            s_max_mismatch_warns: false,
         }
     }
 }
@@ -1115,6 +1132,8 @@ pub struct Settings {
     /// A contour with more points than this is not offset.
     pub offset_max_points: usize,
     pub max_hatch_lines: usize,
+    /// A piece of a cut that was already cut in the same operation is not cut again.
+    pub merge_doubled: bool,
     pub machine: Machine,
     /// The machines and lasers that the file describes (`[profile NAME]`).
     pub profiles: Vec<Profile>,
@@ -1172,6 +1191,7 @@ impl Default for Settings {
             two_opt_max_items: 2_000,
             offset_max_points: 5_000,
             max_hatch_lines: 100_000,
+            merge_doubled: false,
             machine: Machine::default(),
             profiles: Vec::new(),
             profile: None,
@@ -1393,6 +1413,8 @@ fn set_layer(p: &mut LayerParams, key: &str, value: &str) -> Result<(), String> 
             p.tabs = u32::try_from(whole(value)?).map_err(|_| "tabs is too large".to_string())?
         }
         "tab_width" => p.tab_width_mm = number(value)?,
+        "perf_cut" => p.perf_cut_mm = number(value)?,
+        "perf_gap" => p.perf_gap_mm = number(value)?,
         "hatch_angle" => p.hatch_angle_deg = number(value)?,
         "hatch_spacing" => p.hatch_spacing_mm = number(value)?,
         "hatch_cross" => p.hatch_cross = switch(value)?,
@@ -1438,6 +1460,7 @@ fn set_global(s: &mut Settings, section: &str, key: &str, value: &str) -> Result
         ("order", "order_max_items") => s.order_max_items = to_usize(whole(value)?)?,
         ("order", "containment_max_items") => s.containment_max_items = to_usize(whole(value)?)?,
         ("order", "two_opt") => s.two_opt = switch(value)?,
+        ("order", "merge_doubled") => s.merge_doubled = switch(value)?,
         ("order", "two_opt_max_items") => s.two_opt_max_items = to_usize(whole(value)?)?,
         ("order", "two_opt_budget") => s.two_opt_budget = whole(value)?,
         ("offset", "max_points") => s.offset_max_points = to_usize(whole(value)?)?,
@@ -1495,6 +1518,7 @@ fn set_global(s: &mut Settings, section: &str, key: &str, value: &str) -> Result
         ("interlocks", "require_air_assist") => s.interlocks.require_air_assist = switch(value)?,
         ("verify", "overscan_mm") => s.verify.overscan_mm = number(value)?,
         ("verify", "arc_tolerance_mm") => s.verify.arc_tolerance_mm = number(value)?,
+        ("verify", "s_max_mismatch_warns") => s.verify.s_max_mismatch_warns = switch(value)?,
         ("calibrate", "steps") => {
             s.calibrate.steps =
                 u32::try_from(whole(value)?).map_err(|_| "steps is too large".to_string())?

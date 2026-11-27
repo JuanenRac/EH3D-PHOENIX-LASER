@@ -126,6 +126,10 @@ pub fn keep_my_limits(mine: &Settings, theirs: Settings) -> Settings {
     s.send = mine.send;
     s.panel = mine.panel.clone();
     s.interlocks = mine.interlocks;
+    // what the check of a program forgives is the person's choice, and a project never widens how far past the bed the head may go
+    s.verify.s_max_mismatch_warns = mine.verify.s_max_mismatch_warns;
+    s.verify.overscan_mm = s.verify.overscan_mm.min(mine.verify.overscan_mm);
+    s.verify.arc_tolerance_mm = s.verify.arc_tolerance_mm.min(mine.verify.arc_tolerance_mm);
     for zone in &mine.zones {
         if !s.zones.contains(zone) {
             s.zones.push(zone.clone());

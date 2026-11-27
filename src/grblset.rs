@@ -90,6 +90,8 @@ pub enum Kind {
     LaserModeOff,
     LaserModeUnknown,
     SMaxDiffers,
+    /// The full power differs and the settings say that this is only a warning (`s_max_mismatch_warns`).
+    SMaxDiffersAllowed,
     SMaxUnknown,
     MinPower,
     Inches,
@@ -98,10 +100,11 @@ pub enum Kind {
 }
 
 impl Kind {
-    pub const ALL: [Kind; 8] = [
+    pub const ALL: [Kind; 9] = [
         Kind::LaserModeOff,
         Kind::LaserModeUnknown,
         Kind::SMaxDiffers,
+        Kind::SMaxDiffersAllowed,
         Kind::SMaxUnknown,
         Kind::MinPower,
         Kind::Inches,
@@ -149,6 +152,16 @@ impl Kind {
                 "コントローラの最大出力は S{0}（$30）ですが、プログラムは S{1} を最大出力としています：指定した出力になりません。",
                 "控制器的满功率为 S{0}（$30），而程序把 S{1} 当作满功率：实际功率将与要求不符。",
                 "A potência máxima do controlador é S{0} ($30) mas o programa toma S{1} como potência máxima: a potência não seria a pedida.",
+            ],
+            Kind::SMaxDiffersAllowed => [
+                "Full power is S{0} ($30), the program takes S{1}: only a warning by your settings, but a wrongly scaled power can burn more than asked.",
+                "La potencia máxima es S{0} ($30), el programa toma S{1}: solo aviso por tus ajustes, pero una potencia mal escalada puede quemar de más.",
+                "Volle Leistung ist S{0} ($30), das Programm nimmt S{1}: laut Einstellung nur Warnung, doch falsch skalierte Leistung kann stärker brennen.",
+                "La pleine puissance est S{0} ($30), le programme prend S{1} : simple avertissement selon vos réglages, mais cela peut brûler plus.",
+                "La piena potenza è S{0} ($30), il programma usa S{1}: solo un avviso per le tue impostazioni, ma una scala errata può bruciare di più.",
+                "最大出力は S{0}（$30）、プログラムは S{1}：設定により警告のみですが、出力の換算が違うと焼きすぎることがあります。",
+                "满功率为 S{0}（$30），程序按 S{1}：按您的设置仅作警告，但功率换算错误可能导致过度烧蚀。",
+                "A potência máxima é S{0} ($30), o programa toma S{1}: só aviso pelas suas definições, mas uma escala errada pode queimar demais.",
             ],
             Kind::SMaxUnknown => [
                 "The listing does not give the value of full power ($30): the program takes S{0}, and what is not known is taken as unsafe.",
@@ -217,6 +230,17 @@ impl Finding {
         let values: Vec<&str> = self.values.iter().map(String::as_str).collect();
         fill(self.kind.sentences()[i], &values)
     }
+}
+
+/// The findings as the settings judge them: with `s_max_mismatch_warns` a full power that differs from the one of the program is a warning instead of a serious finding. Nothing else changes,
+/// and a full power that the listing does not give stays serious.
+pub fn judge(mut found: Vec<Finding>, s_max_mismatch_warns: bool) -> Vec<Finding> {
+    if s_max_mismatch_warns {
+        for f in found.iter_mut().filter(|f| f.kind == Kind::SMaxDiffers) {
+            f.kind = Kind::SMaxDiffersAllowed;
+        }
+    }
+    found
 }
 
 /// Compares a listing with what a program assumes; the serious findings come first.

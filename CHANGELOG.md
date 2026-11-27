@@ -4,6 +4,18 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+- **Safety, the ceiling of a material:** `max_power` and `max_speed` of the material now hold over the sub-layers on the command line and over everything the window works out with the material applied; before, a sub-layer or a box of the window could pass them.
+- **Safety, a project never forgives:** the settings of an `.eh3d` project no longer widen how far past the bed the head may go (`[verify] overscan_mm`), coarsen the arcs of the check or turn on the switch below.
+- **Safety, a different full power can be a warning, only when you say so:** `s_max_mismatch_warns` in `[verify]` and the box "Different $30: only warn" of the window, with its help in the eight languages, turn a `$30` of the controller that is not `s_max` into a warning. It is off by default and the difference stays an error then: a wrongly scaled power can burn more than asked.
+- **The controller in the window and in the report:** the window reads a saved answer to `$$`, shows what does not agree and then writes and sends nothing that has a serious finding against it; `report --controller` adds the comparison, and a report with no answer says that the laser mode and the full power are unknown.
+- **Alarms in the window:** a box says what `ALARM:n` or `error:n` means.
+- **Perforation:** `perf_cut` and `perf_gap` of a layer, and two columns of the table of layers, cut a line as dashes that leave bridges, none shorter than asked.
+- **Lines drawn twice cut once:** `merge_doubled` in `[order]` and a box of the window; not in a layer with tabs or a perforation, whose bridges the second copy would burn through.
+- **Extra passes in the window:** sub-layers are listed under the table of layers, changed, added and removed; they live in the window and the settings file is not written.
+- **Results of a test into the library:** `record`, and a section of the library panel, write the power, speed and passes of a square and the beam width of the strips into a material, marked `verified = off`, never over another value unasked.
+- **Libraries merged:** `merge`, and a button of the window, bring the materials of another library in; the same name with other values writes nothing until you choose, and a ceiling is never raised.
+- **The power mode goes with a vector job:** `server vector` sends `laser_mode` and says that the server does not apply it yet; it also says that a perforation is cut whole there.
+- **Fixed:** a sub-layer of a layer that the open drawing does not have no longer stops the window from working the drawing out.
 - **Third-party notices in every package (`docs/THIRD_PARTY_NOTICES`):** the packages of the releases now carry the copyright notices and licence texts of the Rust crates and of the data the program is built with, and the CI fails when a new dependency or licence is not in the file.
 
 - **Dynamic or constant power:** `laser_mode = m4|m3` in `[machine]` or in a profile, and the list "Power mode" of the window with its help in the eight languages, choose how every program that is written turns the laser on. `m4` stays the default. With `m3` the program is written with `M3`, the power at 0 before every rapid move and stop, and run-ups and run-outs with the laser off, `overscan_mm` long; with `overscan_mm = 0` nothing is written. Tried only as text, not on a machine.

@@ -106,13 +106,14 @@ fn the_verdict_of_a_program_takes_the_listing_into_account() {
     let program = b"G21\nG90\nF3000\nM4 S100\nG1 X10\nM5\nM2\n";
     let limits = Limits::default();
     let mut v = verify(program, &limits).unwrap();
-    v.add_controller(&parse(GOOD).unwrap(), &limits);
+    v.add_controller(&parse(GOOD).unwrap(), &limits, false);
     assert!(v.passes(), "{:?}", v.problems);
     assert!(v.guards.contains(&"controller_settings"));
     let mut v = verify(program, &limits).unwrap();
     v.add_controller(
         &parse(&GOOD.replace("$32=1", "$32=0").replace("=6000.000", "=1000")).unwrap(),
         &limits,
+        false,
     );
     assert!(!v.passes());
     assert!(

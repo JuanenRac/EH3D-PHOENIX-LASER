@@ -14,6 +14,7 @@
 
 use crate::cut;
 use crate::lang::Lang;
+use crate::lasermode::LaserMode;
 use crate::linkpane::LoginStore;
 use crate::vconfig::{LayerMode, ServerSettings, Settings};
 use crate::vector::{Drawing, Pt};
@@ -260,6 +261,8 @@ pub struct VectorOp {
 pub struct VectorJob {
     pub paths: Vec<VectorPath>,
     pub ops: Vec<VectorOp>,
+    /// How the laser is to be turned on (`laser_mode` of the settings).
+    pub laser_mode: LaserMode,
 }
 
 impl VectorJob {
@@ -273,8 +276,17 @@ impl VectorJob {
 /// makes its own program from the shapes, so a note says so for each layer that asked for one. A drawing with nothing to cut or engrave, a point that is not a number or too many points are errors.
 pub fn vector_job(drawing: &Drawing, s: &Settings) -> Result<(VectorJob, Vec<String>), String> {
     s.validate()?;
-    let mut job = VectorJob::default();
+    let mut job = VectorJob {
+        laser_mode: s.machine.laser_mode,
+        ..VectorJob::default()
+    };
     let mut notes = Vec::new();
+    if s.machine.laser_mode == LaserMode::Constant {
+        notes.push(
+            "laser_mode = m3 is sent with the job, but the server does not apply it yet: it writes its program with M4 (write the program with `phoenix-laser vector` and send that program to burn with M3)"
+                .to_string(),
+        );
+    }
     for (layer, points, closed) in cut::placed_paths(drawing, s) {
         if points.len() < 2 {
             continue;
@@ -297,6 +309,12 @@ pub fn vector_job(drawing: &Drawing, s: &Settings) -> Result<(VectorJob, Vec<Str
             if p.kerf_mm != 0.0 || p.tabs > 0 || (mode == "engrave" && p.hatch_spacing_mm > 0.0) {
                 notes.push(format!(
                     "layer {}: the server makes its own program from the shapes, so the kerf, the tabs and the hatch of the layer are not applied (write the program with `phoenix-laser vector` and send that program to apply them)",
+                    cut::comment_text(&layer)
+                ));
+            }
+            if mode == "cut" && p.perf_cut_mm > 0.0 {
+                notes.push(format!(
+                    "layer {}: the server makes its own program from the shapes, so the perforation of the layer is not applied and the line is cut whole",
                     cut::comment_text(&layer)
                 ));
             }
@@ -466,10 +484,11 @@ pub fn vector_request(machine: &str, name: &str, job: &VectorJob) -> String {
         })
         .collect();
     format!(
-        "{{\"machine\":{},\"name\":{},\"app\":{},\"request\":{{\"kind\":\"vector\",\"paths\":[{}],\"operations\":[{}]}}}}",
+        "{{\"machine\":{},\"name\":{},\"app\":{},\"request\":{{\"kind\":\"vector\",\"laser_mode\":{},\"paths\":[{}],\"operations\":[{}]}}}}",
         quote(machine),
         quote(name),
         quote(APP),
+        quote(job.laser_mode.word()),
         paths.join(","),
         ops.join(",")
     )
@@ -1928,6 +1947,7 @@ mod tests {
                 speed_mm_min: 600.0,
                 passes: 3,
             }],
+            laser_mode: LaserMode::Constant,
         };
         let v = Json::parse(&vector_request("laser-1", "plate", &job)).expect("JSON");
         assert_eq!(v.get("machine").and_then(Json::as_str), Some("laser-1"));

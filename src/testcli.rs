@@ -1,7 +1,8 @@
-// EH3D-PHOENIX-LASER - the commands interval, kerf, controller and explain.
+// EH3D-PHOENIX-LASER - the commands interval, kerf, controller, explain, record and merge.
 // Copyright (C) 2026 JuanenRac (Electro Hobby 3D). GPL-3.0-or-later.
-//! Two test programs (the spacing of the lines and the width of the beam), the comparison of a saved listing of the settings of the controller, and the meaning of its alarms. A test program
-//! is written only when it passes the check of the machine of the settings. Nothing here talks to a machine.
+//! Two test programs (the spacing of the lines and the width of the beam), the comparison of a saved listing of the settings of the controller, the meaning of its alarms, and the results of the
+//! tests and other libraries put into a library of materials (`record`, `merge`). A test program is written only when it passes the check of the machine of the settings. Nothing here talks to a
+//! machine.
 
 use crate::cli_args::{finish, flag, num, switch};
 use crate::{take_profile, whole};
@@ -10,6 +11,8 @@ use eh3d_phoenix_laser::gcode_out::{header, Header};
 use eh3d_phoenix_laser::grblcodes;
 use eh3d_phoenix_laser::grblset;
 use eh3d_phoenix_laser::lang::Lang;
+use eh3d_phoenix_laser::libedit::{self, Measured, OnClash};
+use eh3d_phoenix_laser::safety;
 use eh3d_phoenix_laser::vconfig::{self, Settings};
 use eh3d_phoenix_laser::verify;
 use eh3d_phoenix_laser::window::{same_file, write_atomic};
@@ -226,13 +229,16 @@ pub fn controller_job(mut args: Vec<String>) -> Result<(), String> {
         .first()
         .ok_or("controller needs the saved answer of the controller to $$")?;
     let dump = read_dump(path)?;
-    let found = grblset::check(
-        &dump,
-        &grblset::Expect {
-            s_max: s.machine.s_max,
-            bed_mm: s.machine.bed_mm,
-            max_feed_mm_min: None,
-        },
+    let found = grblset::judge(
+        grblset::check(
+            &dump,
+            &grblset::Expect {
+                s_max: s.machine.s_max,
+                bed_mm: s.machine.bed_mm,
+                max_feed_mm_min: None,
+            },
+        ),
+        s.verify.s_max_mismatch_warns,
     );
     for f in &found {
         let mark = if f.kind.serious() { "!!" } else { "--" };
@@ -254,5 +260,116 @@ pub fn explain_job(mut args: Vec<String>) -> Result<(), String> {
         return Err("explain needs ALARM:n or error:n".into());
     }
     println!("{}", grblcodes::explain(&args.join(" "), lang)?);
+    Ok(())
+}
+
+/// `record`: the result of a test written into a material, held by the limits of the machine of the settings.
+pub fn record_job(mut args: Vec<String>) -> Result<(), String> {
+    let (s, config) = machine(&mut args)?;
+    let name = flag(&mut args, "--material")?.ok_or("record needs --material NAME")?;
+    let mut m = Measured::default();
+    if let Some(v) = flag(&mut args, "--power")? {
+        let power = num(&v, "--power")?;
+        safety::check_power("the power", power, s.machine.max_power_percent)?;
+        m.power = Some(power);
+    }
+    if let Some(v) = flag(&mut args, "--speed")? {
+        let speed = num(&v, "--speed")?;
+        safety::check_speed("the speed", speed, s.machine.max_speed_mm_min)?;
+        m.speed = Some(speed);
+    }
+    if let Some(v) = flag(&mut args, "--passes")? {
+        m.passes = Some(whole(&v, "--passes")?);
+    }
+    if let Some(v) = flag(&mut args, "--kerf")? {
+        m.kerf = Some(num(&v, "--kerf")?);
+    }
+    let strips = flag(&mut args, "--strips")?
+        .map(|v| whole(&v, "--strips"))
+        .transpose()?;
+    match flag(&mut args, "--gap")? {
+        Some(v) => {
+            if m.kerf.is_some() {
+                return Err("--kerf and --gap cannot be given together".into());
+            }
+            let width = kerf_from_gap(num(&v, "--gap")?, strips.unwrap_or(10))?;
+            m.kerf = Some((width * 1000.0).round() / 1000.0);
+        }
+        None if strips.is_some() => return Err("--strips needs --gap".into()),
+        None => {}
+    }
+    let replace = switch(&mut args, "--replace");
+    finish(&args, 1)?;
+    let path = args.first().ok_or("record needs a library file")?;
+    if config
+        .as_deref()
+        .is_some_and(|c| same_file(Path::new(c), Path::new(path)))
+    {
+        return Err(format!(
+            "{path}: this is the file of settings, not a library"
+        ));
+    }
+    let text = libedit::read_text(Path::new(path))?;
+    let made = libedit::record(&text, &name, &m, replace).map_err(|e| format!("{path}: {e}"))?;
+    if !made.clashes.is_empty() {
+        let list: Vec<String> = made
+            .clashes
+            .iter()
+            .map(|c| format!("{} {} -> {}", c.key, c.old, c.new))
+            .collect();
+        return Err(format!(
+            "{path}: nothing was written: the material '{name}' has other values ({}); give --replace to write over them",
+            list.join(", ")
+        ));
+    }
+    if made.changed.is_empty() {
+        println!("the material '{name}' says that already: nothing was written");
+        return Ok(());
+    }
+    write_atomic(Path::new(path), &made.text)?;
+    println!(
+        "material '{name}' {} in {path}: {} (marked verified = off)",
+        if made.added { "added" } else { "updated" },
+        made.changed.join(", ")
+    );
+    Ok(())
+}
+
+/// `merge`: the materials of another library brought into one.
+pub fn merge_job(mut args: Vec<String>) -> Result<(), String> {
+    let keep = switch(&mut args, "--keep-mine");
+    let take = switch(&mut args, "--take-theirs");
+    let on_clash = match (keep, take) {
+        (true, true) => return Err("--keep-mine and --take-theirs cannot be given together".into()),
+        (true, false) => OnClash::KeepMine,
+        (false, true) => OnClash::TakeTheirs,
+        (false, false) => OnClash::Stop,
+    };
+    finish(&args, 2)?;
+    let (Some(path), Some(other)) = (args.first(), args.get(1)) else {
+        return Err("merge needs the library and the other library".into());
+    };
+    let mine = libedit::read_text(Path::new(path))?;
+    let theirs = libedit::read_text(Path::new(other))?;
+    let made = libedit::merge(&mine, &theirs, on_clash).map_err(|e| format!("{path}: {e}"))?;
+    if made.stopped {
+        return Err(format!(
+            "{path}: nothing was written: both libraries have these materials with other values: {}; give --keep-mine or --take-theirs",
+            made.clashed.join(", ")
+        ));
+    }
+    if made.text != mine {
+        write_atomic(Path::new(path), &made.text)?;
+    }
+    let replaced = if on_clash == OnClash::TakeTheirs {
+        made.clashed.len()
+    } else {
+        0
+    };
+    println!(
+        "{path}: {} added, {replaced} replaced, {} kept as they were (what came in is marked verified = off)",
+        made.added.len(),
+        made.same.len() + made.clashed.len() - replaced
+    );
     Ok(())
 }
