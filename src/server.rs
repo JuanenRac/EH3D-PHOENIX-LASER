@@ -283,7 +283,7 @@ pub fn vector_job(drawing: &Drawing, s: &Settings) -> Result<(VectorJob, Vec<Str
     let mut notes = Vec::new();
     if s.machine.laser_mode == LaserMode::Constant {
         notes.push(
-            "laser_mode = m3 is sent with the job, but the server does not apply it yet: it writes its program with M4 (write the program with `phoenix-laser vector` and send that program to burn with M3)"
+            "laser_mode = m3 is sent with the job: a server older than 0.2.9 ignores it and writes its program with M4 (check the version of the server before burning with M3)"
                 .to_string(),
         );
     }
