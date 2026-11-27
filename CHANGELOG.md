@@ -4,6 +4,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.1.9] - Safety of material ceilings and of saved projects (not tried on a machine)
+
 - **The power mode of a vector job:** the server applies `laser_mode` from its version 0.2.9; the note of `server vector` with `m3` now says that an older one ignores it and writes `M4`.
 - **Safety, the ceiling of a material:** `max_power` and `max_speed` of the material now hold over the sub-layers on the command line and over everything the window works out with the material applied; before, a sub-layer or a box of the window could pass them.
 - **Safety, a project never forgives:** the settings of an `.eh3d` project no longer widen how far past the bed the head may go (`[verify] overscan_mm`), coarsen the arcs of the check or turn on the switch below.
