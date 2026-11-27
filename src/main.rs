@@ -23,6 +23,7 @@ use eh3d_phoenix_laser::gcode_out::{header, sha256_hex, Header};
 use eh3d_phoenix_laser::guard::Zone;
 use eh3d_phoenix_laser::image::from_bytes;
 use eh3d_phoenix_laser::lang::Lang;
+use eh3d_phoenix_laser::lasermode::LaserMode;
 use eh3d_phoenix_laser::lbrn2::{read_lbrn2, read_project};
 use eh3d_phoenix_laser::materials::{self, Material};
 use eh3d_phoenix_laser::preview;
@@ -126,6 +127,7 @@ project works with a project of the suite (.eh3d, one file with a branch for eac
 settings lists every setting of the program (the keys of the settings file and of a library of materials) with its section, the kind of value it takes, its default and whether it is a safety setting (a limit, a zone, an interlock, the token of the server), as lines of text or, with --json, as JSON for another program to read: it is the contract of the settings of this program, and a test keeps it equal to the keys the reader takes.
 calibrate with --material takes the powers and the feeds from the library: a ladder of --steps values (5) from --spread percent (40) below to the same above the power and the speed of the material, held between the limits and given once each, unless --powers or --feeds give a list; the power of each column is burnt below it and the feed of each row on its left, at the power and the speed of the material, so the squares can be read on the material: with --material they come by default and --no-labels takes them away, and --labels asks for them with lists too (--label-mm is the height of the figures; [calibrate] of --config holds the usual values, and also the lowest power and feed of the ladder, min_power_percent and min_feed_mm_min).
 --max-power is the limit of power, a percent of full power (100 when nothing says another): a program whose power is more than the limit is refused, never lowered. engrave and calibrate also read the limit and --smax from the [machine] section of the file of --config, and engrave the tone curve from its [tone] section (a material and the tone options win over it). --max-speed is the limit of speed (mm/min, 30000 when nothing says another) and works the same way: a feed over it is refused, never lowered.
+laser_mode in [machine] (or in a profile) says how every program turns the laser on: m4 (the default, dynamic power: the controller makes the power follow the speed and puts the beam out when the head stands) or m3 (constant power: a head that stands with the beam on burns through). With m3 the programs are written with M3, the power at 0 before every rapid move and stop, and a run-up and a run-out with the laser off, overscan_mm long (the overscan of the picture for engrave), so overscan_mm must be above 0 and the moves added must fit the bed. The frame with a pilot power is the same in both. The controller must be in its laser mode ($32=1) in both: controller and verify --controller say when it is not. verify judges both and notes where constant power burns more.
 A [profile NAME] section of the file of --config describes a machine and laser (its travel, its limit of power and of speed, its S and its watts); --profile NAME (or profile = NAME in [machine]) makes it the machine, over [machine] and under the options of the command line.";
 
 /// The tone options of the command line over `base`: the curve that is applied to the grey levels before the dots are made.
@@ -188,6 +190,9 @@ struct MachineLimits {
     bed_mm: Option<(f64, f64)>,
     zones: Vec<Zone>,
     overscan_mm: f64,
+    /// Dynamic or constant power, and the run-up of the machine that constant power needs.
+    laser_mode: LaserMode,
+    run_up_mm: f64,
 }
 
 /// The limits and the spindle value that `--config`, `--profile`, `--max-power` and `--max-speed` give to `engrave` and `calibrate`: the file is read as a whole (so it is checked), and
@@ -205,6 +210,7 @@ fn machine_limits(args: &mut Vec<String>) -> Result<MachineLimits, String> {
     let tone = s.tone;
     let calibrate = s.calibrate;
     let read = s.read;
+    let (laser_mode, run_up_mm) = (s.machine.laser_mode, s.machine.overscan_mm);
     let (bed_mm, zones, overscan_mm) = (s.machine.bed_mm, s.zones.clone(), s.verify.overscan_mm);
     if let Some(v) = flag(args, "--max-power")? {
         max_power = num(&v, "--max-power")?;
@@ -225,6 +231,8 @@ fn machine_limits(args: &mut Vec<String>) -> Result<MachineLimits, String> {
         bed_mm,
         zones,
         overscan_mm,
+        laser_mode,
+        run_up_mm,
     })
 }
 
@@ -922,6 +930,7 @@ fn text_job(mut args: Vec<String>) -> Result<(), String> {
         ));
     }
     let (gcode, l) = laser_text::program(&words, machine.origin, &t, &m)?;
+    let gcode = machine.laser_mode.apply(&gcode, machine.overscan_mm)?.gcode;
     let head = header(&Header {
         generator: "phoenix-laser",
         version: env!("CARGO_PKG_VERSION"),
@@ -1063,6 +1072,11 @@ fn text_series(
     for (i, text) in texts.iter().enumerate() {
         let (gcode, _) = laser_text::program(text, machine.origin, t, m)
             .map_err(|e| format!("row {}: {e}", i + 1))?;
+        let gcode = machine
+            .laser_mode
+            .apply(&gcode, machine.overscan_mm)
+            .map_err(|e| format!("row {}: {e}", i + 1))?
+            .gcode;
         let file = out_path.with_file_name(format!("{stem}_{:0width$}{ext}", i + 1));
         programs.push((file, gcode));
     }
@@ -1204,6 +1218,7 @@ fn marks_job(mut args: Vec<String>) -> Result<(), String> {
         bed_mm: machine.bed_mm,
     };
     let gcode = frame::marks_program((size[0], size[1]), machine.origin, &k, &m)?;
+    let gcode = machine.laser_mode.apply(&gcode, machine.overscan_mm)?.gcode;
     let head = header(&Header {
         generator: "phoenix-laser",
         version: env!("CARGO_PKG_VERSION"),
@@ -1301,6 +1316,7 @@ fn barcode_job(mut args: Vec<String>) -> Result<(), String> {
         bed_mm: machine.bed_mm,
     };
     let (gcode, code) = barcode::program(&data, machine.origin, &b, &m)?;
+    let gcode = machine.laser_mode.apply(&gcode, machine.overscan_mm)?.gcode;
     let head = header(&Header {
         generator: "phoenix-laser",
         version: env!("CARGO_PKG_VERSION"),
@@ -1839,6 +1855,7 @@ fn qr_job(mut args: Vec<String>) -> Result<(), String> {
         bed_mm: machine.bed_mm,
     };
     let (gcode, sym) = qr::program(&data, machine.origin, &q, &m)?;
+    let gcode = machine.laser_mode.apply(&gcode, machine.overscan_mm)?.gcode;
     let head = header(&Header {
         generator: "phoenix-laser",
         version: env!("CARGO_PKG_VERSION"),
@@ -2106,6 +2123,7 @@ fn calibrate_job(mut args: Vec<String>) -> Result<(), String> {
     } else {
         grid(&powers, &feeds, &g)?
     };
+    let program = limits.laser_mode.apply(&program, limits.run_up_mm)?.gcode;
     let head = header(&Header {
         generator: "phoenix-laser",
         version: env!("CARGO_PKG_VERSION"),
@@ -2311,7 +2329,11 @@ fn run(mut args: Vec<String>) -> Result<(), String> {
             let w = (width / p.pixel_mm).round().max(1.0) as usize;
             let h = ((w as f64) * aspect).round().max(1.0) as usize;
             let dots = dither(&tone.apply(&img.resize(w, h)?)?, method);
-            let e = engrave(&dots, &p)?;
+            let mut e = engrave(&dots, &p)?;
+            // the run-up of a picture is its overscan
+            let written = limits.laser_mode.apply(&e.gcode, p.overscan_mm)?;
+            e.gcode = written.gcode;
+            e.seconds += written.extra_seconds;
             // a dry run works the engraving out and counts it, and writes nothing
             if dry_run {
                 print!("dry run, nothing written: ");
@@ -2432,6 +2454,7 @@ fn run(mut args: Vec<String>) -> Result<(), String> {
                 Some(p) => focus_grid(&f, p, machine.s_max, machine.max_power_percent)?,
                 None => focus_test(&f, machine.s_max, machine.max_power_percent)?,
             };
+            let text = machine.laser_mode.apply(&text, machine.overscan_mm)?.gcode;
             if config
                 .as_deref()
                 .is_some_and(|c| same_file(Path::new(c), Path::new(out)))

@@ -4,6 +4,12 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+- **Dynamic or constant power:** `laser_mode = m4|m3` in `[machine]` or in a profile, and the list "Power mode" of the window with its help in the eight languages, choose how every program that is written turns the laser on. `m4` stays the default. With `m3` the program is written with `M3`, the power at 0 before every rapid move and stop, and run-ups and run-outs with the laser off, `overscan_mm` long; with `overscan_mm = 0` nothing is written. Tried only as text, not on a machine.
+- **Safety, the check says where constant power burns more:** for a program with `M3`, `verify` notes that the power does not follow the speed, the burns that begin from rest or turn sharply, and a beam turned on or changed while the head stands.
+- **Accents in a comment are taken:** only `!`, `~`, `?` and control characters of a comment are noted; accented letters and other characters outside ASCII still fail outside a comment.
+- **Safety, a carriage return alone ends a line:** what follows it is judged and no longer read as part of the comment before it.
+- **Safety, what is sent to a machine is cleaned:** in the comments of a program sent to the server, `!`, `~`, `?`, control characters and characters outside ASCII become `_`.
+
 ## [0.1.8] - No program is written that fails the check, and the checker refuses what the controller would refuse (not tried on a machine)
 
 - **Safety, comments in brackets end where the controller ends them:** GRBL does not nest them, so in `(a (b) S1000 G1 X500` what follows the first `)` is obeyed. The check read it as one long comment and passed it; now it judges what follows, and a `)` with no comment open fails.

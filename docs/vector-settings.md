@@ -83,7 +83,7 @@ head runs `overscan_mm` past each end of a line so that it is at speed when the 
 
 ## The G-code and its check
 
-The program starts with `G21`, `G90` and `M4 S0` (dynamic power, as the engraving of a picture), moves with `G0 ... S0` while it travels, writes `S` on the first move of every cut, puts the laser off
+The program starts with `G21`, `G90` and `M4 S0` (dynamic power, as the engraving of a picture; see `laser_mode` below for constant power), moves with `G0 ... S0` while it travels, writes `S` on the first move of every cut, puts the laser off
 with `S0` after it and ends with `M5` and `M2`. Before it leaves the program, every line is checked, and a program that fails is never given:
 
 * only the words the program writes are allowed (`G0 G1 G21 G90 M4 M5 M2 X Y Z F S`); a number that is not finite is refused;
@@ -94,6 +94,24 @@ with `S0` after it and ends with `M5` and `M2`. Before it leaves the program, ev
 
 The file written by the commands and by the window has the same header as the one of a picture (generator, units, source with its SHA-256, tools) and is never written over the drawing or
 the settings file it is made from.
+
+## Dynamic and constant power
+
+`laser_mode` in `[machine]` (or in a profile, or the list "Power mode" of the window) says how every program that is written turns the laser on: pictures, drawings, outlines, test grids, focus
+and width tests, text, QR codes, barcodes and positioning marks.
+
+* `m4` (the default): dynamic power. The controller makes the power follow the speed of the head and puts the beam out when it stands.
+* `m3`: constant power. A head that stands or slows with the beam on burns more, or through. The program is written with `M3`, `S0` before every rapid move and stop, and a run-up and a run-out
+  with the laser off, `overscan_mm` long, before and after every burn that begins or ends with the head at rest or turning back on itself (for a picture, its overscan is the run-up). `overscan_mm`
+  must be more than 0. The moves that are added must fit the bed like any other: work that touches the edge of the bed is moved with `origin_x` and `origin_y`, or `[verify] overscan_mm` allows the
+  head past it. The corners inside a burnt contour are left as they are: the head slows there and burns more.
+
+The frame with a pilot power lights the laser with `M3` at its low power in both modes. A job sent as paths (`server vector`) is turned into a program by the server, not here. The controller must
+be in its laser mode (`$32=1`) in both modes: `controller` and `verify --controller` say when a saved answer to `$$` shows it is off or does not say. `verify` judges programs of both modes; for
+`M3` it fails the beam left on while the head waits, pauses, moves only its height or ends, and notes where constant power burns more.
+
+Comments may hold accented letters and other characters outside ASCII; `!`, `~`, `?` and control characters in a comment are noted. What is sent to a machine of the server has all of them in
+comments replaced by `_`.
 
 ## Keys
 
@@ -159,9 +177,10 @@ the settings file it is made from.
 | `max_passes` | 50 | the most passes a layer may ask for, up to 1000 |
 | `max_power_percent` | 100 | the limit of power, from 0.1 to 100 percent of full power: a layer (or `[defaults]`) that asks for more is an error that names it, never lowered; `--max-power` of the commands overrides it |
 | `max_speed_mm_min` | 30000 | the limit of speed, from 1 to 30000 mm/min: a layer (or `[defaults]`), a `--feed`, a `--feeds`, the frame or the focus test that asks for more is an error that names it, never lowered; `--max-speed` of the commands overrides it |
+| `laser_mode` | m4 | `m4` (dynamic power) or `m3` (constant power, which needs `overscan_mm` above 0): see "Dynamic and constant power" |
 | `profile` | none | the name of the `[profile NAME]` that is the machine (see below); `--profile` of the commands chooses another |
 
-The keys of `[machine]` are `s_max`, `overscan_mm`, `rapid_mm_min`, `laser_watts`, `origin_x`, `origin_y`, `focus_z_mm`, `bed_x_mm`, `bed_y_mm`, `max_passes`, `max_power_percent`, `max_speed_mm_min` and `profile`.
+The keys of `[machine]` are `s_max`, `overscan_mm`, `rapid_mm_min`, `laser_watts`, `origin_x`, `origin_y`, `focus_z_mm`, `bed_x_mm`, `bed_y_mm`, `max_passes`, `max_power_percent`, `max_speed_mm_min`, `laser_mode` and `profile`.
 
 In the window, a box holds `laser_watts` (the settings file and a machine profile fill it, and 0 means it is not known): the preview of what the window works out or opens then tells the energy that the program burns and its mean power, as `phoenix-laser preview --laser-watts` does.
 
@@ -176,8 +195,9 @@ A person with two machines, or a laser module that is changed for another, keeps
 | `max_speed_mm_min` | not given | the limit of speed of this machine, from 1 to 30000 |
 | `s_max` | not given | the spindle value that is full power for its controller |
 | `laser_watts` | not given | the optical power of its laser, from 0 to 1000 |
+| `laser_mode` | not given | `m4` or `m3` for this machine |
 
-The keys of `[profile NAME]` are `travel_x_mm`, `travel_y_mm`, `max_power_percent`, `max_speed_mm_min`, `s_max` and `laser_watts`. A file may describe up to 64 profiles.
+The keys of `[profile NAME]` are `travel_x_mm`, `travel_y_mm`, `max_power_percent`, `max_speed_mm_min`, `s_max`, `laser_watts` and `laser_mode`. A file may describe up to 64 profiles.
 
 ### `[frame]`
 

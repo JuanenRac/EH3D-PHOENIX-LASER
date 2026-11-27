@@ -12,6 +12,7 @@ use crate::frame::{self, Frame};
 use crate::gcode_out::{header, sha256_hex, Header};
 use crate::image::{from_bytes, Gray};
 use crate::lang::{fill, Lang, Msg};
+use crate::lasermode::LaserMode;
 use crate::lbrn2::{read_lbrn2, read_project};
 use crate::linkpane::LoginStore;
 use crate::materials::{self, Library, Material};
@@ -1400,6 +1401,8 @@ pub struct Window {
     /// The data that the QR mode burns, and the level of error correction.
     pub qr_data: String,
     pub qr_ecc: QrEcc,
+    /// Dynamic (M4) or constant (M3) power in the programs that are worked out.
+    pub laser_mode: LaserMode,
     /// The QR code burns its light modules instead of the dark ones.
     pub qr_invert: bool,
     /// The QR code and the text are burnt as their mirror images.
@@ -1471,6 +1474,7 @@ impl Window {
             words: String::new(),
             qr_data: String::new(),
             qr_ecc: QrSettings::default().ecc,
+            laser_mode: LaserMode::default(),
             qr_invert: false,
             qr_mirror: false,
             text_mirror: false,
@@ -1570,6 +1574,25 @@ impl Window {
             self.qr_data = data;
             self.mark_stale();
         }
+    }
+
+    pub fn set_laser_mode(&mut self, mode: LaserMode) {
+        if self.laser_mode != mode {
+            self.laser_mode = mode;
+            self.mark_stale();
+        }
+    }
+
+    /// A program worked out with `M4` in the mode of the window; constant power takes its run-up from the box of the overscan.
+    fn in_power_mode(&self, gcode: String) -> Result<String, Status> {
+        if self.laser_mode == LaserMode::Dynamic {
+            return Ok(gcode);
+        }
+        let run_up = self.number(Key::Overscan)?;
+        self.laser_mode
+            .apply(&gcode, run_up)
+            .map(|w| w.gcode)
+            .map_err(Status::Failed)
     }
 
     pub fn set_qr_ecc(&mut self, ecc: QrEcc) {
@@ -1997,6 +2020,7 @@ impl Window {
         s.machine.s_max = self.whole(Key::SMax, 1.0, 100_000.0)?;
         (s.machine.max_power_percent, s.machine.max_speed_mm_min) = self.limits()?;
         s.machine.overscan_mm = self.number(Key::Overscan)?;
+        s.machine.laser_mode = self.laser_mode;
         s.machine.origin = (self.number(Key::OriginX)?, self.number(Key::OriginY)?);
         s.layers = self
             .rows
@@ -2167,6 +2191,7 @@ impl Window {
         self.put(Key::BarcodeMaxMinutes, t(s.barcode.max_minutes));
         self.barcode_mirror = s.barcode.mirror;
         self.qr_ecc = s.qr.ecc;
+        self.laser_mode = s.machine.laser_mode;
         self.qr_invert = s.qr.invert;
         self.qr_mirror = s.qr.mirror;
         self.text_mirror = s.text.mirror;
@@ -2238,6 +2263,7 @@ impl Window {
         self.put(Key::MaxPower, format!("{}", m.max_power_percent));
         self.put(Key::MaxSpeed, format!("{}", m.max_speed_mm_min));
         self.put(Key::LaserWatts, format!("{}", m.laser_watts));
+        self.laser_mode = m.laser_mode;
         self.status = Status::ProfileApplied {
             name: s.profile.clone().unwrap_or_default(),
             s_max: m.s_max,
@@ -2919,7 +2945,14 @@ impl Window {
             .max(1.0) as usize;
         let resized = pic.gray.resize(w, h).map_err(Status::Failed)?;
         let dots = dither(&tone.apply(&resized).map_err(Status::Failed)?, method);
-        let e = engrave(&dots, &p).map_err(Status::Failed)?;
+        let mut e = engrave(&dots, &p).map_err(Status::Failed)?;
+        // the run-up of a picture is its overscan
+        let written = self
+            .laser_mode
+            .apply(&e.gcode, p.overscan_mm)
+            .map_err(Status::Failed)?;
+        e.gcode = written.gcode;
+        e.seconds += written.extra_seconds;
         Ok(Done {
             gcode: e.gcode,
             source: Some((pic.name.clone(), sha256_hex(&pic.bytes))),
@@ -2993,6 +3026,7 @@ impl Window {
             self.number(Key::Overscan)?
         };
         s.machine.origin = (self.number(Key::OriginX)?, self.number(Key::OriginY)?);
+        s.machine.laser_mode = self.laser_mode;
         let mut p = self.settings.params_for(trace::LAYER);
         p.mode = if self.trace_engrave {
             LayerMode::Engrave
@@ -3480,6 +3514,7 @@ impl Window {
         };
         let origin = (self.number(Key::OriginX)?, self.number(Key::OriginY)?);
         let (gcode, l) = text::program(&self.words, origin, &t, &m).map_err(Status::Failed)?;
+        let gcode = self.in_power_mode(gcode)?;
         Ok(Done {
             gcode,
             source: None,
@@ -3526,6 +3561,7 @@ impl Window {
         };
         let origin = (self.number(Key::OriginX)?, self.number(Key::OriginY)?);
         let (gcode, sym) = qr::program(&self.qr_data, origin, &q, &m).map_err(Status::Failed)?;
+        let gcode = self.in_power_mode(gcode)?;
         Ok(Done {
             gcode,
             source: None,
@@ -3575,6 +3611,7 @@ impl Window {
         let origin = (self.number(Key::OriginX)?, self.number(Key::OriginY)?);
         let (gcode, code) =
             barcode::program(&self.barcode_data, origin, &b, &m).map_err(Status::Failed)?;
+        let gcode = self.in_power_mode(gcode)?;
         Ok(Done {
             gcode,
             source: None,
@@ -3617,6 +3654,7 @@ impl Window {
         };
         let origin = (self.number(Key::OriginX)?, self.number(Key::OriginY)?);
         let gcode = frame::marks_program(size, origin, &k, &m).map_err(Status::Failed)?;
+        let gcode = self.in_power_mode(gcode)?;
         let strokes = frame::marks_strokes(size, origin, &k)
             .map_err(Status::Failed)?
             .len();
@@ -3667,6 +3705,7 @@ impl Window {
             None => focus_test(&f, s_max, max_power),
         }
         .map_err(Status::Failed)?;
+        let gcode = self.in_power_mode(gcode)?;
         Ok(Done {
             gcode,
             source: None,
@@ -3774,6 +3813,7 @@ impl Window {
                 false,
             )
         };
+        let gcode = self.in_power_mode(gcode)?;
         Ok(Done {
             gcode,
             source: None,

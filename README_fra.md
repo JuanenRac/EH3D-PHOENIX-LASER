@@ -17,7 +17,7 @@
 
 ---
 
-**Vérification d'honnêteté - ce qui fonctionne aujourd'hui :** une bibliothèque Rust et un programme en ligne de commande (`phoenix-laser`) avec 1108 tests qui s'exécutent sur un ordinateur : il transforme une image en points par tramage et écrit le G-code d'un laser qui brûle ligne par ligne avec une puissance dynamique et un dépassement, lit des dessins SVG, DXF et LBRN2 et écrit le G-code qui découpe leurs contours (ceux de l'intérieur d'abord, avec la largeur du faisceau, des ponts et plusieurs passes) et grave leurs formes avec des lignes, avec les réglages de chaque calque dans un fichier, brûle du texte, des codes QR et des codes-barres, vérifie un programme contre les limites de la machine et écrit une grille d'essai puissance contre avance. Il a une fenêtre (compilée avec `--features gui`), le cadre de panneaux de la suite avec treize panneaux et quatre espaces de travail, qui ouvre une image ou un dessin, montre le trajet du laser, permet de changer les réglages et exporte le G-code ; la fenêtre n'a pas été vue sur un écran par une personne. Le lecteur de projets LBRN2 a été mesuré sur douze projets réels d'un fabricant de lasers (les douze sont lus et l'unique image qu'ils contiennent est décodée et gravée par points ; le sens de leur axe y n'a jamais été confirmé avec une pièce réelle). Il peut aussi envoyer un programme au plugin laser du serveur EH3D et suivre, suspendre ou arrêter le travail (`phoenix-laser server`), testé seulement contre un double du serveur. **Rien ici n'a tourné sur un vrai laser** : rien de ce qui en est tiré, ni d'autre chose, n'a été découpé ou brûlé sur une machine.
+**Vérification d'honnêteté - ce qui fonctionne aujourd'hui :** une bibliothèque Rust et un programme en ligne de commande (`phoenix-laser`) avec 1121 tests qui s'exécutent sur un ordinateur : il transforme une image en points par tramage et écrit le G-code d'un laser qui brûle ligne par ligne avec une puissance dynamique et un dépassement, lit des dessins SVG, DXF et LBRN2 et écrit le G-code qui découpe leurs contours (ceux de l'intérieur d'abord, avec la largeur du faisceau, des ponts et plusieurs passes) et grave leurs formes avec des lignes, avec les réglages de chaque calque dans un fichier, brûle du texte, des codes QR et des codes-barres, vérifie un programme contre les limites de la machine et écrit une grille d'essai puissance contre avance. Il a une fenêtre (compilée avec `--features gui`), le cadre de panneaux de la suite avec treize panneaux et quatre espaces de travail, qui ouvre une image ou un dessin, montre le trajet du laser, permet de changer les réglages et exporte le G-code ; la fenêtre n'a pas été vue sur un écran par une personne. Le lecteur de projets LBRN2 a été mesuré sur douze projets réels d'un fabricant de lasers (les douze sont lus et l'unique image qu'ils contiennent est décodée et gravée par points ; le sens de leur axe y n'a jamais été confirmé avec une pièce réelle). Il peut aussi envoyer un programme au plugin laser du serveur EH3D et suivre, suspendre ou arrêter le travail (`phoenix-laser server`), testé seulement contre un double du serveur. **Rien ici n'a tourné sur un vrai laser** : rien de ce qui en est tiré, ni d'autre chose, n'a été découpé ou brûlé sur une machine.
 
 ---
 
@@ -30,7 +30,7 @@
 |---|---|
 | Version | `0.1.8` |
 | Maturité | Fonctionnel |
-| Tests | 1108 |
+| Tests | 1121 |
 | Pile technique | Rust |
 | Sur du matériel réel | Non essayé : rien ici n'a fonctionné sur une machine |
 
@@ -46,7 +46,7 @@ Chaque ligne est une partie de ce dépôt et le feu dit où elle en est aujourd'
 |---|---|---|
 | Cœur | 🟡 | transforme une image en points par tramage et écrit le G-code d'un laser qui brûle ligne par ligne avec une puissance dynamique et un dépassement, lit des dessins SVG et DXF et les découpe ou les grave par calque (contours ordonnés, largeur du faisceau, ponts, passes, hachures), et une grille d'essai puissance contre avance ; testé sur un ordinateur avec des entrées normales et abîmées, pas avec une collection de fichiers réels. |
 | Ligne de commande | 🟡 | `phoenix-laser` (`engrave`, `calibrate`, `info`, `cut`, `vector`, `layers`) exécute les mêmes fonctions que la bibliothèque et affiche le résultat ; chaque erreur revient sous forme de message et d'un code de sortie non nul. |
-| Tests | 🟡 | 1108 tests passent (`cargo test`), avec des cas normaux, des cas limites et des entrées abîmées. |
+| Tests | 🟡 | 1121 tests passent (`cargo test`), avec des cas normaux, des cas limites et des entrées abîmées. |
 | Sécurité | 🟡 | Rust sûr et simple (`forbid(unsafe_code)`) : rien ne panique sur les fichiers reçus et une mauvaise valeur est une erreur avec sa raison ; pas de revue indépendante. |
 | Fenêtre | 🟠 | Écrite (egui, `--features gui`) comme le cadre de panneaux de la suite : ouvrir ou déposer une image ou un dessin SVG, DXF ou LBRN2, voir le trajet du laser (la découpe d'une couleur, le déplacement atténué), modifier le tableau des calques, les modes texte, code QR, code-barres, repères, cadre et focale, une grille d'étalonnage, zoom et déplacement, estimer la durée, vérifier, rapport, envoyer au serveur, exporter ; sa logique est testée, mais elle n'a pas été vue sur un écran par une personne. |
 | Matériel réel | 🔴 | Non essayé : rien ici n'a été exécuté sur une machine. |
@@ -104,6 +104,7 @@ Chaque ligne est une partie de ce dépôt et le feu dit où elle en est aujourd'
 * **Tramage ordonné** (`src/dither.rs`) : `--dither bayer` (aussi dans la fenêtre) décide chaque point selon sa place et son gris avec une matrice de Bayer 8 x 8, donc le motif est régulier et le même gris brûle toujours les mêmes points ; les tests vérifient que chaque niveau de la matrice apparaît une fois et que le noircissement d'un gris est conservé.
 * **Une vérification qui lit comme le contrôleur** (`src/preview.rs`, `src/verify.rs`) : les espaces dans un nombre ne comptent pas ; `M3` allumé pendant que la tête attend, fait une pause ou que le programme finit, une commande `$` dans le programme, une partie illisible, `G93`, les codes M que d'autres contrôleurs emploient pour un laser, les caractères que GRBL exécute aussitôt et un programme trop long pour être lu en entier font échouer `verify`, et aucune autre note ne peut chasser un danger du rapport. Elle refuse aussi ce que le contrôleur refuserait (les commentaires entre parenthèses ne s'imbriquent pas, des mots inconnus, des mots qui ne peuvent pas partager une ligne, une ligne trop longue, une somme de contrôle), un mouvement après `M2` et l'écriture de ce que le contrôleur conserve (`G10`, `G28.1`, `G30.1`) ; les commandes et la fenêtre n'écrivent aucun programme qui échoue à la vérification (`src/gate.rs`), et jamais une puissance supérieure à celle demandée.
 * **Réglages du contrôleur et alarmes** (`src/grblset.rs`, `src/grblcodes.rs`) : `phoenix-laser controller` compare la réponse enregistrée à `$$` avec la machine (mode laser, pleine puissance `$30`, puissance minimale, pouces, course), `verify --controller` l'ajoute au verdict et `phoenix-laser explain` dit ce que signifie une alarme ou une erreur, dans les huit langues ; rien n'est envoyé à une machine, et aucune liste ni alarme d'un vrai contrôleur n'a été essayée.
+* **Puissance dynamique ou constante** (`src/lasermode.rs`) : `laser_mode = m4|m3` dans `[machine]`, dans un profil ou dans la fenêtre. `M4` est la valeur par défaut ; avec `M3` les programmes reçoivent des élans laser éteint, la vérification signale où la puissance constante brûle davantage, et le contrôleur doit être en mode laser (`$32=1`) dans les deux cas. Non essayé sur une machine.
 * **Essais d'espacement des lignes et de largeur du faisceau** (`src/calibrate.rs`) : `phoenix-laser interval` remplit une rangée de carrés à différents espacements et `phoenix-laser kerf` découpe un rectangle en bandes dont le jeu donne la largeur du faisceau ; les deux ne sont écrits que s'ils passent la vérification, et rien n'a été brûlé.
 * **Autres tramages et lignes découpées deux fois** (`src/dither.rs`, `src/cut.rs`) : Jarvis, Stucki, Sierra et Burkes (aussi dans la fenêtre), et un avertissement quand des tronçons d'un calque de découpe sont dessinés deux fois.
 * **La courbe de tons** (`src/tone.rs`) : avant de fabriquer les points, les niveaux de gris peuvent être étirés sur toute la plage (`--auto-level`), recevoir plus ou moins de contraste et de luminosité, être courbés par un gamma ou inversés, avec une seule table de 256 entrées ; avec les valeurs par défaut l'image n'est pas modifiée du tout.
@@ -240,7 +241,7 @@ Pour prendre une capture de la fenêtre sans l'ouvrir à la main, lancez-la avec
 
 ## 🧪 Tests
 
-La suite compte 1108 tests (`cargo test`, exécutés sous Windows et Linux dans le CI). Ils vérifient les cas normaux, les cas limites et les entrées abîmées : fichiers vides, bruit et fichiers coupés ne font jamais paniquer. Le CI exécute aussi `cargo fmt --check`, `cargo clippy` avec les avertissements comme erreurs et `python -I tools/ci_validate.py`.
+La suite compte 1121 tests (`cargo test`, exécutés sous Windows et Linux dans le CI). Ils vérifient les cas normaux, les cas limites et les entrées abîmées : fichiers vides, bruit et fichiers coupés ne font jamais paniquer. Le CI exécute aussi `cargo fmt --check`, `cargo clippy` avec les avertissements comme erreurs et `python -I tools/ci_validate.py`.
 
 ## 🏗️ Compilation et publication
 
@@ -303,6 +304,7 @@ EH3D-PHOENIX-LASER/
 │   ├── vartext.rs                               le texte variable : un compteur et les colonnes d'un CSV, un texte par ligne
 │   ├── sublayers.rs                             passes supplémentaires sur un calque : réglages propres, limites et ordre du travail
 │   ├── job.rs                                   où le travail commence, le cadre qui le montre et le temps en fourchette
+│   ├── lasermode.rs                             puissance dynamique (M4) ou constante (M3), avec élans
 │   ├── live.rs                                  le réglage en direct de la puissance et de la vitesse, avec quatre limites (aucune machine touchée)
 │   ├── presets.rs                               préréglages de matériau : assigner (copie) ou lier (suit), avec l'avertissement des valeurs non essayées
 │   ├── export.rs                                un dessin réécrit en SVG ou DXF simple
@@ -336,6 +338,7 @@ EH3D-PHOENIX-LASER/
 │   ├── dxf_hatch.rs                             essais des hachures et des solides d'un DXF, avec fuzz à graine fixe
 │   ├── vartext.rs                               tests du texte variable : CSV, compteurs, emplacements, séries et fuzz
 │   ├── sublayers.rs                             tests des passes supplémentaires : ordre, limites, fichiers abîmés à graine fixe
+│   ├── lasermode.rs                             tests de M4 et M3, des commentaires et de l'envoi
 │   ├── joborigin.rs                             tests des neuf ancrages, du cadre laser éteint et du temps en fourchette
 │   ├── livelimits.rs                            tests du réglage en direct : quatre limites, huit langues, graine fixe
 │   ├── presets.rs                               tests des préréglages : assigner, lier, changements refusés, alternatives et série aléatoire
@@ -393,7 +396,7 @@ EH3D-PHOENIX-LASER/
 
 * Il n'a pas été essayé sur une machine ni avec une collection de fichiers réels et n'a pas eu de revue indépendante : rien n'a été brûlé, les vérifications lisent le programme comme du texte et le serveur est un double.
 * Le lecteur de projets LBRN2 a été mesuré sur douze projets réels d'un fabricant de lasers et rien d'autre : les images dans un projet, les formes d'un type absent de ces projets, le sens de l'axe y et le coin arrondi d'un rectangle ne sont pas confirmés.
-* Un dessin est lu dans un sous-ensemble sûr (pas de `use` d'un autre fichier, de texte, de dégradés ni de styles à sélecteurs ; pas de hachures, de texte ni de cotes dans un DXF) ; un contour plus étroit que le faisceau n'est pas découpé et le programme le dit ; le laser est celui d'un contrôleur GRBL avec `M4`.
+* Un dessin est lu dans un sous-ensemble sûr (pas de `use` d'un autre fichier, de texte, de dégradés ni de styles à sélecteurs ; pas de hachures, de texte ni de cotes dans un DXF) ; un contour plus étroit que le faisceau n'est pas découpé et le programme le dit ; le laser est celui d'un contrôleur GRBL avec `M4`/`M3`.
 * Le code QR et le code-barres sont relus par des lecteurs propres au programme ; aucun lecteur optique n'a lu un symbole brûlé, et la fenêtre n'a pas été vue sur un écran par une personne.
 * Les sous-calques, les liens des préréglages et le réglage en direct n'ont pas encore de place dans la fenêtre ; les liens des préréglages sont gardés en mémoire et non dans le fichier de réglages, et rien du réglage en direct n'est envoyé à une machine.
 

@@ -205,6 +205,22 @@ pub fn verify_with(bytes: &[u8], l: &Limits, guard: &Guard) -> Result<Verdict, S
             notes.push(n.clone());
         }
     }
+    let c = program.constant;
+    if c.burns > 0 {
+        notes.push("the program burns with constant power (M3): the power does not follow the speed of the head, so it burns more where the head slows (starts, ends, corners, tight curves) and burns through where the head stops with the beam on: try it on a scrap piece first".to_string());
+    }
+    if c.slow > 0 {
+        notes.push(format!(
+            "line {}: with constant power (M3) {} burn(s) begin where the head starts from rest or turns sharply, and burn more there",
+            c.first_slow_line, c.slow
+        ));
+    }
+    if c.standing_line > 0 {
+        notes.push(format!(
+            "line {}: with constant power (M3) the beam is turned on or its power changed while the head stands",
+            c.standing_line
+        ));
+    }
     let allowed_s = f64::from(l.s_max) * l.max_power_percent / 100.0;
     let max_burn_s = program
         .moves

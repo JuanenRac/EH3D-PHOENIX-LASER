@@ -124,6 +124,11 @@ pub fn interval_job(mut args: Vec<String>) -> Result<(), String> {
     finish(&args, 1)?;
     let out = args.first().ok_or("interval needs an output file")?;
     let program = interval_test(&spacings, power, feed, &g, label)?;
+    let program = s
+        .machine
+        .laser_mode
+        .apply(&program, s.machine.overscan_mm)?
+        .gcode;
     write_checked(
         out,
         &config,
@@ -169,6 +174,11 @@ pub fn kerf_job(mut args: Vec<String>) -> Result<(), String> {
     finish(&args, 1)?;
     let out = args.first().ok_or("kerf needs an output file")?;
     let program = kerf_test(&k, s.machine.s_max)?;
+    let program = s
+        .machine
+        .laser_mode
+        .apply(&program, s.machine.overscan_mm)?
+        .gcode;
     write_checked(
         out,
         &config,

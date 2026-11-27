@@ -16,7 +16,7 @@ The menu File of the window opens, saves, imports, takes and extracts an `.eh3d`
 
 ## Capabilities
 
-The official state of each capability is in `REQUIREMENTS.md`. The register has 165 requirements: 143 implemented, 18 prototype, 4 planned and 0 validated. By progress: 143 done, 18 partial, 0 pending and 4 blocked. This page never states a state that `REQUIREMENTS.md` does not.
+The official state of each capability is in `REQUIREMENTS.md`. The register has 169 requirements: 147 implemented, 18 prototype, 4 planned and 0 validated. By progress: 147 done, 18 partial, 0 pending and 4 blocked. This page never states a state that `REQUIREMENTS.md` does not.
 
 ## Open questions
 
@@ -32,7 +32,7 @@ The official state of each capability is in `REQUIREMENTS.md`. The register has 
 
 ## Known technical debt and omitted tests
 
-* 1108 tests (`#[test]` lines of `src/` and `tests/`; nine of them keep this register true), all on a computer, with fixed seeds where chance is involved.
+* 1121 tests (`#[test]` lines of `src/` and `tests/`; nine of them keep this register true), all on a computer, with fixed seeds where chance is involved.
 * Nothing has been burnt: the checks read the program as text and the server is a stand-in.
 * The window has not been looked at on a screen by a person.
 * The QR code and the barcode are read back by readers of the program's own; no scanner has read a burnt symbol.

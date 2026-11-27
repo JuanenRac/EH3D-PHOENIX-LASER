@@ -165,7 +165,7 @@ fn what_the_controller_obeys_at_once_fails_in_the_code_and_is_told_in_a_comment(
             with(line).problems
         );
     }
-    for line in ["; done?", "(25 \u{b0}C)", "(go!)"] {
+    for line in ["; done?", "(go!)"] {
         let v = with(line);
         assert!(v.passes(), "{line}: {:?}", v.problems);
         assert!(
