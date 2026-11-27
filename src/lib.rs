@@ -19,6 +19,8 @@ pub mod export;
 pub mod flatten;
 pub mod frame;
 pub mod gcode_out;
+pub mod grblcodes;
+pub mod grblset;
 pub mod guard;
 #[cfg(feature = "gui")]
 pub mod gui;

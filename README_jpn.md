@@ -17,7 +17,7 @@
 
 ---
 
-**正直さの確認 - 現在実際に動くもの：**Rust のライブラリとコマンドラインプログラム（`phoenix-laser`）で、コンピューター上で動く 1060 件のテストがあります。画像をディザリングでドットにして、ダイナミック出力とオーバースキャンで 1 行ずつ焼くレーザーの G コードを書き、SVG・DXF・LBRN2 の図面を読み、その輪郭を切る G コード（内側の輪郭が先、ビーム幅を考慮、ブリッジ、複数パス）を書き、図形を線で彫刻します。各レイヤーの設定はファイルに置きます。文字、QR コード、バーコードも焼き、プログラムをマシンの上限に照らして検査し、出力と送りのテスト格子を書きます。ウィンドウ（`--features gui` でビルド）はスイートのドッキングフレームで、13 のパネルと 4 つのワークスペースがあり、画像や図面を開き、レーザーの経路を表示し、設定を変更でき、G コードを書き出します。ウィンドウは、人が画面で確認したことがありません。LBRN2 プロジェクトのリーダーはレーザーメーカーの実在する 12 のプロジェクトで測定しました（12 件とも読め、その中の唯一の画像はデコードされてドットとして彫刻されます。y 軸の向きは実際の部品で確認されたことがありません）。プログラムを EH3D サーバーのレーザープラグインへ送り、ジョブを追跡・保留・停止することもできます（`phoenix-laser server`）が、サーバーの代役に対してのみテスト済みです。**ここにあるものは実際のレーザーで実行されたことがありません**。これらのプロジェクトやほかのものから作ったものを、機械で切ったり焼いたりしたこともありません。
+**正直さの確認 - 現在実際に動くもの：**Rust のライブラリとコマンドラインプログラム（`phoenix-laser`）で、コンピューター上で動く 1094 件のテストがあります。画像をディザリングでドットにして、ダイナミック出力とオーバースキャンで 1 行ずつ焼くレーザーの G コードを書き、SVG・DXF・LBRN2 の図面を読み、その輪郭を切る G コード（内側の輪郭が先、ビーム幅を考慮、ブリッジ、複数パス）を書き、図形を線で彫刻します。各レイヤーの設定はファイルに置きます。文字、QR コード、バーコードも焼き、プログラムをマシンの上限に照らして検査し、出力と送りのテスト格子を書きます。ウィンドウ（`--features gui` でビルド）はスイートのドッキングフレームで、13 のパネルと 4 つのワークスペースがあり、画像や図面を開き、レーザーの経路を表示し、設定を変更でき、G コードを書き出します。ウィンドウは、人が画面で確認したことがありません。LBRN2 プロジェクトのリーダーはレーザーメーカーの実在する 12 のプロジェクトで測定しました（12 件とも読め、その中の唯一の画像はデコードされてドットとして彫刻されます。y 軸の向きは実際の部品で確認されたことがありません）。プログラムを EH3D サーバーのレーザープラグインへ送り、ジョブを追跡・保留・停止することもできます（`phoenix-laser server`）が、サーバーの代役に対してのみテスト済みです。**ここにあるものは実際のレーザーで実行されたことがありません**。これらのプロジェクトやほかのものから作ったものを、機械で切ったり焼いたりしたこともありません。
 
 ---
 
@@ -30,7 +30,7 @@
 |---|---|
 | バージョン | `0.1.7` |
 | 成熟度 | 機能する |
-| テスト | 1060 |
+| テスト | 1094 |
 | 技術スタック | Rust |
 | 実機での動作 | 未試験：ここにあるものは機械で動かしたことがありません |
 
@@ -46,7 +46,7 @@
 |---|---|---|
 | コア | 🟡 | 画像をディザリングで点に変換し、動的出力とオーバースキャンで1行ずつ照射するレーザーの G コードを書き、SVG と DXF の図面を読んでレイヤーごとに切断または彫刻し（輪郭の順序、ビーム幅、タブ、パス、ハッチ）、出力対送り速度のテスト格子も作ります。コンピューター上で通常入力と壊れた入力を使ってテスト済みで、実際のファイルの集まりでは確認していません。 |
 | コマンドライン | 🟡 | `phoenix-laser`（`engrave`、`calibrate`、`info`、`cut`、`vector`、`layers`）はライブラリと同じ関数を実行して結果を表示します。エラーはすべてメッセージと 0 以外の終了コードで返ります。 |
-| テスト | 🟡 | 1060 件のテストが通ります（`cargo test`）。通常ケース、境界ケース、破損入力を含みます。 |
+| テスト | 🟡 | 1094 件のテストが通ります（`cargo test`）。通常ケース、境界ケース、破損入力を含みます。 |
 | セキュリティ | 🟡 | 安全な Rust のみ（`forbid(unsafe_code)`）。受け取ったファイルでパニックせず、不正な値は理由付きのエラーになります。独立したレビューはありません。 |
 | ウィンドウ | 🟠 | スイートのドッキングフレームとして作成済み（egui、`--features gui`）：画像または SVG・DXF・LBRN2 の図面を開く／ドロップする、レーザーの経路（切断は1色、移動は薄く）を見る、レイヤーの表を編集する、文字・QR コード・バーコード・マーク・枠・フォーカスの各モード、キャリブレーション格子、拡大縮小と移動、時間の見積り、検査、レポート、サーバーへの送信、書き出し。ロジックはテスト済みですが、人が画面で確認したことはありません。 |
 | 実機 | 🔴 | 未試験：ここにあるものは機械で実行したことがありません。 |
@@ -102,6 +102,10 @@
 * **プリセットとライブ調整**（`src/presets.rs`、`src/live.rs`、設定ファイルの `[live]`）：材料と厚さのプリセットは、レイヤーに割り当てる（コピー）か、リンクする（レイヤーがプリセットに追従する。変更は届いたレイヤーを示し、1つでも受け入れられない場合は全体が拒否される）ことができます。共通データベースの値はそのまま使われ、機械では試されていないと表示され、他の情報源の第2の値は要求しない限り使われません。出力と速度のライブ調整は4つの上限（既定では値を上げない独自の範囲、機械、サーバー、パイロット）で制限される計算で、どの上限が値を抑えたかを示します。機械には何も送信されません。
 * **ウィンドウ内のレポート**（`src/window.rs`）：ウィンドウが計算したプログラムから、ウィンドウの言語で `phoenix-laser report` のレポートを作成できます。何かが変わるとレポートは破棄されます。
 * **規則的ディザリング**（`src/dither.rs`）：`--dither bayer`（ウィンドウでも選べます）は 8 x 8 のベイヤー行列で、各ドットをその位置と灰色だけで決めます。模様は規則的で、同じ灰色は常に同じドットを焼きます。テストは行列の各レベルが 1 回ずつ現れることと、灰色の濃さが保たれることを確認します。
+* **コントローラと同じ読み方の検査**（`src/preview.rs`、`src/verify.rs`）：数値の中の空白は無視します。ヘッドの待機・一時停止・終了時に点いたままの `M3`、プログラム内の `$` コマンド、読めない部分、`G93`、他のコントローラがレーザーに使う M コード、GRBL が即座に実行する文字、長すぎて最後まで読めないプログラムは `verify` を失敗させ、他の注記が危険を報告から押し出すことはありません。
+* **コントローラの設定とアラーム**（`src/grblset.rs`、`src/grblcodes.rs`）：`phoenix-laser controller` は保存した `$$` の応答を機械（レーザーモード、最大出力 `$30`、最小出力、インチ、移動範囲）と比べ、`verify --controller` は判定に加え、`phoenix-laser explain` はアラームやエラーの意味を 8 言語で示します。機械には何も送らず、実機の一覧やアラームでは試していません。
+* **線間隔とビーム幅のテスト**（`src/calibrate.rs`）：`phoenix-laser interval` は間隔の異なる正方形を一列に塗り、`phoenix-laser kerf` は長方形を短冊に切ってその隙間からビーム幅を求めます。検査に合格した場合だけ書き出し、実際には何も焼いていません。
+* **追加のディザリングと二重切断の警告**（`src/dither.rs`、`src/cut.rs`）：Jarvis、Stucki、Sierra、Burkes（ウィンドウでも選べます）と、切断レイヤーの区間が二重に描かれている場合の警告。
 * **トーンカーブ**（`src/tone.rs`）：ドットを作る前に、グレー階調を全範囲に伸ばす（`--auto-level`）、コントラストと明るさを変える、ガンマで曲げる、反転する、といった調整を 256 項目の 1 つの表で行います。既定値では画像はまったく変わりません。
 * **検証済みの G コード：**図面のプログラムは渡す前に1行ずつ検証されます。早送り中や速度なしでレーザーが点灯せず、`S` は全出力を超えず、ベッド外への移動はなく、最後は `M5` です。元の図面や設定の上にファイルが書かれることはありません。
 * **スイートのプロジェクト**（`src/eh3dfile.rs`、`docs/eh3d-project.md`）：`phoenix-laser project` は、プログラムごとにブランチを持つ 1 つのファイルである `.eh3d` プロジェクトの `laser/` ブランチに作業を保管します。`save` は図面、設定、材料ライブラリ、プログラムを格納し、`import` は他のプログラムの図面（LBRN2、LBRN、SVG、DXF）をバイト単位でそのまま保持して、読めたもの、読めなかったもの、書き出しで失われるものの報告を付けます。`take` は `cad/` などの別ブランチから輪郭やメッシュをコピーし、元のハッシュと形式を記録するので、`list` と `open` は古くなったことを知らせます。`open` と `extract` は既存ファイルを上書きせずに書き出します。書き込むのは `laser/` だけで、他のブランチは未知のものも含めてバイトが変わりません。試したのは架空のプロジェクトのみです。
@@ -168,7 +172,7 @@ EH3D-PHOENIX-LASER は EH3D Fabrication Suite のプログラムの一つです�
 
 ```text
 phoenix-laser engrave IMAGE OUT.nc --width-mm 50 [--dot-mm 0.1] [--feed 3000] [--power 50] [--smax 1000]
-              [--dither fs|atkinson|threshold|bayer] [--threshold 128] [--overscan MM|auto] [--accel 1000] [--origin X,Y] [--dry-run]
+              [--dither fs|atkinson|threshold|bayer|jarvis|stucki|sierra|burkes] [--threshold 128] [--overscan MM|auto] [--accel 1000] [--origin X,Y] [--dry-run]
               [--gamma 1] [--contrast 0] [--brightness 0] [--invert] [--auto-level] [--max-power 100] [--max-speed MM/MIN] [--config FILE] [--profile NAME]
               [--material NAME --materials FILE]
 phoenix-laser calibrate OUT.nc --powers 20,40,60,80|20:80:20 --feeds 1000,2000,3000|1000:3000:1000 [--smax 1000] [--max-power 100] [--max-speed MM/MIN] [--config FILE] [--profile NAME]
@@ -191,8 +195,13 @@ phoenix-laser materials FILE
 phoenix-laser focus OUT.nc --z-step MM [--z-start MM] [--steps 9] [--length 10] [--spacing 2] [--feed 1000] [--power 30 | --powers 10,20,30] [--smax 1000] [--max-power P] [--max-speed MM/MIN] [--config FILE] [--profile NAME]
 phoenix-laser frame OUT.nc --size W,H | --gcode PROGRAM.nc [--origin X,Y] [--margin MM] [--feed 3000] [--laps 1] [--bed X,Y] [--smax N]
               [--pilot P --confirm-laser-on] [--max-power P] [--max-speed MM/MIN] [--config FILE] [--profile NAME]
-phoenix-laser verify PROGRAM.nc [--config FILE] [--profile NAME] [--smax N] [--max-power P] [--max-speed MM/MIN] [--bed X,Y] [--overscan-mm MM] [--accel 1000] [--expect-sha256 HASH] [--json]
+phoenix-laser verify PROGRAM.nc [--config FILE] [--profile NAME] [--smax N] [--max-power P] [--max-speed MM/MIN] [--bed X,Y] [--overscan-mm MM] [--accel 1000] [--expect-sha256 HASH] [--controller SETTINGS.txt] [--json]
 phoenix-laser report PROGRAM.nc [--config FILE] [--profile NAME] [--lang CODE] [--material NAME --materials FILE]
+phoenix-laser controller SETTINGS.txt [--config FILE] [--profile NAME] [--smax N] [--bed X,Y] [--lang CODE]
+phoenix-laser explain ALARM:n|error:n [--lang CODE]
+phoenix-laser interval OUT.nc --spacings 0.08:0.2:0.02 --power P --feed MM/MIN [--square-mm 8] [--gap-mm 3] [--label-mm 2|--no-labels] [--smax N] [--max-power P] [--max-speed MM/MIN] [--bed X,Y] [--config FILE] [--profile NAME]
+phoenix-laser kerf OUT.nc --power P --feed MM/MIN [--strips 10] [--strip-mm 5] [--height-mm 20] [--passes 1] [--smax N] [--max-power P] [--max-speed MM/MIN] [--bed X,Y] [--config FILE] [--profile NAME]
+phoenix-laser kerf --gap MM [--strips 10]
 phoenix-laser settings [--json]
 phoenix-laser project list FILE.eh3d [--json]
 phoenix-laser project save FILE.eh3d [--drawing D] [--config FILE] [--materials FILE] [--program P.nc] [--name NAME] [--id ID]
@@ -231,7 +240,7 @@ cargo run --release --features gui -- --shot screen.png examples/plate.svg   # a
 
 ## 🧪 テスト
 
-テストは 1060 件あります（`cargo test`、CI では Windows と Linux で実行）。通常ケース、境界ケース、破損入力を確認し、空のファイル、ゴミデータ、途中で切れたファイルでもパニックしません。CI は `cargo fmt --check`、警告をエラーにした `cargo clippy`、`python -I tools/ci_validate.py` も実行します。
+テストは 1094 件あります（`cargo test`、CI では Windows と Linux で実行）。通常ケース、境界ケース、破損入力を確認し、空のファイル、ゴミデータ、途中で切れたファイルでもパニックしません。CI は `cargo fmt --check`、警告をエラーにした `cargo clippy`、`python -I tools/ci_validate.py` も実行します。
 
 ## 🏗️ ビルドとリリース
 
@@ -257,7 +266,10 @@ EH3D-PHOENIX-LASER/
 │   ├── main.rs                                  コマンドライン：engrave、calibrate、cut、vector、verify、report、convert、settings ほか
 │   ├── calibrate.rs                             テスト格子：出力と送り、フォーカスの梯子、材料の格子
 │   ├── cli_args.rs                              コマンドライン引数：小さなツールすべてで同じファイル
-│   ├── dither.rs                                階調からドットへ：しきい値、Floyd-Steinberg、Atkinson、Bayer
+│   ├── grblset.rs                               保存したコントローラ設定と機械の比較
+│   ├── grblcodes.rs                             GRBL のアラームとエラーの意味（8 言語）
+│   ├── testcli.rs                               interval、kerf、controller、explain コマンド
+│   ├── dither.rs                                グレーからドットへ：しきい値、Bayer、6 種の誤差拡散
 │   ├── materials.rs                             素材ライブラリ：出力、速度、パス、ドット、トーン
 │   ├── commonmat.rs                             共通の材料データベースの開始点（値はそのまま）
 │   ├── preview.rs                               G-code のプレビュー：移動、時間、危険、経路の SVG
@@ -315,6 +327,9 @@ EH3D-PHOENIX-LASER/
 │   ├── vector.rs                                図面からの切断のテスト：コマンド、サンプル、悪意あるファイル、G-code の確認
 │   ├── lbrn2.rs                                 LBRN2リーダーのテスト：自作プロジェクト、悪意あるファイル、ファズ
 │   ├── lbrn2_more.rs                            LBRN2の画像、y軸、楕円、多角形、ブリッジ、ファズのテスト
+│   ├── faults.rs                                プログラム検査が拒否する内容のテスト
+│   ├── grblset.rs                               コントローラ設定、アラーム、エラーのテスト
+│   ├── testcuts.rs                              線間隔・ビーム幅テストとディザリングのテスト
 │   ├── lbrn_v1.rs                               旧形式のプロジェクト、そのテキスト、コマンドラインでのプロジェクトのレイヤーのテスト
 │   ├── dxf_hatch.rs                             DXF のハッチングとソリッドのテスト（固定シードのファズ付き）
 │   ├── vartext.rs                               可変テキストのテスト：CSV、カウンター、置換位置、連番、ファズ

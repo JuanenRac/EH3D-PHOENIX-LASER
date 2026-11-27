@@ -16,7 +16,7 @@ Every key is optional, and a command takes from a material only what it says. Th
 | `hatch_cross` | `on` / `off` | drawings | fill the engraved shapes a second time at right angles to the first lines |
 | `dot` | 0.01 to 5 | pictures | the size of a dot, mm |
 | `overscan` | 0 to 50 | pictures | the run past the work at each end of a line, mm |
-| `dither` | `fs`, `atkinson`, `threshold`, `bayer` | pictures | how the grey levels become dots |
+| `dither` | `fs`, `atkinson`, `threshold`, `bayer`, `jarvis`, `stucki`, `sierra`, `burkes` | pictures | how the grey levels become dots |
 | `threshold` | 0 to 255 | pictures | the level of `dither = threshold` (128 when it is not said) |
 | `gamma`, `contrast`, `brightness` | 0.1 to 10, -100 to 100, -100 to 100 | pictures | the tone curve (see `phoenix-laser help`) |
 | `invert`, `auto_level` | `on` / `off` | pictures | the tone curve |

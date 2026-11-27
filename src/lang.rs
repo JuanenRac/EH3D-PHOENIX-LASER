@@ -125,6 +125,10 @@ pub enum Msg {
     DitherAtkinson,
     DitherBayer,
     DitherThreshold,
+    DitherJarvis,
+    DitherStucki,
+    DitherSierra,
+    DitherBurkes,
     Threshold,
     Feed,
     Power,
@@ -362,7 +366,7 @@ pub enum Msg {
 }
 
 impl Msg {
-    pub const ALL: [Msg; 271] = [
+    pub const ALL: [Msg; 275] = [
         Msg::Language,
         Msg::Fit,
         Msg::Cancel,
@@ -400,6 +404,10 @@ impl Msg {
         Msg::DitherAtkinson,
         Msg::DitherBayer,
         Msg::DitherThreshold,
+        Msg::DitherJarvis,
+        Msg::DitherStucki,
+        Msg::DitherSierra,
+        Msg::DitherBurkes,
         Msg::Threshold,
         Msg::Feed,
         Msg::Power,
@@ -1009,6 +1017,11 @@ impl Msg {
                 "阈值",
                 "Limiar",
             ],
+            // the names of the people who described each way: the same in every language
+            Msg::DitherJarvis => ["Jarvis"; 8],
+            Msg::DitherStucki => ["Stucki"; 8],
+            Msg::DitherSierra => ["Sierra"; 8],
+            Msg::DitherBurkes => ["Burkes"; 8],
             Msg::Threshold => [
                 "Threshold (0 to 255)",
                 "Umbral (0 a 255)",

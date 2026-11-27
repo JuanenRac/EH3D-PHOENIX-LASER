@@ -12,16 +12,28 @@ pub enum Method {
     /// Ordered dithering with an 8 x 8 Bayer matrix: every dot is decided by its own place and its own grey, so the pattern is regular, nothing spreads from a dot to the next one and two
     /// pictures of the same grey burn the same dots. Good for flat greys and for a laser that does not like isolated dots.
     Bayer,
+    /// Spreads the error over twelve dots of two rows below: smoother greys, softer edges.
+    Jarvis,
+    /// Like Jarvis with the weights doubled near the dot: smooth and a little crisper.
+    Stucki,
+    /// Ten dots over two rows below.
+    Sierra,
+    /// Seven dots of this row and the one below.
+    Burkes,
 }
 
 impl Method {
-    /// The method of a word of the command line or of a file of settings: `fs`, `atkinson`, `threshold` (with the given level) or `bayer`.
+    /// The method of a word of the command line or of a file of settings: `fs`, `atkinson`, `threshold` (with the given level), `bayer`, `jarvis`, `stucki`, `sierra` or `burkes`.
     pub fn from_word(word: &str, threshold: u8) -> Option<Method> {
         match word.trim().to_ascii_lowercase().as_str() {
             "fs" | "floyd-steinberg" => Some(Method::FloydSteinberg),
             "atkinson" => Some(Method::Atkinson),
             "threshold" => Some(Method::Threshold(threshold)),
             "bayer" | "ordered" => Some(Method::Bayer),
+            "jarvis" => Some(Method::Jarvis),
+            "stucki" => Some(Method::Stucki),
+            "sierra" => Some(Method::Sierra),
+            "burkes" => Some(Method::Burkes),
             _ => None,
         }
     }
@@ -68,6 +80,68 @@ impl Dots {
     }
 }
 
+/// Where the error of a dot goes: columns and rows from it, and the part of the error as a fraction.
+type Spread = &'static [(isize, isize, i32, i32)];
+
+const FLOYD_STEINBERG: Spread = &[(1, 0, 7, 16), (-1, 1, 3, 16), (0, 1, 5, 16), (1, 1, 1, 16)];
+const ATKINSON: Spread = &[
+    (1, 0, 1, 8),
+    (2, 0, 1, 8),
+    (-1, 1, 1, 8),
+    (0, 1, 1, 8),
+    (1, 1, 1, 8),
+    (0, 2, 1, 8),
+];
+const JARVIS: Spread = &[
+    (1, 0, 7, 48),
+    (2, 0, 5, 48),
+    (-2, 1, 3, 48),
+    (-1, 1, 5, 48),
+    (0, 1, 7, 48),
+    (1, 1, 5, 48),
+    (2, 1, 3, 48),
+    (-2, 2, 1, 48),
+    (-1, 2, 3, 48),
+    (0, 2, 5, 48),
+    (1, 2, 3, 48),
+    (2, 2, 1, 48),
+];
+const STUCKI: Spread = &[
+    (1, 0, 8, 42),
+    (2, 0, 4, 42),
+    (-2, 1, 2, 42),
+    (-1, 1, 4, 42),
+    (0, 1, 8, 42),
+    (1, 1, 4, 42),
+    (2, 1, 2, 42),
+    (-2, 2, 1, 42),
+    (-1, 2, 2, 42),
+    (0, 2, 4, 42),
+    (1, 2, 2, 42),
+    (2, 2, 1, 42),
+];
+const SIERRA: Spread = &[
+    (1, 0, 5, 32),
+    (2, 0, 3, 32),
+    (-2, 1, 2, 32),
+    (-1, 1, 4, 32),
+    (0, 1, 5, 32),
+    (1, 1, 4, 32),
+    (2, 1, 2, 32),
+    (-1, 2, 2, 32),
+    (0, 2, 3, 32),
+    (1, 2, 2, 32),
+];
+const BURKES: Spread = &[
+    (1, 0, 8, 32),
+    (2, 0, 4, 32),
+    (-2, 1, 2, 32),
+    (-1, 1, 4, 32),
+    (0, 1, 8, 32),
+    (1, 1, 4, 32),
+    (2, 1, 2, 32),
+];
+
 pub fn dither(img: &Gray, method: Method) -> Dots {
     let (w, h) = (img.w, img.h);
     let mut burn = vec![false; w * h];
@@ -87,20 +161,20 @@ pub fn dither(img: &Gray, method: Method) -> Dots {
                 }
             }
         }
-        Method::FloydSteinberg | Method::Atkinson => {
+        Method::FloydSteinberg
+        | Method::Atkinson
+        | Method::Jarvis
+        | Method::Stucki
+        | Method::Sierra
+        | Method::Burkes => {
             let mut v: Vec<i32> = img.data.iter().map(|&b| i32::from(b)).collect();
-            let spread: &[(isize, isize, i32, i32)] = match method {
-                Method::FloydSteinberg => {
-                    &[(1, 0, 7, 16), (-1, 1, 3, 16), (0, 1, 5, 16), (1, 1, 1, 16)]
-                }
-                _ => &[
-                    (1, 0, 1, 8),
-                    (2, 0, 1, 8),
-                    (-1, 1, 1, 8),
-                    (0, 1, 1, 8),
-                    (1, 1, 1, 8),
-                    (0, 2, 1, 8),
-                ],
+            let spread = match method {
+                Method::Atkinson => ATKINSON,
+                Method::Jarvis => JARVIS,
+                Method::Stucki => STUCKI,
+                Method::Sierra => SIERRA,
+                Method::Burkes => BURKES,
+                _ => FLOYD_STEINBERG,
             };
             for y in 0..h {
                 for x in 0..w {
@@ -189,7 +263,56 @@ mod tests {
     }
 
     #[test]
+    fn the_new_ways_of_spreading_keep_white_black_and_the_darkness_of_a_grey() {
+        for method in [
+            Method::Jarvis,
+            Method::Stucki,
+            Method::Sierra,
+            Method::Burkes,
+        ] {
+            assert_eq!(dither(&flat(24, 17, 255), method).count(), 0, "{method:?}");
+            assert_eq!(
+                dither(&flat(24, 17, 0), method).count(),
+                24 * 17,
+                "{method:?}"
+            );
+            for (level, expected) in [(64u8, 0.75), (128, 0.5), (192, 0.25)] {
+                let d = dither(&flat(96, 96, level), method);
+                let ratio = d.count() as f64 / (96.0 * 96.0);
+                assert!(
+                    (ratio - expected).abs() < 0.05,
+                    "{method:?} grey {level}: {ratio} against {expected}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn the_weights_of_each_spread_add_to_the_whole_error_or_less() {
+        for (spread, whole) in [
+            (FLOYD_STEINBERG, 16),
+            (JARVIS, 48),
+            (STUCKI, 42),
+            (SIERRA, 32),
+            (BURKES, 32),
+        ] {
+            assert_eq!(spread.iter().map(|s| s.2).sum::<i32>(), whole);
+            assert!(spread.iter().all(|s| s.3 == whole));
+            // an error only ever goes to a dot that has not been decided
+            assert!(spread.iter().all(|s| s.1 > 0 || (s.1 == 0 && s.0 > 0)));
+        }
+    }
+
+    #[test]
     fn the_words_of_the_methods_are_known() {
+        for (word, method) in [
+            ("jarvis", Method::Jarvis),
+            ("Stucki", Method::Stucki),
+            ("sierra", Method::Sierra),
+            (" burkes ", Method::Burkes),
+        ] {
+            assert_eq!(Method::from_word(word, 9), Some(method));
+        }
         assert_eq!(Method::from_word("fs", 9), Some(Method::FloydSteinberg));
         assert_eq!(Method::from_word("Atkinson", 9), Some(Method::Atkinson));
         assert_eq!(

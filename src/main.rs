@@ -4,6 +4,7 @@
 
 mod cli_args;
 mod projcli;
+mod testcli;
 
 use cli_args::{finish, flag, num, switch};
 use eh3d_phoenix_laser::barcode;
@@ -50,7 +51,7 @@ const MAX_PROGRAM_BYTES: u64 = 256 << 20;
 const HELP: &str = "phoenix-laser: laser engraving from an image
 
   phoenix-laser engrave IMAGE|PROJECT.lbrn2 OUT.nc --width-mm 50 [--picture N] [--dot-mm 0.1] [--feed 3000] [--power 50] [--smax 1000]
-                [--dither fs|atkinson|threshold|bayer] [--threshold 128] [--overscan MM|auto] [--accel 1000] [--origin X,Y] [--dry-run]
+                [--dither fs|atkinson|threshold|bayer|jarvis|stucki|sierra|burkes] [--threshold 128] [--overscan MM|auto] [--accel 1000] [--origin X,Y] [--dry-run]
                 [--gamma 1] [--contrast 0] [--brightness 0] [--invert] [--auto-level] [--max-power 100] [--max-speed MM/MIN] [--config FILE] [--profile NAME]
                 [--material NAME --materials FILE]
   phoenix-laser calibrate OUT.nc --powers 20,40,60,80|20:80:20 --feeds 1000,2000,3000|1000:3000:1000 [--smax 1000] [--max-power 100] [--max-speed MM/MIN] [--config FILE] [--profile NAME]
@@ -84,7 +85,12 @@ const HELP: &str = "phoenix-laser: laser engraving from an image
   phoenix-laser frame OUT.nc --size W,H | --gcode PROGRAM.nc [--origin X,Y] [--margin MM] [--feed 3000] [--laps 1] [--bed X,Y] [--smax N]
                 [--pilot P --confirm-laser-on] [--max-power P] [--max-speed MM/MIN] [--config FILE] [--profile NAME]
   phoenix-laser preview PROGRAM.nc [OUT.svg] [--accel 1000] [--rapid 6000] [--smax N] [--laser-watts W] [--bed X,Y] [--width-px 900] [--config FILE] [--profile NAME]
-  phoenix-laser verify PROGRAM.nc [--config FILE] [--profile NAME] [--smax N] [--max-power P] [--max-speed MM/MIN] [--bed X,Y] [--overscan-mm MM] [--accel 1000] [--expect-sha256 HASH] [--json]
+  phoenix-laser verify PROGRAM.nc [--config FILE] [--profile NAME] [--smax N] [--max-power P] [--max-speed MM/MIN] [--bed X,Y] [--overscan-mm MM] [--accel 1000] [--expect-sha256 HASH] [--controller SETTINGS.txt] [--json]
+  phoenix-laser controller SETTINGS.txt [--config FILE] [--profile NAME] [--smax N] [--bed X,Y] [--lang CODE]
+  phoenix-laser explain ALARM:n|error:n [--lang CODE]
+  phoenix-laser interval OUT.nc --spacings 0.08:0.2:0.02 --power P --feed MM/MIN [--square-mm 8] [--gap-mm 3] [--label-mm 2|--no-labels] [--smax N] [--max-power P] [--max-speed MM/MIN] [--bed X,Y] [--config FILE] [--profile NAME]
+  phoenix-laser kerf OUT.nc --power P --feed MM/MIN [--strips 10] [--strip-mm 5] [--height-mm 20] [--passes 1] [--smax N] [--max-power P] [--max-speed MM/MIN] [--bed X,Y] [--config FILE] [--profile NAME]
+  phoenix-laser kerf --gap MM [--strips 10]
   phoenix-laser report PROGRAM.nc [--config FILE] [--profile NAME] [--lang CODE] [--material NAME --materials FILE]
   phoenix-laser project list FILE.eh3d [--json] | save FILE.eh3d [--drawing D] [--config FILE] [--materials FILE] [--program P.nc] [--name NAME] [--id ID] | import FILE.eh3d DRAWING [--name NAME] [--id ID]
                 | open FILE.eh3d [--into DIR] | take FILE.eh3d BRANCH NAME | extract FILE.eh3d BRANCH DIR
@@ -111,6 +117,8 @@ align finds the positioning marks (the ones `marks` burns, with the same --size,
 frame writes a program that traces the rectangle of the work with the laser OFF, to see where it will land: --size W,H from the corner --origin, or the box of what burns in --gcode PROGRAM.nc (its real place). --margin widens it. A --pilot power (a percent, at most max_pilot_percent of [frame], 5 unless the file says another, and at most the limit of power) turns the laser on weakly and only with --confirm-laser-on; the [frame] section of --config holds the usual values.
 preview reads a G-code program (this program's or another's) and says what it would do: moves, burnt and travelled length, the box, the powers, a time that counts the corners (--accel in mm/s2), with --laser-watts the energy that the program burns (the power of each move as a part of the full power --smax, over the time it burns) and its mean power, and what looks dangerous (the laser on during a rapid move, a burning move with no feed, S above --smax, work outside --bed, no end); with OUT.svg it also draws the path. It only reads text.
 verify reads a G-code program as text (it never runs it) and says its SHA-256, what it does and whether it passes: under the limit of power and of speed, inside the bed (--overscan-mm lets the head go that far past the bed with the laser off, as the overscan of another program does; burning outside the bed always fails, and [verify] overscan_mm of --config sets the same), with the laser off during every rapid move and a feed on every burning move; --expect-sha256 HASH ties the check to a program that was authorised: when the SHA-256 of the file is not that one (64 hex digits) the program fails, so a program that was changed after it was looked at is not run by mistake; --json gives the report for another program to keep, and the exit code is 1 when it fails.
+verify also fails a program that holds a command of the controller ($), a part that is not a letter with a number, G93 or G95, an M code that other controllers use to switch a laser, a character GRBL obeys at once, a number of S or F below zero, a program too long to be read whole, or M3 left on while the head waits, pauses, moves only its height or ends; spaces inside a line count for nothing, as for GRBL. --controller SETTINGS.txt compares the saved answer of the controller to $$ with the limits and the program: laser mode off or unknown and a full power $30 that is not s_max fail it.
+controller reads the saved answer of a GRBL controller to $$ (a text file: nothing is sent to a machine) and says in a language what does not agree with the machine of --config: the laser mode ($32), the S of full power ($30), the least S ($31), inches ($13) and the travel ($130, $131); a serious finding gives exit code 1. explain says what ALARM:n or error:n means. interval writes a row of squares filled at different spacings of the lines, and kerf a rectangle cut into strips: push the strips to one side, measure the gap and give it to kerf --gap to have the width of the beam. Both test programs are checked like any program and are not written when they fail.
 report is the check of verify written to be read before a job in one of eight languages (--lang en, es, de, fr, it, ja, zh or pt, the one of the system when it is not given): the SHA-256 of the file, the moves, the length burnt and the time, the box of the work, the highest power and speed against the limits, the energy when [machine] laser_watts is set, whether the material of --material was verified, how many forbidden zones were checked, what the interlocks say, the reasons of a failure (these in English, as verify gives them) and a verdict; it reads the file as text, runs nothing, and the exit code is 1 when the program fails.
 project works with a project of the suite (.eh3d, one file with a branch for each program) and writes only the branch laser: save puts the drawing, the settings, the library of materials and the programs there (what is not given stays), import takes a drawing of another program (LBRN2, LBRN, SVG or DXF) and keeps its original with a report of what was read, not read and lost on export, take copies a file of another branch (an outline or a mesh of cad) with a reference to the state it was taken from, so that list and open say OUT OF DATE when that branch changes, open reads the branch and with --into writes its files, extract writes the files of any branch. Every other branch keeps its bytes; a file that is there is never written over by open or extract.
 settings lists every setting of the program (the keys of the settings file and of a library of materials) with its section, the kind of value it takes, its default and whether it is a safety setting (a limit, a zone, an interlock, the token of the server), as lines of text or, with --json, as JSON for another program to read: it is the contract of the settings of this program, and a test keeps it equal to the keys the reader takes.
@@ -2141,7 +2149,7 @@ fn run(mut args: Vec<String>) -> Result<(), String> {
                 .or_else(|| material.as_ref().and_then(|(m, _)| m.dither.clone()))
                 .unwrap_or_else(|| "fs".to_string());
             let method = Method::from_word(&word, threshold).ok_or_else(|| {
-                format!("--dither '{word}' is not fs, atkinson, threshold or bayer")
+                format!("--dither '{word}' is not fs, atkinson, threshold, bayer, jarvis, stucki, sierra or burkes")
             })?;
             let tone = take_tone(&mut args, tone_base)?;
             let dry_run = switch(&mut args, "--dry-run");
@@ -2273,6 +2281,10 @@ fn run(mut args: Vec<String>) -> Result<(), String> {
             Ok(())
         }
         "report" => report_job(args),
+        "controller" => testcli::controller_job(args),
+        "explain" => testcli::explain_job(args),
+        "interval" => testcli::interval_job(args),
+        "kerf" => testcli::kerf_job(args),
         "trace" => trace_job(args),
         "focus" => {
             let config = flag(&mut args, "--config")?;
@@ -2675,6 +2687,11 @@ fn run(mut args: Vec<String>) -> Result<(), String> {
                 }
                 None => None,
             };
+            let controller_file = flag(&mut args, "--controller")?;
+            let dump = controller_file
+                .as_deref()
+                .map(testcli::read_dump)
+                .transpose()?;
             finish(&args, 1)?;
             let input = args.first().ok_or("verify needs a G-code file")?;
             let meta = fs::metadata(input).map_err(|e| format!("{input}: {e}"))?;
@@ -2690,6 +2707,9 @@ fn run(mut args: Vec<String>) -> Result<(), String> {
                     "the program is not the one that was authorised: its SHA-256 is {}, not {want}",
                     v.sha256
                 ));
+            }
+            if let Some(dump) = &dump {
+                v.add_controller(dump, &l);
             }
             if json {
                 // the profile and the settings file the limits came from are part of the record

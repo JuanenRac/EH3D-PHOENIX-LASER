@@ -363,6 +363,218 @@ fn build(
     Ok(out)
 }
 
+/// A value as it is burnt under a square of the test of the spacing: up to three decimals, without zeros at the end.
+fn spacing_text(v: f64) -> String {
+    let s = format!("{v:.3}");
+    s.trim_end_matches('0').trim_end_matches('.').to_string()
+}
+
+/// The test of the spacing of the lines: a row of squares burnt at one power and one feed, each filled with lines at its own spacing (`spacings_mm`, in the order given), so that the widest
+/// spacing that still leaves no gap can be read off. With `label_mm` the spacing of each square is burnt below it.
+pub fn interval_test(
+    spacings_mm: &[f64],
+    power_percent: f64,
+    feed_mm_min: f64,
+    g: &Grid,
+    label_mm: Option<f64>,
+) -> Result<String, String> {
+    if spacings_mm.is_empty() || spacings_mm.len() > MAX_CELLS {
+        return Err(format!(
+            "the test of the spacing needs from 1 to {MAX_CELLS} spacings"
+        ));
+    }
+    if !(g.square_mm.is_finite()
+        && (1.0..=50.0).contains(&g.square_mm)
+        && g.gap_mm.is_finite()
+        && (0.0..=50.0).contains(&g.gap_mm))
+    {
+        return Err("the size of the squares or the gap is out of range".into());
+    }
+    if spacings_mm
+        .iter()
+        .any(|v| !v.is_finite() || !(0.02..=g.square_mm).contains(v))
+    {
+        return Err("a spacing must be from 0.02 mm to the side of a square".into());
+    }
+    if !(power_percent.is_finite() && power_percent > 0.0 && power_percent <= 100.0) {
+        return Err("a power must be a percent above 0 and up to 100".into());
+    }
+    if !(feed_mm_min.is_finite() && (1.0..=30_000.0).contains(&feed_mm_min)) {
+        return Err("a feed must be from 1 to 30000 mm/min".into());
+    }
+    if g.s_max == 0 || g.s_max > 100_000 {
+        return Err(format!("s_max is {}: it must be from 1 to 100000", g.s_max));
+    }
+    let s = (f64::from(g.s_max) * power_percent / 100.0).round() as u32;
+    if s == 0 {
+        return Err(format!(
+            "a power of {power_percent} % of S{} is less than one step of S",
+            g.s_max
+        ));
+    }
+    let pitch = g.square_mm + g.gap_mm;
+    let oy = match label_mm {
+        Some(h) => {
+            if !(h.is_finite() && (1.0..=MAX_LABEL_MM).contains(&h)) {
+                return Err(format!(
+                    "the height of the figures must be from 1 to {MAX_LABEL_MM} mm"
+                ));
+            }
+            if spacings_mm
+                .iter()
+                .any(|v| text_width(&spacing_text(*v), h) > pitch)
+            {
+                return Err(
+                    "the figures are wider than a square and its gap: make them lower (--label-mm) or leave them out (--no-labels)"
+                        .into(),
+                );
+            }
+            h + 1.5
+        }
+        None => 0.0,
+    };
+    let feed = n(feed_mm_min)?;
+    let mut out = String::from("G21\nG90\nM4 S0\n");
+    for (col, spacing) in spacings_mm.iter().enumerate() {
+        let x0 = col as f64 * pitch;
+        out.push_str(&format!(
+            "S0\n(spacing {} mm)\nG0 X{} Y{}\n",
+            n(*spacing)?,
+            n(x0)?,
+            n(oy)?
+        ));
+        // the small amount keeps the last line when the side is a whole number of spacings
+        let lines = (g.square_mm / spacing + 1e-6).floor() as usize + 1;
+        for k in 0..lines {
+            let y = oy + (k as f64 * spacing).min(g.square_mm);
+            let (a, b) = if k % 2 == 0 {
+                (x0, x0 + g.square_mm)
+            } else {
+                (x0 + g.square_mm, x0)
+            };
+            out.push_str(&format!("G1 X{} Y{} S0 F{feed}\n", n(a)?, n(y)?));
+            out.push_str(&format!("G1 X{} S{s} F{feed}\n", n(b)?));
+        }
+    }
+    if let Some(h) = label_mm {
+        for (col, spacing) in spacings_mm.iter().enumerate() {
+            let text = spacing_text(*spacing);
+            let x = col as f64 * pitch + ((g.square_mm - text_width(&text, h)) / 2.0).max(0.0);
+            for stroke in text_strokes(&text, x, 0.0, h) {
+                let Some(((fx, fy), rest)) = stroke.split_first() else {
+                    continue;
+                };
+                out.push_str(&format!("S0\nG0 X{} Y{}\n", n(*fx)?, n(*fy)?));
+                for (px, py) in rest {
+                    out.push_str(&format!("G1 X{} Y{} S{s} F{feed}\n", n(*px)?, n(*py)?));
+                }
+            }
+        }
+    }
+    out.push_str("M5\nM2\n");
+    Ok(out)
+}
+
+/// The most strips of the test of the width of the beam.
+pub const MAX_STRIPS: u32 = 40;
+
+/// The test of the width of the beam (kerf): a rectangle cut into strips of the same width.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Kerf {
+    pub strips: u32,
+    pub strip_mm: f64,
+    pub height_mm: f64,
+    pub power_percent: f64,
+    pub feed_mm_min: f64,
+    pub passes: u32,
+}
+
+impl Default for Kerf {
+    fn default() -> Self {
+        Kerf {
+            strips: 10,
+            strip_mm: 5.0,
+            height_mm: 20.0,
+            power_percent: 0.0,
+            feed_mm_min: 0.0,
+            passes: 1,
+        }
+    }
+}
+
+/// The program of the test: first the cuts between the strips, then the rectangle round them, with the beam on the line (nothing is taken into account of its width: that is what is
+/// measured). Pushing every strip to one side leaves a gap that is the width of the beam once for each of the `strips + 1` cuts.
+pub fn kerf_test(k: &Kerf, s_max: u32) -> Result<String, String> {
+    if !(2..=MAX_STRIPS).contains(&k.strips) {
+        return Err(format!("the strips must be from 2 to {MAX_STRIPS}"));
+    }
+    if !(k.strip_mm.is_finite() && (2.0..=50.0).contains(&k.strip_mm)) {
+        return Err("a strip must be from 2 to 50 mm wide".into());
+    }
+    if !(k.height_mm.is_finite() && (5.0..=200.0).contains(&k.height_mm)) {
+        return Err("the height must be from 5 to 200 mm".into());
+    }
+    if !(k.power_percent.is_finite() && k.power_percent > 0.0 && k.power_percent <= 100.0) {
+        return Err("a power must be a percent above 0 and up to 100".into());
+    }
+    if !(k.feed_mm_min.is_finite() && (1.0..=30_000.0).contains(&k.feed_mm_min)) {
+        return Err("a feed must be from 1 to 30000 mm/min".into());
+    }
+    if !(1..=20).contains(&k.passes) {
+        return Err("the passes must be from 1 to 20".into());
+    }
+    if s_max == 0 || s_max > 100_000 {
+        return Err(format!("s_max is {s_max}: it must be from 1 to 100000"));
+    }
+    let s = (f64::from(s_max) * k.power_percent / 100.0).round() as u32;
+    if s == 0 {
+        return Err(format!(
+            "a power of {} % of S{s_max} is less than one step of S",
+            k.power_percent
+        ));
+    }
+    let width = f64::from(k.strips) * k.strip_mm;
+    let (feed, h, w) = (n(k.feed_mm_min)?, n(k.height_mm)?, n(width)?);
+    let mut out = String::from("G21\nG90\nM4 S0\n");
+    for pass in 0..k.passes {
+        out.push_str(&format!("(pass {} of {})\n", pass + 1, k.passes));
+        for i in 1..k.strips {
+            let x = n(f64::from(i) * k.strip_mm)?;
+            let (a, b) = if i % 2 == 1 {
+                ("0", h.as_str())
+            } else {
+                (h.as_str(), "0")
+            };
+            out.push_str(&format!("S0\nG0 X{x} Y{a}\nG1 Y{b} S{s} F{feed}\n"));
+        }
+    }
+    // the rectangle last, so that nothing moves before the cuts inside it are done
+    out.push_str("S0\nG0 X0 Y0\n");
+    for _ in 0..k.passes {
+        out.push_str(&format!(
+            "G1 X{w} Y0 S{s} F{feed}\nG1 X{w} Y{h}\nG1 X0 Y{h}\nG1 X0 Y0\n"
+        ));
+    }
+    out.push_str("S0\nM5\nM2\n");
+    Ok(out)
+}
+
+/// The width of the beam (mm) from the gap left after every strip of [`kerf_test`] is pushed to one side. A width over 2 mm is not believed: the gap was measured wrong or the strips were not
+/// all pushed.
+pub fn kerf_from_gap(gap_mm: f64, strips: u32) -> Result<f64, String> {
+    if !(2..=MAX_STRIPS).contains(&strips) {
+        return Err(format!("the strips must be from 2 to {MAX_STRIPS}"));
+    }
+    let kerf = gap_mm / f64::from(strips + 1);
+    if !(kerf.is_finite() && kerf > 0.0 && kerf <= 2.0) {
+        return Err(format!(
+            "a gap of {gap_mm} mm over {} cuts is not a width of a beam: measure it again",
+            strips + 1
+        ));
+    }
+    Ok(kerf)
+}
+
 use crate::vconfig::FocusSettings;
 
 /// The G-code of the focus test: short lines side by side, each burnt with the head at another height (Z), so that the sharpest and thinnest line shows where the beam is in focus. The
