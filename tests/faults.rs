@@ -208,8 +208,10 @@ fn a_comment_in_brackets_ends_at_the_first_bracket_as_for_the_controller() {
     assert!(failed_with(&v, "outside of the bed"), "{:?}", v.problems);
     // a `;` inside brackets is part of the comment
     assert!(with("(a ; b) G1 X5").passes());
-    assert_eq!(read("(a ; b) G1 X5\n").moves.len(), 0);
+    assert_eq!(read("(a ; b) G1 X5\n").moves.len(), 1);
     assert_eq!(read("G0 (a ; b) X5\n").moves.len(), 1);
+    // outside of brackets it starts a comment that goes to the end
+    assert_eq!(read("; (a) G1 X5\n").moves.len(), 0);
 }
 
 #[test]
