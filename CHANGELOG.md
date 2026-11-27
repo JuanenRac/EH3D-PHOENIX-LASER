@@ -4,6 +4,7 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+- **The power mode of a vector job:** the server applies `laser_mode` from its version 0.2.9; the note of `server vector` with `m3` now says that an older one ignores it and writes `M4`.
 - **Safety, the ceiling of a material:** `max_power` and `max_speed` of the material now hold over the sub-layers on the command line and over everything the window works out with the material applied; before, a sub-layer or a box of the window could pass them.
 - **Safety, a project never forgives:** the settings of an `.eh3d` project no longer widen how far past the bed the head may go (`[verify] overscan_mm`), coarsen the arcs of the check or turn on the switch below.
 - **Safety, a different full power can be a warning, only when you say so:** `s_max_mismatch_warns` in `[verify]` and the box "Different $30: only warn" of the window, with its help in the eight languages, turn a `$30` of the controller that is not `s_max` into a warning. It is off by default and the difference stays an error then: a wrongly scaled power can burn more than asked.

@@ -165,7 +165,7 @@ fn a_line_drawn_twice_is_cut_once_only_when_it_is_asked_for_and_never_through_a_
 }
 
 #[test]
-fn a_vector_job_carries_the_power_mode_and_says_that_the_server_does_not_apply_it() {
+fn a_vector_job_carries_the_power_mode_and_warns_of_an_older_server() {
     for (mode, noted) in [("m4", false), ("m3", true)] {
         let s = vconfig::parse(&format!("[machine]\nlaser_mode = {mode}\n")).unwrap();
         let (job, notes) = vector_job(&drawing(ONE), &s).unwrap();
@@ -175,7 +175,7 @@ fn a_vector_job_carries_the_power_mode_and_says_that_the_server_does_not_apply_i
             "{body}"
         );
         assert_eq!(
-            notes.iter().any(|n| n.contains("does not apply it")),
+            notes.iter().any(|n| n.contains("older than 0.2.9")),
             noted,
             "{notes:?}"
         );
