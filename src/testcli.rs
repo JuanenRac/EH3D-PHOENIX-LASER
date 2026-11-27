@@ -6,9 +6,9 @@
 use crate::cli_args::{finish, flag, num, switch};
 use crate::{take_profile, whole};
 use eh3d_phoenix_laser::calibrate::{interval_test, kerf_from_gap, kerf_test, series, Grid, Kerf};
-use eh3d_phoenix_laser::controller;
 use eh3d_phoenix_laser::gcode_out::{header, Header};
 use eh3d_phoenix_laser::grblcodes;
+use eh3d_phoenix_laser::grblset;
 use eh3d_phoenix_laser::lang::Lang;
 use eh3d_phoenix_laser::vconfig::{self, Settings};
 use eh3d_phoenix_laser::verify;
@@ -196,16 +196,16 @@ fn language(args: &mut Vec<String>) -> Result<Lang, String> {
 }
 
 /// Reads a saved listing of the settings of the controller.
-pub fn read_dump(path: &str) -> Result<controller::Dump, String> {
+pub fn read_dump(path: &str) -> Result<grblset::Dump, String> {
     let meta = fs::metadata(path).map_err(|e| format!("{path}: {e}"))?;
-    if meta.len() > controller::MAX_DUMP_BYTES as u64 {
+    if meta.len() > grblset::MAX_DUMP_BYTES as u64 {
         return Err(format!(
             "{path}: the listing of the settings is larger than {} bytes",
-            controller::MAX_DUMP_BYTES
+            grblset::MAX_DUMP_BYTES
         ));
     }
     let bytes = fs::read(path).map_err(|e| format!("{path}: {e}"))?;
-    controller::parse(&String::from_utf8_lossy(&bytes)).map_err(|e| format!("{path}: {e}"))
+    grblset::parse(&String::from_utf8_lossy(&bytes)).map_err(|e| format!("{path}: {e}"))
 }
 
 pub fn controller_job(mut args: Vec<String>) -> Result<(), String> {
@@ -216,9 +216,9 @@ pub fn controller_job(mut args: Vec<String>) -> Result<(), String> {
         .first()
         .ok_or("controller needs the saved answer of the controller to $$")?;
     let dump = read_dump(path)?;
-    let found = controller::check(
+    let found = grblset::check(
         &dump,
-        &controller::Expect {
+        &grblset::Expect {
             s_max: s.machine.s_max,
             bed_mm: s.machine.bed_mm,
             max_feed_mm_min: None,

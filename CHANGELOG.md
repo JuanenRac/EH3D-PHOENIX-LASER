@@ -4,6 +4,19 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+- **Safety, the check reads a program the way the controller does:** spaces inside a line count for nothing, so a power written `S1 000` is judged as `S1000` and `X1 000` as a metre. Before, only the part up to the space was read, and a power over the limit or work outside the bed could pass.
+- **Safety, a danger is never lost behind other notes:** what makes a program fail (the laser on during a rapid move, a burning move with no feed and the rest) is kept apart from the ordinary notes. Before, twenty earlier notes filled the list and a later danger was dropped, so the program passed.
+- **Safety, a program too long to be read whole fails:** the check says that the rest was not looked at instead of passing it.
+- **Safety, constant power left on while the head stands fails:** with `M3` and a power above zero, a wait (`G4`), a pause (`M0`, `M1`), a move of the height only, or the end of the program with no `M5`, `M2` or `M30`.
+- **Safety, a command of the controller inside a program fails:** a line with `$` can write a setting (the laser mode among them), unlock an alarm or move the head.
+- **Safety, what cannot be judged fails:** a part of a line that is not a letter with a number (it was left out without a word), `G93` and `G95`, the M codes that other controllers use to switch a laser (`M106`, `M67` and others), and a power or a feed below zero. An M code that GRBL does not know is told.
+- **Safety, characters the controller obeys at once:** `!`, `~`, `?`, control characters and characters outside of ASCII fail in the code and are told in a comment; a line longer than GRBL takes is told.
+- **Settings of the controller:** `phoenix-laser controller` reads a saved answer to `$$` and says in the eight languages what does not agree with the machine (laser mode off or unknown, full power `$30`, least power, inches, travel); `verify --controller` adds it to the verdict. Nothing is sent to a machine and the listings tried were written for the tests.
+- **Alarms and errors:** `phoenix-laser explain ALARM:n|error:n` says in the eight languages what the common ones of GRBL mean.
+- **Test of the spacing of the lines:** `phoenix-laser interval` writes a row of squares filled at different spacings, with the figures below, and only when it passes the check.
+- **Test of the width of the beam:** `phoenix-laser kerf` writes a rectangle cut into strips, and `kerf --gap` gives the width of the beam from the gap measured.
+- **Four more ways of dithering:** Jarvis, Stucki, Sierra and Burkes, on the command line, in the library of materials and in the window.
+- **A line that would be cut twice is told:** pieces drawn twice in a layer that is cut are counted in the warnings, since they put twice the energy in one place.
 - **A project saved by another program is not written over:** the window keeps the mark of the project from the moment it opens or saves it, looks at it again after a question, and refuses to save, import or take when another program wrote the file meanwhile. It says so in the eight languages and offers to read it again, to save under another name or to close. 3 new tests.
 - **What the tag v0.3.7 of EH3D-COMMON brings to the window:** the panel «Attachments» refuses the same writes and reads its list again, and `viewer.max_preview_mb` (16 by default) in the settings says how much text a whole preview keeps.
 

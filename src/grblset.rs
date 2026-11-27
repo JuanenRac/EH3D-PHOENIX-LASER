@@ -224,7 +224,7 @@ pub fn check(dump: &Dump, expect: &Expect) -> Vec<Finding> {
     let mut found: Vec<Finding> = Vec::new();
     let mut add = |kind: Kind, values: Vec<String>| found.push(Finding { kind, values });
     match dump.get(32) {
-        Some(v) if v == 1.0 => {}
+        Some(1.0) => {}
         Some(v) => add(Kind::LaserModeOff, vec![v.to_string()]),
         None => add(Kind::LaserModeUnknown, Vec::new()),
     }

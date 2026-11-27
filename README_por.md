@@ -102,6 +102,10 @@ Cada linha é uma parte deste repositório e a luz diz até onde chega hoje. É 
 * **Predefinições e ajuste em direto** (`src/presets.rs`, `src/live.rs`, `[live]` no ficheiro de definições): uma predefinição de um material e de uma espessura é atribuída a uma camada (uma cópia) ou ligada a ela (a camada segue a predefinição; uma alteração diz que camadas atingiu e é recusada por inteiro se uma não a puder aceitar). Os valores da base comum são usados tal como estão, marcados como não testados numa máquina, e os segundos valores de outras fontes não são usados a não ser que sejam pedidos. O ajuste em direto de potência e velocidade é um cálculo retido por quatro limites (o seu próprio intervalo, que por omissão nunca aumenta um valor, a máquina, o servidor e o piloto) e diz que limite reteve um valor; nada é enviado a uma máquina.
 * **O relatório na janela** (`src/window.rs`): o relatório de `phoenix-laser report` pode ser feito a partir do programa que a janela calculou, no idioma da janela, e é descartado quando muda qualquer coisa.
 * **Pontilhado ordenado** (`src/dither.rs`): `--dither bayer` (também na janela) decide cada ponto pelo seu lugar e pelo seu cinzento com uma matriz de Bayer de 8 x 8, por isso o padrão é regular e o mesmo cinzento queima sempre os mesmos pontos; os testes verificam que cada nível da matriz aparece uma vez e que a escuridão de um cinzento se mantém.
+* **Uma verificação que lê como o controlador** (`src/preview.rs`, `src/verify.rs`): os espaços dentro de um número não contam; `M3` ligado enquanto a cabeça espera, está em pausa ou o programa termina, um comando `$` dentro do programa, uma parte que não se consegue ler, `G93`, os códigos M que outros controladores usam para um laser, os caracteres que o GRBL executa de imediato e um programa demasiado longo para ser lido por inteiro fazem falhar o `verify`, e nenhuma outra nota consegue tirar um perigo do relatório.
+* **Definições do controlador e alarmes** (`src/grblset.rs`, `src/grblcodes.rs`): `phoenix-laser controller` compara a resposta guardada a `$$` com a máquina (modo laser, potência máxima `$30`, potência mínima, polegadas, curso), `verify --controller` junta-o ao veredicto e `phoenix-laser explain` diz o que significa um alarme ou um erro, nas oito línguas; nada é enviado para uma máquina e não foram experimentadas listagens nem alarmes de um controlador real.
+* **Testes de espaçamento das linhas e de largura do feixe** (`src/calibrate.rs`): `phoenix-laser interval` preenche uma fila de quadrados com vários espaçamentos e `phoenix-laser kerf` corta um retângulo em tiras cuja folga dá a largura do feixe; só são escritos se passarem a verificação, e nada foi queimado.
+* **Mais tramados e linhas cortadas duas vezes** (`src/dither.rs`, `src/cut.rs`): Jarvis, Stucki, Sierra e Burkes (também na janela), e um aviso quando há troços de uma camada de corte desenhados duas vezes.
 * **A curva de tons** (`src/tone.rs`): antes de fazer os pontos, os cinzentos podem ser esticados a toda a gama (`--auto-level`), receber mais ou menos contraste e brilho, ser curvados com um gama ou invertidos, com uma única tabela de 256 entradas; com os valores por omissão a imagem não muda de todo.
 * **Um G-code verificado:** o programa de um desenho é verificado linha a linha antes de ser entregue: nenhum laser ligado durante um movimento rápido ou sem velocidade, nenhum `S` acima da potência máxima, nenhum movimento fora da mesa, `M5` no fim; o ficheiro nunca é escrito por cima do desenho nem das definições de que provém.
 * **Projetos da suite** (`src/eh3dfile.rs`, `docs/eh3d-project.md`): `phoenix-laser project` guarda o trabalho no ramo `laser/` de um projeto `.eh3d`, um só ficheiro com um ramo por programa: `save` coloca lá o desenho, as definições, a biblioteca de materiais e os programas; `import` conserva byte a byte um desenho de outro programa (LBRN2, LBRN, SVG ou DXF) com um relatório do que foi lido, do que não foi e do que se perde na exportação; `take` copia um contorno ou uma malha de outro ramo, como `cad/`, com o hash e o formato da origem, e `list` e `open` avisam quando está desatualizado; `open` e `extract` escrevem ficheiros sem substituir nenhum. Só `laser/` é escrito: os outros ramos, conhecidos ou não, conservam os seus bytes. Só foi experimentado com projetos inventados.
@@ -168,7 +172,7 @@ A biblioteca é `eh3d_phoenix_laser` (`use eh3d_phoenix_laser::...`); a linha de
 
 ```text
 phoenix-laser engrave IMAGE OUT.nc --width-mm 50 [--dot-mm 0.1] [--feed 3000] [--power 50] [--smax 1000]
-              [--dither fs|atkinson|threshold|bayer] [--threshold 128] [--overscan MM|auto] [--accel 1000] [--origin X,Y] [--dry-run]
+              [--dither fs|atkinson|threshold|bayer|jarvis|stucki|sierra|burkes] [--threshold 128] [--overscan MM|auto] [--accel 1000] [--origin X,Y] [--dry-run]
               [--gamma 1] [--contrast 0] [--brightness 0] [--invert] [--auto-level] [--max-power 100] [--max-speed MM/MIN] [--config FILE] [--profile NAME]
               [--material NAME --materials FILE]
 phoenix-laser calibrate OUT.nc --powers 20,40,60,80|20:80:20 --feeds 1000,2000,3000|1000:3000:1000 [--smax 1000] [--max-power 100] [--max-speed MM/MIN] [--config FILE] [--profile NAME]
@@ -191,8 +195,13 @@ phoenix-laser materials FILE
 phoenix-laser focus OUT.nc --z-step MM [--z-start MM] [--steps 9] [--length 10] [--spacing 2] [--feed 1000] [--power 30 | --powers 10,20,30] [--smax 1000] [--max-power P] [--max-speed MM/MIN] [--config FILE] [--profile NAME]
 phoenix-laser frame OUT.nc --size W,H | --gcode PROGRAM.nc [--origin X,Y] [--margin MM] [--feed 3000] [--laps 1] [--bed X,Y] [--smax N]
               [--pilot P --confirm-laser-on] [--max-power P] [--max-speed MM/MIN] [--config FILE] [--profile NAME]
-phoenix-laser verify PROGRAM.nc [--config FILE] [--profile NAME] [--smax N] [--max-power P] [--max-speed MM/MIN] [--bed X,Y] [--overscan-mm MM] [--accel 1000] [--expect-sha256 HASH] [--json]
+phoenix-laser verify PROGRAM.nc [--config FILE] [--profile NAME] [--smax N] [--max-power P] [--max-speed MM/MIN] [--bed X,Y] [--overscan-mm MM] [--accel 1000] [--expect-sha256 HASH] [--controller SETTINGS.txt] [--json]
 phoenix-laser report PROGRAM.nc [--config FILE] [--profile NAME] [--lang CODE] [--material NAME --materials FILE]
+phoenix-laser controller SETTINGS.txt [--config FILE] [--profile NAME] [--smax N] [--bed X,Y] [--lang CODE]
+phoenix-laser explain ALARM:n|error:n [--lang CODE]
+phoenix-laser interval OUT.nc --spacings 0.08:0.2:0.02 --power P --feed MM/MIN [--square-mm 8] [--gap-mm 3] [--label-mm 2|--no-labels] [--smax N] [--max-power P] [--max-speed MM/MIN] [--bed X,Y] [--config FILE] [--profile NAME]
+phoenix-laser kerf OUT.nc --power P --feed MM/MIN [--strips 10] [--strip-mm 5] [--height-mm 20] [--passes 1] [--smax N] [--max-power P] [--max-speed MM/MIN] [--bed X,Y] [--config FILE] [--profile NAME]
+phoenix-laser kerf --gap MM [--strips 10]
 phoenix-laser settings [--json]
 phoenix-laser project list FILE.eh3d [--json]
 phoenix-laser project save FILE.eh3d [--drawing D] [--config FILE] [--materials FILE] [--program P.nc] [--name NAME] [--id ID]
@@ -257,7 +266,10 @@ EH3D-PHOENIX-LASER/
 │   ├── main.rs                                  a linha de comandos: engrave, calibrate, cut, vector, verify, report, convert, settings e mais
 │   ├── calibrate.rs                             as grelhas de teste: potência contra avanço, escada de foco e grelha de um material
 │   ├── cli_args.rs                              os argumentos da linha de comandos, o mesmo ficheiro em cada utilitário pequeno
-│   ├── dither.rs                                dos níveis de cinzento aos pontos: limiar, Floyd-Steinberg, Atkinson e Bayer
+│   ├── grblset.rs                               as definições guardadas de um controlador face à máquina
+│   ├── grblcodes.rs                             o significado dos alarmes e erros do GRBL, em oito línguas
+│   ├── testcli.rs                               os comandos interval, kerf, controller e explain
+│   ├── dither.rs                                dos cinzentos aos pontos: limiar, Bayer e seis formas de repartir o erro
 │   ├── materials.rs                             a biblioteca de materiais: potência, velocidade, passagens, tons
 │   ├── commonmat.rs                             pontos de partida da base comum de materiais, tal como estão
 │   ├── preview.rs                               a pré-visualização de um G-code: movimentos, tempo, perigos e um SVG do percurso
@@ -315,6 +327,9 @@ EH3D-PHOENIX-LASER/
 │   ├── vector.rs                                testes do corte a partir de desenhos: comandos, exemplos, ficheiros hostis e a verificação do G-code
 │   ├── lbrn2.rs                                 testes do leitor LBRN2 com projetos escritos aqui, ficheiros hostis e fuzz
 │   ├── lbrn2_more.rs                            testes das imagens LBRN2, do eixo y, elipse, polígono, pontes e fuzz
+│   ├── faults.rs                                testes do que a verificação de um programa recusa
+│   ├── grblset.rs                               testes das definições do controlador, alarmes e erros
+│   ├── testcuts.rs                              testes dos programas de espaçamento e largura do feixe e do tramado
 │   ├── lbrn_v1.rs                               testes do formato antigo de projetos, dos seus textos e das camadas de um projeto na linha de comandos
 │   ├── dxf_hatch.rs                             testes dos preenchimentos e sólidos de um DXF, com fuzz de semente fixa
 │   ├── vartext.rs                               testes do texto variável: CSV, contadores, lugares, séries e fuzz

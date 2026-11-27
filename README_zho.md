@@ -102,6 +102,10 @@
 * **预设与实时调整**（`src/presets.rs`、`src/live.rs`，设置文件中的 `[live]`）：材料和厚度的预设可以指派给图层（复制）或与图层关联（图层跟随预设；更改会说明影响了哪些图层，只要有一个图层无法接受就整体拒绝）。公共数据库的数值原样使用，并标注为未在机器上试验，其他来源的第二组数值除非明确要求否则不使用。功率和速度的实时调整是一个受四项上限约束的计算（自身的范围，默认绝不提高数值；机器；服务器；引导光），并会说明是哪项上限限制了数值；不会向任何机器发送任何内容。
 * **窗口中的报告**（`src/window.rs`）：可以用窗口算出的程序，以窗口的语言生成 `phoenix-laser report` 的报告，任何内容改变时报告会被丢弃。
 * **有序抖动**（`src/dither.rs`）：`--dither bayer`（窗口中也可选）用 8 x 8 的拜耳矩阵，仅凭每个点的位置和灰度决定它是否烧蚀，因此图案规则，相同的灰度总是烧同样的点；测试检查矩阵的每个级别各出现一次，并且灰度的深浅得以保持。
+* **像控制器一样读取的检查**（`src/preview.rs`、`src/verify.rs`）：数字中的空格不起作用；激光头等待、暂停或程序结束时仍开着的 `M3`、程序中的 `$` 命令、无法读取的部分、`G93`、其他控制器用于激光的 M 代码、GRBL 立即执行的字符以及过长而无法读完的程序都会使 `verify` 失败，其他提示也无法把危险挤出报告。
+* **控制器设置与报警**（`src/grblset.rs`、`src/grblcodes.rs`）：`phoenix-laser controller` 把保存的 `$$` 回答与机器（激光模式、满功率 `$30`、最小功率、英寸、行程）比较，`verify --controller` 将结果计入结论，`phoenix-laser explain` 用八种语言说明报警或错误的含义；不向任何机器发送内容，也未用真实控制器的列表或报警试验过。
+* **线间距与光束宽度测试**（`src/calibrate.rs`）：`phoenix-laser interval` 以不同间距填充一排方块，`phoenix-laser kerf` 把矩形切成条，由缝隙得出光束宽度；只有通过检查才写出文件，尚未实际烧制。
+* **更多抖动方式与重复切割提示**（`src/dither.rs`、`src/cut.rs`）：Jarvis、Stucki、Sierra 和 Burkes（窗口中也可选），以及切割图层中线段画了两次时的警告。
 * **色调曲线**（`src/tone.rs`）：生成点阵之前，可以把灰度拉伸到整个范围（`--auto-level`）、调整对比度和亮度、用伽马曲线弯曲或反相，只用一张 256 项的表；使用默认值时图像完全不变。
 * **经过检查的 G 代码：**图纸的程序在交出之前逐行检查：快速移动时或没有速度时激光不会开启，`S` 不会超过满功率，不会移动到床面之外，结尾是 `M5`；文件绝不会写在它所来自的图纸或设置之上。
 * **套件工程**（`src/eh3dfile.rs`、`docs/eh3d-project.md`）：`phoenix-laser project` 将工作保存在 `.eh3d` 工程的 `laser/` 分支中（一个文件，每个程序一个分支）：`save` 放入图纸、设置、材料库和程序；`import` 逐字节保留其他程序的图纸（LBRN2、LBRN、SVG 或 DXF），并附带已读取、未读取以及导出时丢失内容的报告；`take` 从其他分支（如 `cad/`）复制轮廓或网格，记录来源的哈希和格式，当来源变化时 `list` 和 `open` 会提示已过期；`open` 和 `extract` 写出文件时从不覆盖现有文件。只写入 `laser/`：其他分支（无论是否认识）字节保持不变。目前只用虚构的工程测试过。
@@ -168,7 +172,7 @@ EH3D-PHOENIX-LASER 是 EH3D Fabrication Suite 的一个程序。它以库和命�
 
 ```text
 phoenix-laser engrave IMAGE OUT.nc --width-mm 50 [--dot-mm 0.1] [--feed 3000] [--power 50] [--smax 1000]
-              [--dither fs|atkinson|threshold|bayer] [--threshold 128] [--overscan MM|auto] [--accel 1000] [--origin X,Y] [--dry-run]
+              [--dither fs|atkinson|threshold|bayer|jarvis|stucki|sierra|burkes] [--threshold 128] [--overscan MM|auto] [--accel 1000] [--origin X,Y] [--dry-run]
               [--gamma 1] [--contrast 0] [--brightness 0] [--invert] [--auto-level] [--max-power 100] [--max-speed MM/MIN] [--config FILE] [--profile NAME]
               [--material NAME --materials FILE]
 phoenix-laser calibrate OUT.nc --powers 20,40,60,80|20:80:20 --feeds 1000,2000,3000|1000:3000:1000 [--smax 1000] [--max-power 100] [--max-speed MM/MIN] [--config FILE] [--profile NAME]
@@ -191,8 +195,13 @@ phoenix-laser materials FILE
 phoenix-laser focus OUT.nc --z-step MM [--z-start MM] [--steps 9] [--length 10] [--spacing 2] [--feed 1000] [--power 30 | --powers 10,20,30] [--smax 1000] [--max-power P] [--max-speed MM/MIN] [--config FILE] [--profile NAME]
 phoenix-laser frame OUT.nc --size W,H | --gcode PROGRAM.nc [--origin X,Y] [--margin MM] [--feed 3000] [--laps 1] [--bed X,Y] [--smax N]
               [--pilot P --confirm-laser-on] [--max-power P] [--max-speed MM/MIN] [--config FILE] [--profile NAME]
-phoenix-laser verify PROGRAM.nc [--config FILE] [--profile NAME] [--smax N] [--max-power P] [--max-speed MM/MIN] [--bed X,Y] [--overscan-mm MM] [--accel 1000] [--expect-sha256 HASH] [--json]
+phoenix-laser verify PROGRAM.nc [--config FILE] [--profile NAME] [--smax N] [--max-power P] [--max-speed MM/MIN] [--bed X,Y] [--overscan-mm MM] [--accel 1000] [--expect-sha256 HASH] [--controller SETTINGS.txt] [--json]
 phoenix-laser report PROGRAM.nc [--config FILE] [--profile NAME] [--lang CODE] [--material NAME --materials FILE]
+phoenix-laser controller SETTINGS.txt [--config FILE] [--profile NAME] [--smax N] [--bed X,Y] [--lang CODE]
+phoenix-laser explain ALARM:n|error:n [--lang CODE]
+phoenix-laser interval OUT.nc --spacings 0.08:0.2:0.02 --power P --feed MM/MIN [--square-mm 8] [--gap-mm 3] [--label-mm 2|--no-labels] [--smax N] [--max-power P] [--max-speed MM/MIN] [--bed X,Y] [--config FILE] [--profile NAME]
+phoenix-laser kerf OUT.nc --power P --feed MM/MIN [--strips 10] [--strip-mm 5] [--height-mm 20] [--passes 1] [--smax N] [--max-power P] [--max-speed MM/MIN] [--bed X,Y] [--config FILE] [--profile NAME]
+phoenix-laser kerf --gap MM [--strips 10]
 phoenix-laser settings [--json]
 phoenix-laser project list FILE.eh3d [--json]
 phoenix-laser project save FILE.eh3d [--drawing D] [--config FILE] [--materials FILE] [--program P.nc] [--name NAME] [--id ID]
@@ -257,7 +266,10 @@ EH3D-PHOENIX-LASER/
 │   ├── main.rs                                  命令行：engrave、calibrate、cut、vector、verify、report、convert、settings 等
 │   ├── calibrate.rs                             测试网格：功率对进给、焦点梯形线和材料网格
 │   ├── cli_args.rs                              命令行参数：每个小工具中的同一个文件
-│   ├── dither.rs                                从灰度到点：阈值、Floyd-Steinberg、Atkinson 和 Bayer
+│   ├── grblset.rs                               保存的控制器设置与机器的比较
+│   ├── grblcodes.rs                             GRBL 报警和错误的含义（八种语言）
+│   ├── testcli.rs                               interval、kerf、controller、explain 命令
+│   ├── dither.rs                                从灰度到点：阈值、Bayer 和六种误差扩散
 │   ├── materials.rs                             材料库：功率、速度、遍数、点阵和色调
 │   ├── commonmat.rs                             通用材料数据库的起始点，按原样使用
 │   ├── preview.rs                               G-code 预览：移动、时间、风险和路径 SVG
@@ -315,6 +327,9 @@ EH3D-PHOENIX-LASER/
 │   ├── vector.rs                                图纸切割测试：命令、示例、恶意文件和 G-code 检查
 │   ├── lbrn2.rs                                 LBRN2 读取器测试：自编工程、恶意文件和模糊测试
 │   ├── lbrn2_more.rs                            LBRN2 图片、y 轴、椭圆、多边形、连接桥和模糊测试
+│   ├── faults.rs                                程序检查所拒绝内容的测试
+│   ├── grblset.rs                               控制器设置、报警和错误的测试
+│   ├── testcuts.rs                              间距与光束宽度程序及抖动的测试
 │   ├── lbrn_v1.rs                               旧版工程格式、其文字以及命令行中工程图层的测试
 │   ├── dxf_hatch.rs                             DXF 填充与实体的测试，含固定种子的模糊测试
 │   ├── vartext.rs                               可变文字测试：CSV、计数器、占位、系列和模糊测试

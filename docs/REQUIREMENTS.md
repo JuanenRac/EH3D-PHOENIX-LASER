@@ -2,7 +2,7 @@
 
 This register is the single source of the state of each capability: `STATUS.md` and the README files cite it and never state a state that it does not. A state is one of `planned`, `prototype`, `implemented` and `validated`. `validated` means that a person has run the capability on a real machine and the evidence of the manifest says `bench` or `field`; nothing here is validated, because nothing of this program has run on a real laser, a real material or a real server: the G-code is checked by the program's own reader, the server is a stand-in, and the pictures for the marks are simulated.
 
-The register has 142 requirements: 122 implemented, 16 prototype, 4 planned and 0 validated. By progress: 122 done, 16 partial, 0 pending and 4 blocked. High coverage is not proof of correctness, so each row says how it is checked: the test that names it, and what it shows.
+The register has 156 requirements: 134 implemented, 18 prototype, 4 planned and 0 validated. By progress: 134 done, 18 partial, 0 pending and 4 blocked. High coverage is not proof of correctness, so each row says how it is checked: the test that names it, and what it shows.
 
 ## How to read the register
 
@@ -186,3 +186,22 @@ The check is `tests/reqs.rs`: it reads this table, finds each test and fails whe
 | PLAS-140 | The window has the panel of the attachments of the project, in the menu File of the project and in a factory workspace. | implemented | done | host-test | `src/panels::the_menu_bar_is_well_made_and_has_no_shortcut_in_conflict_in_any_language` | - |
 | PLAS-141 | The limits of the panel of the attachments are read from the settings file of the person, and the settings of a project never change them. | implemented | done | host-test | `src/vconfig::the_limits_of_the_attachments_are_read_anywhere_and_a_project_never_changes_them` | - |
 | PLAS-142 | A file dropped on the panel of the attachments is attached there, and the files the window opens are left to the window. | implemented | done | host-test | `src/window::the_files_the_window_opens_are_told_apart_from_the_ones_of_the_attachments` | The drop itself is tested in EH3D-COMMON with made-up events, not on a desktop. |
+
+## The check, the controller and further test programs
+
+| ID | Requirement | State | Progress | Evidence | Test | Limits |
+|---|---|---|---|---|---|---|
+| PLAS-143 | The check reads a line as the controller does: spaces count for nothing. | implemented | done | host-test | `tests/faults::spaces_inside_a_number_count_for_nothing_as_for_the_controller` | - |
+| PLAS-144 | What makes a program fail is never pushed out of the report by other notes. | implemented | done | host-test | `tests/faults::a_danger_is_not_lost_behind_a_full_list_of_notes` | - |
+| PLAS-145 | A program too long to be read whole fails. | implemented | done | host-test | `tests/faults::a_program_too_long_to_be_read_whole_fails` | - |
+| PLAS-146 | Constant power (M3) left on while the head stands fails. | implemented | done | host-test | `tests/faults::constant_power_left_on_while_the_head_stands_fails` | - |
+| PLAS-147 | A command of the controller ($) inside a program fails. | implemented | done | host-test | `tests/faults::a_command_of_the_controller_inside_a_program_fails` | - |
+| PLAS-148 | G93, G95 and the M codes that other controllers use for a laser fail. | implemented | done | host-test | `tests/faults::a_feed_in_another_meaning_and_the_outputs_of_other_controllers_fail` | - |
+| PLAS-149 | A part of a line that cannot be read, and a power or a feed below zero, fail. | implemented | done | host-test | `tests/faults::what_cannot_be_read_fails_instead_of_being_left_out` | - |
+| PLAS-150 | A character the controller obeys at once fails in the code and is told in a comment. | implemented | done | host-test | `tests/faults::what_the_controller_obeys_at_once_fails_in_the_code_and_is_told_in_a_comment` | - |
+| PLAS-151 | A saved listing of the settings of the controller is compared with the machine and the program. | prototype | partial | host-test | `tests/grblset::each_setting_that_disagrees_is_found_and_the_unknown_is_serious` | Tried on listings written for the tests, none saved from a real controller; the translations are not reviewed by a native speaker. |
+| PLAS-152 | The common alarms and errors of GRBL are explained in the eight languages. | prototype | partial | host-test | `tests/grblset::every_alarm_and_error_of_the_table_is_said_in_the_eight_languages` | The common numbers only, from public descriptions; not tried on a controller; the translations are not reviewed. |
+| PLAS-153 | The test of the spacing of the lines fills each square at its own spacing. | implemented | done | host-test | `tests/testcuts::each_square_of_the_spacing_test_is_filled_at_its_own_spacing` | - |
+| PLAS-154 | The test of the width of the beam cuts strips, and the gap gives the width. | implemented | done | host-test | `tests/testcuts::the_width_of_the_beam_is_the_gap_over_the_cuts` | - |
+| PLAS-155 | Jarvis, Stucki, Sierra and Burkes dithering keep white, black and the darkness of a grey. | implemented | done | host-test | `src/dither::the_new_ways_of_spreading_keep_white_black_and_the_darkness_of_a_grey` | - |
+| PLAS-156 | A line that would be cut twice is told in the warnings of the plan. | implemented | done | host-test | `tests/testcuts::a_drawing_with_a_line_drawn_twice_says_it_in_the_plan` | - |

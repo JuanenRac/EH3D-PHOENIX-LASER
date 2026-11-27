@@ -1,7 +1,7 @@
 //! The saved listing of the settings of a controller compared with a program, and the meaning of its alarms and errors. No machine and no port: the listings are written here.
 
-use eh3d_phoenix_laser::controller::{check, parse, Expect, Kind, MAX_DUMP_BYTES};
 use eh3d_phoenix_laser::grblcodes::{explain, read_answer, Answer, ALARMS, ERRORS};
+use eh3d_phoenix_laser::grblset::{check, parse, Expect, Kind, MAX_DUMP_BYTES};
 use eh3d_phoenix_laser::lang::Lang;
 use eh3d_phoenix_laser::verify::{verify, Limits};
 use std::process::Command;

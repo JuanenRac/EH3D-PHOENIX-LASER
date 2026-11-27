@@ -80,16 +80,55 @@
           }
         },
         {
+          "name": "grblset.rs",
+          "desc": {
+            "en": "the saved settings of a controller compared with the machine",
+            "es": "los ajustes guardados de un controlador frente a la máquina",
+            "de": "gespeicherte Steuerungseinstellungen gegen die Maschine",
+            "fr": "les réglages enregistrés d'un contrôleur face à la machine",
+            "it": "le impostazioni salvate di un controllore contro la macchina",
+            "ja": "保存したコントローラ設定と機械の比較",
+            "zh": "保存的控制器设置与机器的比较",
+            "pt": "as definições guardadas de um controlador face à máquina"
+          }
+        },
+        {
+          "name": "grblcodes.rs",
+          "desc": {
+            "en": "what the alarms and errors of GRBL mean, in eight languages",
+            "es": "qué significan las alarmas y errores de GRBL, en ocho idiomas",
+            "de": "was Alarme und Fehler von GRBL bedeuten, in acht Sprachen",
+            "fr": "le sens des alarmes et erreurs de GRBL, en huit langues",
+            "it": "il significato di allarmi ed errori di GRBL, in otto lingue",
+            "ja": "GRBL のアラームとエラーの意味（8 言語）",
+            "zh": "GRBL 报警和错误的含义（八种语言）",
+            "pt": "o significado dos alarmes e erros do GRBL, em oito línguas"
+          }
+        },
+        {
+          "name": "testcli.rs",
+          "desc": {
+            "en": "the commands interval, kerf, controller and explain",
+            "es": "los comandos interval, kerf, controller y explain",
+            "de": "die Befehle interval, kerf, controller und explain",
+            "fr": "les commandes interval, kerf, controller et explain",
+            "it": "i comandi interval, kerf, controller ed explain",
+            "ja": "interval、kerf、controller、explain コマンド",
+            "zh": "interval、kerf、controller、explain 命令",
+            "pt": "os comandos interval, kerf, controller e explain"
+          }
+        },
+        {
           "name": "dither.rs",
           "desc": {
-            "en": "from grey levels to dots: threshold, Floyd-Steinberg, Atkinson and Bayer",
-            "es": "de niveles de gris a puntos: umbral, Floyd-Steinberg, Atkinson y Bayer",
-            "de": "von Graustufen zu Punkten: Schwellwert, Floyd-Steinberg, Atkinson und Bayer",
-            "fr": "des niveaux de gris aux points : seuil, Floyd-Steinberg, Atkinson et Bayer",
-            "it": "dai livelli di grigio ai punti: soglia, Floyd-Steinberg, Atkinson e Bayer",
-            "ja": "階調からドットへ：しきい値、Floyd-Steinberg、Atkinson、Bayer",
-            "zh": "从灰度到点：阈值、Floyd-Steinberg、Atkinson 和 Bayer",
-            "pt": "dos níveis de cinzento aos pontos: limiar, Floyd-Steinberg, Atkinson e Bayer"
+            "en": "from grey levels to dots: threshold, Bayer and six ways of spreading the error",
+            "es": "de los grises a los puntos: umbral, Bayer y seis formas de repartir el error",
+            "de": "von Graustufen zu Punkten: Schwellwert, Bayer und sechs Fehlerverteilungen",
+            "fr": "des gris aux points : seuil, Bayer et six façons de répartir l'erreur",
+            "it": "dai grigi ai punti: soglia, Bayer e sei modi di diffondere l'errore",
+            "ja": "グレーからドットへ：しきい値、Bayer、6 種の誤差拡散",
+            "zh": "从灰度到点：阈值、Bayer 和六种误差扩散",
+            "pt": "dos cinzentos aos pontos: limiar, Bayer e seis formas de repartir o erro"
           }
         },
         {
@@ -825,6 +864,45 @@
             "ja": "LBRN2の画像、y軸、楕円、多角形、ブリッジ、ファズのテスト",
             "zh": "LBRN2 图片、y 轴、椭圆、多边形、连接桥和模糊测试",
             "pt": "testes das imagens LBRN2, do eixo y, elipse, polígono, pontes e fuzz"
+          }
+        },
+        {
+          "name": "faults.rs",
+          "desc": {
+            "en": "tests of what the check of a program refuses",
+            "es": "pruebas de lo que rechaza la comprobación de un programa",
+            "de": "Tests dessen, was die Programmprüfung ablehnt",
+            "fr": "tests de ce que la vérification d'un programme refuse",
+            "it": "test di ciò che il controllo di un programma rifiuta",
+            "ja": "プログラム検査が拒否する内容のテスト",
+            "zh": "程序检查所拒绝内容的测试",
+            "pt": "testes do que a verificação de um programa recusa"
+          }
+        },
+        {
+          "name": "grblset.rs",
+          "desc": {
+            "en": "tests of the controller settings, alarms and errors",
+            "es": "pruebas de los ajustes del controlador, alarmas y errores",
+            "de": "Tests der Steuerungseinstellungen, Alarme und Fehler",
+            "fr": "tests des réglages du contrôleur, alarmes et erreurs",
+            "it": "test delle impostazioni del controllore, allarmi ed errori",
+            "ja": "コントローラ設定、アラーム、エラーのテスト",
+            "zh": "控制器设置、报警和错误的测试",
+            "pt": "testes das definições do controlador, alarmes e erros"
+          }
+        },
+        {
+          "name": "testcuts.rs",
+          "desc": {
+            "en": "tests of the spacing and beam width programs and the dithering",
+            "es": "pruebas de los programas de separación y anchura del haz y del tramado",
+            "de": "Tests der Abstands- und Strahlbreitenprogramme und der Rasterung",
+            "fr": "tests des essais d'espacement, de largeur du faisceau et du tramage",
+            "it": "test dei programmi di spaziatura e larghezza del raggio e retinatura",
+            "ja": "線間隔・ビーム幅テストとディザリングのテスト",
+            "zh": "间距与光束宽度程序及抖动的测试",
+            "pt": "testes dos programas de espaçamento e largura do feixe e do tramado"
           }
         },
         {

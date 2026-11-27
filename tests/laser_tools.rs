@@ -690,7 +690,10 @@ fn a_method_of_dithering_that_does_not_exist_names_the_ones_that_do() {
         "dots",
     ]);
     assert!(!ok);
-    assert!(err.contains("fs, atkinson, threshold or bayer"), "{err}");
+    assert!(
+        err.contains("fs, atkinson, threshold, bayer, jarvis, stucki, sierra or burkes"),
+        "{err}"
+    );
 }
 
 #[test]

@@ -17,3 +17,5 @@ Good ideas that are not in the current version. Writing them here keeps anybody 
 | An independent review of the checks | The checks have not been reviewed by anyone but their author | a reviewer is found |
 | Sub-layers, linked presets and the live adjustment in the window | The model, the limits and the tests are done; the window has no table, box or slider for them and the links of the presets are not kept in the settings file | the window is looked at on a screen and the owner asks for them |
 | Sending a live adjustment to a job that runs | Nothing here talks to a machine; the plugin of the server has no route for it and it needs a person at a laser | the server offers a route and a machine is ready for a first run |
+| Reading the settings of the controller from its port, and writing them | The program opens no port: a person saves the answer to $$ in a file and nothing is ever written | a machine is ready for a first run and the owner asks for it |
+| A switch that turns a different full power of the controller into a warning | A different value gives another power than the one asked, so it stays serious | a real machine shows a case where it is safe |

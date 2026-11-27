@@ -98,12 +98,12 @@ impl Verdict {
         self.problems.is_empty()
     }
 
-    /// Adds what a saved listing of the settings of the controller says against this program and its limits (see [`crate::controller`]): the serious findings make it fail, the others are
+    /// Adds what a saved listing of the settings of the controller says against this program and its limits (see [`crate::grblset`]): the serious findings make it fail, the others are
     /// notes. The name `controller_settings` goes to the list of checks.
-    pub fn add_controller(&mut self, dump: &crate::controller::Dump, l: &Limits) {
-        let found = crate::controller::check(
+    pub fn add_controller(&mut self, dump: &crate::grblset::Dump, l: &Limits) {
+        let found = crate::grblset::check(
             dump,
-            &crate::controller::Expect {
+            &crate::grblset::Expect {
                 s_max: l.s_max,
                 bed_mm: l.bed_mm,
                 max_feed_mm_min: (self.max_feed > 0.0).then_some(self.max_feed),
