@@ -1082,6 +1082,7 @@ impl Status {
                 | Status::BadValue(_)
                 | Status::SameFile(_)
                 | Status::Failed(_)
+                | Status::Suite(Said(S::ChangedOnDisk, _))
         )
     }
 
