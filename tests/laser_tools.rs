@@ -1426,6 +1426,7 @@ fn a_profile_chosen_in_the_file_is_the_machine_and_the_option_still_wins_over_it
         "[machine]\nprofile = small diode\n[defaults]\npower = 5\nspeed = 1000\n",
     );
     let nc = tmp("profile-s.nc");
+    // no overscan: the work starts at the origin and the head may not leave the bed of the profile
     // the S of the profile is the full power of the program: 255, not the 1000 of the default
     let (ok, _, err) = run(&[
         "engrave",
@@ -1435,6 +1436,8 @@ fn a_profile_chosen_in_the_file_is_the_machine_and_the_option_still_wins_over_it
         "16",
         "--dot-mm",
         "0.5",
+        "--overscan",
+        "0",
         "--power",
         "5",
         "--feed",
@@ -1455,6 +1458,8 @@ fn a_profile_chosen_in_the_file_is_the_machine_and_the_option_still_wins_over_it
         "16",
         "--dot-mm",
         "0.5",
+        "--overscan",
+        "0",
         "--power",
         "60",
         "--config",
@@ -1473,6 +1478,8 @@ fn a_profile_chosen_in_the_file_is_the_machine_and_the_option_still_wins_over_it
         "16",
         "--dot-mm",
         "0.5",
+        "--overscan",
+        "0",
         "--power",
         "5",
         "--feed",
