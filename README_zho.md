@@ -139,6 +139,10 @@ EH3D-PHOENIX-LASER 是 EH3D Fabrication Suite 的一个程序。它以库和命�
   <img src="images/screens/window-engrave.png" alt="雕刻图片：示例渐变的点按功率着色" width="100%">
 </p>
 
+<p align="center">
+  <img src="images/screens/window-run.png" alt="机器面板：保存的控制器回复、其开关以及解释报警的输入框" width="100%">
+</p>
+
 ## ✨ 功能
 
 * **库加命令行：** `phoenix-laser` 的每个命令都是库中的函数，套件中的其他程序无需启动进程即可调用。

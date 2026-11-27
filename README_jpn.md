@@ -139,6 +139,10 @@ EH3D-PHOENIX-LASER は EH3D Fabrication Suite のプログラムの一つです�
   <img src="images/screens/window-engrave.png" alt="画像の彫刻：サンプルのグラデーションの点を出力で色分けしたもの" width="100%">
 </p>
 
+<p align="center">
+  <img src="images/screens/window-run.png" alt="マシンパネル：保存したコントローラの応答、そのスイッチ、アラームを説明する欄" width="100%">
+</p>
+
 ## ✨ 機能
 
 * **ライブラリとコマンドライン：** `phoenix-laser` の各コマンドはライブラリの関数なので、スイートの他のプログラムがプロセスを起動せずに呼び出せます。

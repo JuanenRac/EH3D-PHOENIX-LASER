@@ -139,6 +139,10 @@ These pictures are taken by the program itself with `--shot` (see Quick start).
   <img src="images/screens/window-engrave.png" alt="Engraving a picture: the dots of the gradient of the examples coloured by their power" width="100%">
 </p>
 
+<p align="center">
+  <img src="images/screens/window-run.png" alt="The machine panel: the saved answer of the controller, its switch and the box that explains an alarm" width="100%">
+</p>
+
 ## ✨ Features
 
 * **A library and a command line:** every command of `phoenix-laser` is a function of the library, so another program of the suite can call it without starting a process.

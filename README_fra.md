@@ -139,6 +139,10 @@ Ces images sont prises par le programme lui-même avec `--shot` (voir Démarrage
   <img src="images/screens/window-engrave.png" alt="Gravure d'une image : les points du dégradé des exemples colorés selon leur puissance" width="100%">
 </p>
 
+<p align="center">
+  <img src="images/screens/window-run.png" alt="Le panneau de la machine : la réponse enregistrée du contrôleur, son interrupteur et la case qui explique une alarme" width="100%">
+</p>
+
 ## ✨ Fonctionnalités
 
 * **Une bibliothèque et une ligne de commande :** chaque commande de `phoenix-laser` est une fonction de la bibliothèque ; un autre programme de la suite peut l'appeler sans lancer de processus.

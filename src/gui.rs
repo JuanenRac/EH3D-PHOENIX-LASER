@@ -2962,6 +2962,10 @@ mod tests {
                 let mut seen = Vec::new();
                 for c in &out.shapes {
                     if let egui::Shape::Text(t) = &c.shape {
+                        // an empty box has a text with no place of its own
+                        if t.galley.text().is_empty() {
+                            continue;
+                        }
                         let place = c.shape.visual_bounding_rect();
                         let room = c.clip_rect.intersect(screen).expand(1.0);
                         assert!(

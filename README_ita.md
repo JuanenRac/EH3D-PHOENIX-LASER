@@ -139,6 +139,10 @@ Queste immagini sono scattate dal programma stesso con `--shot` (vedi Avvio rapi
   <img src="images/screens/window-engrave.png" alt="Incisione di un'immagine: i punti del gradiente degli esempi colorati secondo la loro potenza" width="100%">
 </p>
 
+<p align="center">
+  <img src="images/screens/window-run.png" alt="Il pannello della macchina: la risposta salvata del controllore, il suo interruttore e la casella che spiega un allarme" width="100%">
+</p>
+
 ## ✨ Funzionalità
 
 * **Libreria e riga di comando:** ogni comando di `phoenix-laser` è una funzione della libreria, così un altro programma della suite può chiamarla senza avviare un processo.

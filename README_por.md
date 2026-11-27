@@ -139,6 +139,10 @@ Estas imagens são tiradas pelo próprio programa com `--shot` (ver Início ráp
   <img src="images/screens/window-engrave.png" alt="Gravação de uma imagem: os pontos do gradiente dos exemplos coloridos pela sua potência" width="100%">
 </p>
 
+<p align="center">
+  <img src="images/screens/window-run.png" alt="O painel da máquina: a resposta guardada do controlador, o seu interruptor e a caixa que explica um alarme" width="100%">
+</p>
+
 ## ✨ Funcionalidades
 
 * **Biblioteca e linha de comandos:** cada comando de `phoenix-laser` é uma função da biblioteca, por isso outro programa da suíte pode chamá-la sem lançar um processo.
