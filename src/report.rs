@@ -638,7 +638,7 @@ mod tests {
         // the list holds every key once
         let mut all = Key::ALL.to_vec();
         all.dedup();
-        assert_eq!(all.len(), 30);
+        assert_eq!(all.len(), 33);
     }
 
     #[test]

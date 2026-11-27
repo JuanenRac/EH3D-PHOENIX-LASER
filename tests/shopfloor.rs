@@ -98,14 +98,9 @@ fn the_dashes_of_a_perforation_leave_every_bridge_at_least_as_long_as_asked() {
 fn a_perforated_cut_burns_dashes_and_passes_the_check_with_either_power_mode() {
     for mode in ["m4", "m3"] {
         let s = vconfig::parse(&format!(
-            "[machine]\nlaser_mode = {mode}\noverscan_mm = 1\norigin_x = 5\norigin_y = 5\n[defaults]\nperf_cut = 5\nperf_gap = 1\n"
-        ));
-        let s = s.unwrap_or_else(|_| {
-            vconfig::parse(&format!(
-                "[machine]\nlaser_mode = {mode}\noverscan_mm = 1\n[defaults]\nperf_cut = 5\nperf_gap = 1\n"
-            ))
-            .unwrap()
-        });
+            "[machine]\nlaser_mode = {mode}\noverscan_mm = 1\n[defaults]\nperf_cut = 5\nperf_gap = 1\n"
+        ))
+        .unwrap();
         let made = plan(&drawing(ONE), &s).unwrap();
         // 132 mm round: 22 dashes of 5 mm
         assert!(
