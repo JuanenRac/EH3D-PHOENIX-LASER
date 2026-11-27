@@ -88,6 +88,28 @@ pub fn comment_text(text: &str) -> String {
         .collect()
 }
 
+/// How many pieces of these contours lie on a piece already drawn, whichever way round (ends within a hundredth of a millimetre).
+pub fn doubled_segments<'a>(contours: impl Iterator<Item = &'a Contour>) -> usize {
+    let key = |p: Pt| ((p.0 * 100.0).round() as i64, (p.1 * 100.0).round() as i64);
+    let mut seen = std::collections::BTreeSet::new();
+    let mut doubled = 0;
+    for c in contours {
+        let n = c.pts.len();
+        let pieces = if c.closed && n > 2 {
+            n
+        } else {
+            n.saturating_sub(1)
+        };
+        for (i, &from) in c.pts.iter().enumerate().take(pieces) {
+            let (a, b) = (key(from), key(c.pts[(i + 1) % n]));
+            if a != b && !seen.insert((a.min(b), a.max(b))) {
+                doubled += 1;
+            }
+        }
+    }
+    doubled
+}
+
 // ---------------------------------------------------------------- placing the shapes
 
 /// The shapes of the layers that are not skipped, with the y axis up and placed as the settings say.
@@ -529,6 +551,16 @@ fn cut_layer(out: &mut Out, layer: &Layer, notes: &mut Vec<String>) -> Result<us
     let s = out.s;
     let p = &layer.params;
     let power = power_value(p, s.machine.s_max)?;
+    let doubled = doubled_segments(layer.contours.iter());
+    if doubled > 0 {
+        note(
+            notes,
+            format!(
+                "layer {}: {doubled} piece(s) are drawn twice: they would be cut twice in the same place, with twice the energy",
+                comment_text(&layer.name())
+            ),
+        );
+    }
     let mut items = join(
         layer.contours.clone(),
         s.join_tolerance_mm,

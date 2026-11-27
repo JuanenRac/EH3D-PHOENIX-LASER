@@ -249,7 +249,9 @@ fn set(m: &mut Material, key: &str, value: &str) -> Result<(), String> {
         "dither" => {
             let w = value.trim().to_ascii_lowercase();
             if Method::from_word(&w, DEFAULT_THRESHOLD).is_none() {
-                return Err(format!("'{w}' is not fs, atkinson, threshold or bayer"));
+                return Err(format!(
+                    "'{w}' is not fs, atkinson, threshold, bayer, jarvis, stucki, sierra or burkes"
+                ));
             }
             m.dither = Some(w);
         }

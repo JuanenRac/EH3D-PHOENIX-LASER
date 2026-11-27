@@ -10,6 +10,7 @@ pub mod browse;
 pub mod calibrate;
 pub mod commonmat;
 pub mod contract;
+pub mod controller;
 pub mod cut;
 pub mod dither;
 pub mod dxf;
@@ -19,6 +20,7 @@ pub mod export;
 pub mod flatten;
 pub mod frame;
 pub mod gcode_out;
+pub mod grblcodes;
 pub mod guard;
 #[cfg(feature = "gui")]
 pub mod gui;

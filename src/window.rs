@@ -145,14 +145,22 @@ pub enum Kind {
     Atkinson,
     Bayer,
     Threshold,
+    Jarvis,
+    Stucki,
+    Sierra,
+    Burkes,
 }
 
 impl Kind {
-    pub const ALL: [Kind; 4] = [
+    pub const ALL: [Kind; 8] = [
         Kind::FloydSteinberg,
         Kind::Atkinson,
         Kind::Bayer,
         Kind::Threshold,
+        Kind::Jarvis,
+        Kind::Stucki,
+        Kind::Sierra,
+        Kind::Burkes,
     ];
 
     /// The kind of dots a word of a material or of the command line names.
@@ -162,6 +170,10 @@ impl Kind {
             "atkinson" => Some(Kind::Atkinson),
             "bayer" | "ordered" => Some(Kind::Bayer),
             "threshold" => Some(Kind::Threshold),
+            "jarvis" => Some(Kind::Jarvis),
+            "stucki" => Some(Kind::Stucki),
+            "sierra" => Some(Kind::Sierra),
+            "burkes" => Some(Kind::Burkes),
             _ => None,
         }
     }
@@ -173,6 +185,10 @@ impl Kind {
             Kind::Atkinson => "atkinson",
             Kind::Bayer => "bayer",
             Kind::Threshold => "threshold",
+            Kind::Jarvis => "jarvis",
+            Kind::Stucki => "stucki",
+            Kind::Sierra => "sierra",
+            Kind::Burkes => "burkes",
         }
     }
 
@@ -182,6 +198,10 @@ impl Kind {
             Kind::Atkinson => Msg::DitherAtkinson,
             Kind::Bayer => Msg::DitherBayer,
             Kind::Threshold => Msg::DitherThreshold,
+            Kind::Jarvis => Msg::DitherJarvis,
+            Kind::Stucki => Msg::DitherStucki,
+            Kind::Sierra => Msg::DitherSierra,
+            Kind::Burkes => Msg::DitherBurkes,
         }
     }
 }
@@ -1771,6 +1791,10 @@ impl Window {
             Kind::FloydSteinberg => Method::FloydSteinberg,
             Kind::Atkinson => Method::Atkinson,
             Kind::Bayer => Method::Bayer,
+            Kind::Jarvis => Method::Jarvis,
+            Kind::Stucki => Method::Stucki,
+            Kind::Sierra => Method::Sierra,
+            Kind::Burkes => Method::Burkes,
             Kind::Threshold => {
                 Method::Threshold(self.number(Key::Threshold)?.clamp(0.0, 255.0) as u8)
             }
@@ -4711,7 +4735,7 @@ mod tests {
                 && !Job::OpenImage.is_export()
                 && !Job::OpenConfig.is_export()
         );
-        assert_eq!(Kind::ALL.len(), 4);
+        assert_eq!(Kind::ALL.len(), 8);
     }
 
     fn text_of(w: &Window, key: Key) -> String {

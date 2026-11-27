@@ -97,19 +97,36 @@ impl Verdict {
     pub fn passes(&self) -> bool {
         self.problems.is_empty()
     }
+
+    /// Adds what a saved listing of the settings of the controller says against this program and its limits (see [`crate::controller`]): the serious findings make it fail, the others are
+    /// notes. The name `controller_settings` goes to the list of checks.
+    pub fn add_controller(&mut self, dump: &crate::controller::Dump, l: &Limits) {
+        let found = crate::controller::check(
+            dump,
+            &crate::controller::Expect {
+                s_max: l.s_max,
+                bed_mm: l.bed_mm,
+                max_feed_mm_min: (self.max_feed > 0.0).then_some(self.max_feed),
+            },
+        );
+        self.guards.push("controller_settings");
+        for f in found {
+            let text = f.text(crate::lang::Lang::En);
+            if f.kind.serious() {
+                self.problems.push(text);
+            } else {
+                self.notes.push(text);
+            }
+        }
+    }
 }
 
-/// Whether a note of the preview makes a program fail: the laser on during a rapid move, a burning move with no feed, a power above the full power of the controller or work outside of the
-/// bed.
+/// Whether a note of the analysis makes a program fail: a power above the full power of the controller or work outside of the bed. What the reading itself finds (the laser on during a
+/// rapid move, a burning move with no feed and the rest) is in the faults of the program.
 fn is_problem(note: &str) -> bool {
-    [
-        "during a rapid move",
-        "a burning move has no feed",
-        "above the full power",
-        "outside of the bed",
-    ]
-    .iter()
-    .any(|w| note.contains(w))
+    ["above the full power", "outside of the bed"]
+        .iter()
+        .any(|w| note.contains(w))
 }
 
 /// Checks a program. `bytes` are the bytes of the file (their hash is the one that is reported).
@@ -179,7 +196,9 @@ pub fn verify_with(bytes: &[u8], l: &Limits, guard: &Guard) -> Result<Verdict, S
             ));
         }
     }
-    for n in &report.notes {
+    // what the reading itself found dangerous or beyond judging, whatever its words
+    problems.extend(program.faults.iter().cloned());
+    for n in report.notes.iter().filter(|n| !program.faults.contains(n)) {
         if is_problem(n) {
             problems.push(n.clone());
         } else {
@@ -567,7 +586,8 @@ mod tests {
         };
         let v = verify(GOOD.as_bytes(), &l).unwrap();
         assert!(v.problems.iter().any(|p| p.contains("outside of the bed")));
-        let no_end = "G21\nG90\nF1000\nG0 X0 Y0\nM3 S100\nG1 X10 Y0\n";
+        // with M4 the beam goes out when the head stops, so a missing end is only told
+        let no_end = "G21\nG90\nF1000\nG0 X0 Y0\nM4 S100\nG1 X10 Y0\n";
         let v = verify(no_end.as_bytes(), &Limits::default()).unwrap();
         assert!(v.passes());
         assert!(

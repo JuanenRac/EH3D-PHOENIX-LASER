@@ -47,6 +47,31 @@ pub struct Program {
     /// The highest `S` the program sets, burning or not.
     pub max_s: f64,
     pub notes: Vec<String>,
+    /// What makes a check of the program fail: something dangerous, or something that cannot be judged. They are at the head of `notes` too, so that a list of notes that is full never loses one.
+    pub faults: Vec<String>,
+}
+
+/// The longest line, without spaces and comments, that GRBL takes.
+pub const MAX_CONTROLLER_LINE: usize = 79;
+
+/// Keeps a fault: it has a list of its own, so that ordinary notes cannot push it out.
+fn fault(faults: &mut Vec<String>, text: String) {
+    note(faults, text);
+}
+
+/// The faults first, then as many of the other notes as there is room for.
+fn gather(mut p: Program) -> Program {
+    let mut all = p.faults.clone();
+    for n in std::mem::take(&mut p.notes) {
+        if all.len() >= MAX_NOTES {
+            break;
+        }
+        if !all.contains(&n) {
+            all.push(n);
+        }
+    }
+    p.notes = all;
+    p
 }
 
 fn note(notes: &mut Vec<String>, text: String) {
@@ -55,48 +80,87 @@ fn note(notes: &mut Vec<String>, text: String) {
     }
 }
 
-/// The words of a line: a letter and the number after it. Comments in brackets or after `;`, a checksum after `*`, and the line number `N` are left out.
-fn words(line: &str) -> Vec<(char, f64)> {
-    let mut clean = String::with_capacity(line.len());
-    let mut depth = 0u32;
+/// What one line of a program holds, read the way GRBL reads it: spaces count for nothing, so `S1 000` is `S1000`.
+#[derive(Debug, Default)]
+struct LineRead {
+    /// A letter and the number after it; the line number `N` is left out.
+    words: Vec<(char, f64)>,
+    /// Something outside of the comments is not a letter with a number.
+    unreadable: bool,
+    /// The line holds `$`: a command of the controller itself.
+    system: bool,
+    /// A character that GRBL obeys at once (`!`, `~`, `?`, a control character or one outside of ASCII), in the code or in a comment.
+    realtime_code: bool,
+    realtime_comment: bool,
+    /// The length without spaces and comments.
+    length: usize,
+}
+
+fn is_realtime(c: char) -> bool {
+    matches!(c, '!' | '~' | '?')
+        || !c.is_ascii()
+        || (c.is_ascii_control() && !matches!(c, '\t' | '\r'))
+}
+
+/// Reads a line. Comments in brackets or after `;` and a checksum after `*` are not part of the code.
+fn read_line(line: &str) -> LineRead {
+    let mut r = LineRead::default();
+    let mut clean: Vec<char> = Vec::with_capacity(line.len());
+    let (mut depth, mut rest) = (0u32, false);
     for c in line.chars() {
+        let in_comment = rest || depth > 0 || matches!(c, ';' | '(' | ')');
+        if is_realtime(c) {
+            if in_comment {
+                r.realtime_comment = true;
+            } else {
+                r.realtime_code = true;
+            }
+        }
+        if rest {
+            continue;
+        }
         match c {
-            ';' | '*' if depth == 0 => break,
+            ';' | '*' if depth == 0 => rest = true,
             '(' => depth += 1,
             ')' => depth = depth.saturating_sub(1),
             _ if depth > 0 => {}
+            _ if c.is_whitespace() || c.is_control() || is_realtime(c) => {}
             _ => clean.push(c.to_ascii_uppercase()),
         }
     }
-    let chars: Vec<char> = clean.chars().collect();
-    let mut out = Vec::new();
+    r.length = clean.len();
+    if clean.contains(&'$') {
+        r.system = true;
+        return r;
+    }
     let mut i = 0;
-    while i < chars.len() {
-        let c = chars[i];
-        if c.is_ascii_alphabetic() {
-            let mut j = i + 1;
-            while j < chars.len() && chars[j].is_whitespace() {
-                j += 1;
-            }
-            let start = j;
-            if j < chars.len() && (chars[j] == '-' || chars[j] == '+') {
-                j += 1;
-            }
-            while j < chars.len() && (chars[j].is_ascii_digit() || chars[j] == '.') {
-                j += 1;
-            }
-            let text: String = chars[start..j].iter().collect();
-            if let Ok(v) = text.parse::<f64>() {
-                if v.is_finite() && v.abs() <= MAX_COORDINATE && c != 'N' {
-                    out.push((c, v));
+    while i < clean.len() {
+        let c = clean[i];
+        if !c.is_ascii_alphabetic() {
+            r.unreadable = true;
+            i += 1;
+            continue;
+        }
+        let start = i + 1;
+        let mut j = start;
+        if j < clean.len() && (clean[j] == '-' || clean[j] == '+') {
+            j += 1;
+        }
+        while j < clean.len() && (clean[j].is_ascii_digit() || clean[j] == '.') {
+            j += 1;
+        }
+        let text: String = clean[start..j].iter().collect();
+        match text.parse::<f64>() {
+            Ok(v) if v.is_finite() && v.abs() <= MAX_COORDINATE => {
+                if c != 'N' {
+                    r.words.push((c, v));
                 }
             }
-            i = j.max(i + 1);
-        } else {
-            i += 1;
+            _ => r.unreadable = true,
         }
+        i = j;
     }
-    out
+    r
 }
 
 /// How far (mm) the straight pieces that an arc (G2 or G3) is cut into may lie from the true arc, when nothing says another (`arc_tolerance_mm` in `[verify]`).
@@ -190,11 +254,15 @@ pub fn read_with(text: &str, arc_tolerance_mm: f64) -> Program {
     let mut plane = 17u32;
     let mut centre_absolute = false;
     let mut ended_by_word = false;
+    // whether the spindle was turned on with M3: constant power, which stays on while the head stands
+    let mut constant = false;
+    // some writers begin a file with a byte order mark, which the controller throws away
+    let text = text.strip_prefix('\u{feff}').unwrap_or(text);
     for (n, raw) in text.lines().enumerate() {
         if n >= MAX_LINES {
-            note(
-                &mut p.notes,
-                format!("only the first {MAX_LINES} lines were read"),
+            fault(
+                &mut p.faults,
+                format!("only the first {MAX_LINES} lines were read: the rest was not checked"),
             );
             break;
         }
@@ -202,10 +270,44 @@ pub fn read_with(text: &str, arc_tolerance_mm: f64) -> Program {
         if raw.trim_start().starts_with('%') {
             continue;
         }
-        let ws = words(raw);
+        let read = read_line(raw);
+        if read.realtime_code {
+            fault(
+                &mut p.faults,
+                format!("line {line}: a character that GRBL obeys at once (!, ~, ?, a control character or one outside of ASCII) is in the code"),
+            );
+        }
+        if read.realtime_comment {
+            note(
+                &mut p.notes,
+                format!("line {line}: a comment holds a character that GRBL obeys at once if the comment reaches it (!, ~, ?, a control character or one outside of ASCII)"),
+            );
+        }
+        if read.system {
+            fault(
+                &mut p.faults,
+                format!("line {line}: a command of the controller ($) is not part of a job: it can write a setting, unlock an alarm or move the head"),
+            );
+            continue;
+        }
+        if read.unreadable {
+            fault(
+                &mut p.faults,
+                format!("line {line}: a part of the line is not a letter with a number, so the line cannot be judged"),
+            );
+        }
+        if read.length > MAX_CONTROLLER_LINE {
+            note(
+                &mut p.notes,
+                format!("line {line}: the line is longer than the {MAX_CONTROLLER_LINE} characters GRBL takes"),
+            );
+        }
+        let ws = read.words;
         if ws.is_empty() {
             continue;
         }
+        // a dwell, a pause of the program, and a move of the focus: the head stands in the plane
+        let (mut dwell, mut pause, mut nz) = (false, false, false);
         let (mut nx, mut ny): (Option<f64>, Option<f64>) = (None, None);
         let (mut ci, mut cj, mut radius): (Option<f64>, Option<f64>, Option<f64>) =
             (None, None, None);
@@ -233,6 +335,11 @@ pub fn read_with(text: &str, arc_tolerance_mm: f64) -> Program {
                     910 => absolute = false,
                     911 => centre_absolute = false,
                     920 => set_origin = true,
+                    40 => dwell = true,
+                    930 | 950 => fault(
+                        &mut p.faults,
+                        format!("line {line}: G93 and G95 change what F means, so the speed of this program cannot be judged"),
+                    ),
                     921 | 922 => clear_origin = true,
                     100 => {
                         table_line = true;
@@ -252,11 +359,22 @@ pub fn read_with(text: &str, arc_tolerance_mm: f64) -> Program {
                     _ => {}
                 },
                 'M' => match code {
-                    3 | 4 => spindle = true,
+                    3 => (spindle, constant) = (true, true),
+                    4 => (spindle, constant) = (true, false),
                     5 => spindle = false,
                     2 | 30 => ended_here = true,
-                    _ => {}
+                    0 | 1 => pause = true,
+                    7..=9 => {}
+                    42 | 62..=68 | 106 | 107 | 126 | 127 => fault(
+                        &mut p.faults,
+                        format!("line {line}: M{code} switches an output that other controllers use for the laser, so its power cannot be judged"),
+                    ),
+                    _ => note(
+                        &mut p.notes,
+                        format!("line {line}: M{code} is not a command that GRBL knows"),
+                    ),
                 },
+                'Z' => nz = true,
                 'X' => nx = Some(v),
                 'Y' => ny = Some(v),
                 'I' => ci = Some(v),
@@ -264,6 +382,12 @@ pub fn read_with(text: &str, arc_tolerance_mm: f64) -> Program {
                 'R' => radius = Some(v),
                 'F' => new_feed = Some(v),
                 'S' => {
+                    if v < 0.0 {
+                        fault(
+                            &mut p.faults,
+                            format!("line {line}: S is below zero: the controller refuses the line and keeps the power it had"),
+                        );
+                    }
                     s = v.max(0.0);
                     if s > p.max_s {
                         p.max_s = s;
@@ -274,7 +398,35 @@ pub fn read_with(text: &str, arc_tolerance_mm: f64) -> Program {
         }
         let unit = if inch { 25.4 } else { 1.0 };
         if let Some(f) = new_feed {
+            if f < 0.0 {
+                fault(
+                    &mut p.faults,
+                    format!("line {line}: F is below zero: the controller refuses the line"),
+                );
+            }
             feed = (f * unit).max(0.0);
+        }
+        // M3 keeps the beam on at the same power while nothing moves
+        let held = spindle && constant && s > 0.0;
+        if held && dwell {
+            fault(
+                &mut p.faults,
+                format!(
+                    "line {line}: the head waits (G4) with the laser on at constant power (M3)"
+                ),
+            );
+        }
+        if held && pause {
+            fault(
+                &mut p.faults,
+                format!("line {line}: the program pauses (M0 or M1) with the laser on at constant power (M3)"),
+            );
+        }
+        if held && nz && nx.is_none() && ny.is_none() && !table_line && !set_origin {
+            fault(
+                &mut p.faults,
+                format!("line {line}: only the height moves with the laser on at constant power (M3): it burns one spot"),
+            );
         }
         if table_line {
             (nx, ny) = (None, None);
@@ -357,22 +509,22 @@ pub fn read_with(text: &str, arc_tolerance_mm: f64) -> Program {
             for to in path {
                 if (to.0 - x).abs() > 1e-9 || (to.1 - y).abs() > 1e-9 {
                     if p.moves.len() >= MAX_MOVES {
-                        note(
-                            &mut p.notes,
-                            format!("only the first {MAX_MOVES} moves were read"),
+                        fault(
+                            &mut p.faults,
+                            format!("only the first {MAX_MOVES} moves were read: the rest was not checked"),
                         );
-                        return p;
+                        return gather(p);
                     }
                     let burning = !rapid && spindle && s > 0.0;
                     if rapid && spindle && s > 0.0 {
-                        note(
-                            &mut p.notes,
+                        fault(
+                            &mut p.faults,
                             format!("line {line}: the laser is on (M3 or M4 with S above 0) during a rapid move"),
                         );
                     }
                     if burning && feed <= 0.0 {
-                        note(
-                            &mut p.notes,
+                        fault(
+                            &mut p.faults,
                             format!("line {line}: a burning move has no feed (F)"),
                         );
                     }
@@ -399,7 +551,13 @@ pub fn read_with(text: &str, arc_tolerance_mm: f64) -> Program {
     }
     // the end is M2 or M30 after the last move, or the spindle off
     p.ended = ended_by_word || !spindle;
-    p
+    if spindle && constant && s > 0.0 {
+        fault(
+            &mut p.faults,
+            "the program ends with the laser on at constant power (M3): there is no M5, M2 or M30 after it".to_string(),
+        );
+    }
+    gather(p)
 }
 
 /// What is asked of the analysis.
