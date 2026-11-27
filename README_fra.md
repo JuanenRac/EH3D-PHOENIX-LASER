@@ -17,7 +17,7 @@
 
 ---
 
-**Vérification d'honnêteté - ce qui fonctionne aujourd'hui :** une bibliothèque Rust et un programme en ligne de commande (`phoenix-laser`) avec 1094 tests qui s'exécutent sur un ordinateur : il transforme une image en points par tramage et écrit le G-code d'un laser qui brûle ligne par ligne avec une puissance dynamique et un dépassement, lit des dessins SVG, DXF et LBRN2 et écrit le G-code qui découpe leurs contours (ceux de l'intérieur d'abord, avec la largeur du faisceau, des ponts et plusieurs passes) et grave leurs formes avec des lignes, avec les réglages de chaque calque dans un fichier, brûle du texte, des codes QR et des codes-barres, vérifie un programme contre les limites de la machine et écrit une grille d'essai puissance contre avance. Il a une fenêtre (compilée avec `--features gui`), le cadre de panneaux de la suite avec treize panneaux et quatre espaces de travail, qui ouvre une image ou un dessin, montre le trajet du laser, permet de changer les réglages et exporte le G-code ; la fenêtre n'a pas été vue sur un écran par une personne. Le lecteur de projets LBRN2 a été mesuré sur douze projets réels d'un fabricant de lasers (les douze sont lus et l'unique image qu'ils contiennent est décodée et gravée par points ; le sens de leur axe y n'a jamais été confirmé avec une pièce réelle). Il peut aussi envoyer un programme au plugin laser du serveur EH3D et suivre, suspendre ou arrêter le travail (`phoenix-laser server`), testé seulement contre un double du serveur. **Rien ici n'a tourné sur un vrai laser** : rien de ce qui en est tiré, ni d'autre chose, n'a été découpé ou brûlé sur une machine.
+**Vérification d'honnêteté - ce qui fonctionne aujourd'hui :** une bibliothèque Rust et un programme en ligne de commande (`phoenix-laser`) avec 1108 tests qui s'exécutent sur un ordinateur : il transforme une image en points par tramage et écrit le G-code d'un laser qui brûle ligne par ligne avec une puissance dynamique et un dépassement, lit des dessins SVG, DXF et LBRN2 et écrit le G-code qui découpe leurs contours (ceux de l'intérieur d'abord, avec la largeur du faisceau, des ponts et plusieurs passes) et grave leurs formes avec des lignes, avec les réglages de chaque calque dans un fichier, brûle du texte, des codes QR et des codes-barres, vérifie un programme contre les limites de la machine et écrit une grille d'essai puissance contre avance. Il a une fenêtre (compilée avec `--features gui`), le cadre de panneaux de la suite avec treize panneaux et quatre espaces de travail, qui ouvre une image ou un dessin, montre le trajet du laser, permet de changer les réglages et exporte le G-code ; la fenêtre n'a pas été vue sur un écran par une personne. Le lecteur de projets LBRN2 a été mesuré sur douze projets réels d'un fabricant de lasers (les douze sont lus et l'unique image qu'ils contiennent est décodée et gravée par points ; le sens de leur axe y n'a jamais été confirmé avec une pièce réelle). Il peut aussi envoyer un programme au plugin laser du serveur EH3D et suivre, suspendre ou arrêter le travail (`phoenix-laser server`), testé seulement contre un double du serveur. **Rien ici n'a tourné sur un vrai laser** : rien de ce qui en est tiré, ni d'autre chose, n'a été découpé ou brûlé sur une machine.
 
 ---
 
@@ -30,7 +30,7 @@
 |---|---|
 | Version | `0.1.7` |
 | Maturité | Fonctionnel |
-| Tests | 1094 |
+| Tests | 1108 |
 | Pile technique | Rust |
 | Sur du matériel réel | Non essayé : rien ici n'a fonctionné sur une machine |
 
@@ -46,7 +46,7 @@ Chaque ligne est une partie de ce dépôt et le feu dit où elle en est aujourd'
 |---|---|---|
 | Cœur | 🟡 | transforme une image en points par tramage et écrit le G-code d'un laser qui brûle ligne par ligne avec une puissance dynamique et un dépassement, lit des dessins SVG et DXF et les découpe ou les grave par calque (contours ordonnés, largeur du faisceau, ponts, passes, hachures), et une grille d'essai puissance contre avance ; testé sur un ordinateur avec des entrées normales et abîmées, pas avec une collection de fichiers réels. |
 | Ligne de commande | 🟡 | `phoenix-laser` (`engrave`, `calibrate`, `info`, `cut`, `vector`, `layers`) exécute les mêmes fonctions que la bibliothèque et affiche le résultat ; chaque erreur revient sous forme de message et d'un code de sortie non nul. |
-| Tests | 🟡 | 1094 tests passent (`cargo test`), avec des cas normaux, des cas limites et des entrées abîmées. |
+| Tests | 🟡 | 1108 tests passent (`cargo test`), avec des cas normaux, des cas limites et des entrées abîmées. |
 | Sécurité | 🟡 | Rust sûr et simple (`forbid(unsafe_code)`) : rien ne panique sur les fichiers reçus et une mauvaise valeur est une erreur avec sa raison ; pas de revue indépendante. |
 | Fenêtre | 🟠 | Écrite (egui, `--features gui`) comme le cadre de panneaux de la suite : ouvrir ou déposer une image ou un dessin SVG, DXF ou LBRN2, voir le trajet du laser (la découpe d'une couleur, le déplacement atténué), modifier le tableau des calques, les modes texte, code QR, code-barres, repères, cadre et focale, une grille d'étalonnage, zoom et déplacement, estimer la durée, vérifier, rapport, envoyer au serveur, exporter ; sa logique est testée, mais elle n'a pas été vue sur un écran par une personne. |
 | Matériel réel | 🔴 | Non essayé : rien ici n'a été exécuté sur une machine. |
@@ -102,7 +102,7 @@ Chaque ligne est une partie de ce dépôt et le feu dit où elle en est aujourd'
 * **Préréglages et réglage en direct** (`src/presets.rs`, `src/live.rs`, `[live]` dans le fichier de réglages) : un préréglage d'un matériau et d'une épaisseur est assigné à un calque (une copie) ou lié à lui (le calque suit le préréglage ; un changement dit quels calques il a atteints et est refusé en entier si l'un ne peut pas l'accepter). Les valeurs de la base commune sont utilisées telles quelles, marquées comme non essayées sur une machine, et les secondes valeurs d'autres sources ne sont utilisées que si on les demande. Le réglage en direct de la puissance et de la vitesse est un calcul tenu par quatre limites (sa propre plage, qui par défaut ne relève jamais une valeur, la machine, le serveur et le pilote) et dit quelle limite a retenu une valeur ; rien n'est envoyé à une machine.
 * **Le rapport dans la fenêtre** (`src/window.rs`) : le rapport de `phoenix-laser report` peut être fait à partir du programme calculé par la fenêtre, dans la langue de la fenêtre, et il est abandonné dès que quelque chose change.
 * **Tramage ordonné** (`src/dither.rs`) : `--dither bayer` (aussi dans la fenêtre) décide chaque point selon sa place et son gris avec une matrice de Bayer 8 x 8, donc le motif est régulier et le même gris brûle toujours les mêmes points ; les tests vérifient que chaque niveau de la matrice apparaît une fois et que le noircissement d'un gris est conservé.
-* **Une vérification qui lit comme le contrôleur** (`src/preview.rs`, `src/verify.rs`) : les espaces dans un nombre ne comptent pas ; `M3` allumé pendant que la tête attend, fait une pause ou que le programme finit, une commande `$` dans le programme, une partie illisible, `G93`, les codes M que d'autres contrôleurs emploient pour un laser, les caractères que GRBL exécute aussitôt et un programme trop long pour être lu en entier font échouer `verify`, et aucune autre note ne peut chasser un danger du rapport.
+* **Une vérification qui lit comme le contrôleur** (`src/preview.rs`, `src/verify.rs`) : les espaces dans un nombre ne comptent pas ; `M3` allumé pendant que la tête attend, fait une pause ou que le programme finit, une commande `$` dans le programme, une partie illisible, `G93`, les codes M que d'autres contrôleurs emploient pour un laser, les caractères que GRBL exécute aussitôt et un programme trop long pour être lu en entier font échouer `verify`, et aucune autre note ne peut chasser un danger du rapport. Elle refuse aussi ce que le contrôleur refuserait (les commentaires entre parenthèses ne s'imbriquent pas, des mots inconnus, des mots qui ne peuvent pas partager une ligne, une ligne trop longue, une somme de contrôle), un mouvement après `M2` et l'écriture de ce que le contrôleur conserve (`G10`, `G28.1`, `G30.1`) ; les commandes et la fenêtre n'écrivent aucun programme qui échoue à la vérification (`src/gate.rs`), et jamais une puissance supérieure à celle demandée.
 * **Réglages du contrôleur et alarmes** (`src/grblset.rs`, `src/grblcodes.rs`) : `phoenix-laser controller` compare la réponse enregistrée à `$$` avec la machine (mode laser, pleine puissance `$30`, puissance minimale, pouces, course), `verify --controller` l'ajoute au verdict et `phoenix-laser explain` dit ce que signifie une alarme ou une erreur, dans les huit langues ; rien n'est envoyé à une machine, et aucune liste ni alarme d'un vrai contrôleur n'a été essayée.
 * **Essais d'espacement des lignes et de largeur du faisceau** (`src/calibrate.rs`) : `phoenix-laser interval` remplit une rangée de carrés à différents espacements et `phoenix-laser kerf` découpe un rectangle en bandes dont le jeu donne la largeur du faisceau ; les deux ne sont écrits que s'ils passent la vérification, et rien n'a été brûlé.
 * **Autres tramages et lignes découpées deux fois** (`src/dither.rs`, `src/cut.rs`) : Jarvis, Stucki, Sierra et Burkes (aussi dans la fenêtre), et un avertissement quand des tronçons d'un calque de découpe sont dessinés deux fois.
@@ -240,7 +240,7 @@ Pour prendre une capture de la fenêtre sans l'ouvrir à la main, lancez-la avec
 
 ## 🧪 Tests
 
-La suite compte 1094 tests (`cargo test`, exécutés sous Windows et Linux dans le CI). Ils vérifient les cas normaux, les cas limites et les entrées abîmées : fichiers vides, bruit et fichiers coupés ne font jamais paniquer. Le CI exécute aussi `cargo fmt --check`, `cargo clippy` avec les avertissements comme erreurs et `python -I tools/ci_validate.py`.
+La suite compte 1108 tests (`cargo test`, exécutés sous Windows et Linux dans le CI). Ils vérifient les cas normaux, les cas limites et les entrées abîmées : fichiers vides, bruit et fichiers coupés ne font jamais paniquer. Le CI exécute aussi `cargo fmt --check`, `cargo clippy` avec les avertissements comme erreurs et `python -I tools/ci_validate.py`.
 
 ## 🏗️ Compilation et publication
 
@@ -290,6 +290,7 @@ EH3D-PHOENIX-LASER/
 │   ├── report.rs                                le rapport lu avant un travail, dans les huit langues
 │   ├── flatten.rs                               courbes en segments droits dans une tolérance (Bézier, arcs)
 │   ├── frame.rs                                 le cadre du travail (le rectangle parcouru laser éteint) et les repères de ses coins
+│   ├── gate.rs                                  aucun programme refusé par la vérification n'est écrit
 │   ├── register.rs                              où se trouve le travail : les repères trouvés dans une image et la caméra simulée
 │   ├── svg.rs                                   le lecteur SVG : un sous-ensemble sûr, sans scripts, images ni entités
 │   ├── testfiles.rs                             la matrice puissance contre vitesse et l'essai de l'axe Y, comme projets
@@ -328,6 +329,7 @@ EH3D-PHOENIX-LASER/
 │   ├── lbrn2.rs                                 tests du lecteur LBRN2 sur des projets écrits ici, fichiers hostiles et fuzz
 │   ├── lbrn2_more.rs                            tests des images LBRN2, de l'axe y, ellipse, polygone, ponts et fuzz
 │   ├── faults.rs                                tests de ce que la vérification d'un programme refuse
+│   ├── gate.rs                                  tests de la vérification faite avant d'écrire un programme
 │   ├── grblset.rs                               tests des réglages du contrôleur, alarmes et erreurs
 │   ├── testcuts.rs                              tests des essais d'espacement, de largeur du faisceau et du tramage
 │   ├── lbrn_v1.rs                               essais de l'ancien format de projet, de ses textes et des calques d'un projet en ligne de commande

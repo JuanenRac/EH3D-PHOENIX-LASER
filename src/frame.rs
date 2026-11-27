@@ -33,7 +33,7 @@ pub fn pilot_value(s_max: u32, percent: f64) -> Result<u32, String> {
             "the power of the frame is {percent}: it must be 0 or more"
         ));
     }
-    let s = (f64::from(s_max) * percent / 100.0).round() as u32;
+    let s = crate::safety::spindle(s_max, percent);
     if percent > 0.0 && s == 0 {
         return Err(format!(
             "a power of {percent} % of S{s_max} is less than one step of S: raise it or leave the laser off"
@@ -177,7 +177,7 @@ pub fn marks_program(
             }
         }
     }
-    let s = (f64::from(m.s_max) * k.power_percent / 100.0).round() as u32;
+    let s = crate::safety::spindle(m.s_max, k.power_percent);
     if s == 0 {
         return Err(format!(
             "a power of {} % of S{} is less than one step of S",

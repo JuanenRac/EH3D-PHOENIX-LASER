@@ -3818,6 +3818,21 @@ impl Window {
             self.status = Status::NeedImage;
             return false;
         };
+        // a program that the check would fail (it leaves the bed, burns in a zone or breaks a limit) is not written, and neither is one when a box that the check needs holds a bad value
+        if let Err(status) = self.limits().and(self.verify_overscan()) {
+            self.status = status;
+            return false;
+        }
+        let held = self
+            .done
+            .as_ref()
+            .and_then(|done| self.verify_limits(done.s_max));
+        if let Some(Err(e)) =
+            held.map(|limits| crate::gate::before_write(&text, &limits, &self.settings.zones))
+        {
+            self.status = Status::Failed(e);
+            return false;
+        }
         match write_atomic(path, &text) {
             Ok(()) => {
                 self.status = Status::Written(name_of(path));

@@ -17,6 +17,14 @@ pub const DEFAULT_SEND_POWER_PERCENT: f64 = 40.0;
 /// The limit of speed when nothing says another: the fastest speed any setting of the program accepts (mm/min).
 pub const DEFAULT_MAX_SPEED_MM_MIN: f64 = 30_000.0;
 
+/// The `S` of a percent of full power: the whole step at or below it, so that a program never burns with more than was asked, nor with more than a limit the power was held to (half of 255
+/// is S127 and not S128).
+pub fn spindle(s_max: u32, percent: f64) -> u32 {
+    // the small amount keeps a whole step that the multiplication leaves a hair below
+    let exact = f64::from(s_max) * percent / 100.0 + 1e-6;
+    (exact.floor().max(0.0) as u32).min(s_max)
+}
+
 /// A limit of speed must be from 1 to 30000 mm/min.
 pub fn validate_max_speed(max_mm_min: f64) -> Result<(), String> {
     if max_mm_min.is_finite() && (1.0..=DEFAULT_MAX_SPEED_MM_MIN).contains(&max_mm_min) {
@@ -109,6 +117,27 @@ pub fn pilot_percent(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_spindle_value_is_never_more_than_the_power_that_was_asked() {
+        assert_eq!(spindle(255, 50.0), 127);
+        assert_eq!(spindle(255, 40.0), 102);
+        assert_eq!(spindle(1000, 33.3), 333);
+        assert_eq!(spindle(1000, 57.0), 570);
+        assert_eq!(spindle(1000, 100.0), 1000);
+        assert_eq!(spindle(1000, 0.05), 0);
+        for s_max in [255u32, 1000, 10_000] {
+            for tenth in 0..=1000u32 {
+                let percent = f64::from(tenth) / 10.0;
+                let s = f64::from(spindle(s_max, percent));
+                let exact = f64::from(s_max) * percent / 100.0;
+                assert!(
+                    s <= exact + 1e-6 && s > exact - 1.0,
+                    "{s_max} {percent}: {s}"
+                );
+            }
+        }
+    }
 
     #[test]
     fn a_limit_must_be_from_a_tenth_to_one_hundred() {

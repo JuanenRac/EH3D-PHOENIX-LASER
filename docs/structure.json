@@ -392,6 +392,19 @@
           }
         },
         {
+          "name": "gate.rs",
+          "desc": {
+            "en": "no program is written that the check would fail",
+            "es": "no se escribe ningún programa que la comprobación rechace",
+            "de": "kein Programm wird geschrieben, das die Prüfung ablehnt",
+            "fr": "aucun programme refusé par la vérification n'est écrit",
+            "it": "non si scrive alcun programma che il controllo rifiuta",
+            "ja": "検査で不合格になるプログラムは書き出さない",
+            "zh": "检查不通过的程序不会被写出",
+            "pt": "não se escreve nenhum programa que a verificação recuse"
+          }
+        },
+        {
           "name": "register.rs",
           "desc": {
             "en": "where the work lies: the marks found in a picture, and the simulated camera",
@@ -877,6 +890,19 @@
             "ja": "プログラム検査が拒否する内容のテスト",
             "zh": "程序检查所拒绝内容的测试",
             "pt": "testes do que a verificação de um programa recusa"
+          }
+        },
+        {
+          "name": "gate.rs",
+          "desc": {
+            "en": "tests of the check made before a program is written",
+            "es": "pruebas de la comprobación previa a escribir un programa",
+            "de": "Tests der Prüfung vor dem Schreiben eines Programms",
+            "fr": "tests de la vérification faite avant d'écrire un programme",
+            "it": "test del controllo fatto prima di scrivere un programma",
+            "ja": "プログラムを書き出す前の検査のテスト",
+            "zh": "写出程序之前检查的测试",
+            "pt": "testes da verificação feita antes de escrever um programa"
           }
         },
         {

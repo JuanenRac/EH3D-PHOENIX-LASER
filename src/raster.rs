@@ -56,7 +56,7 @@ impl Params {
     }
 
     pub fn power(&self) -> u32 {
-        (f64::from(self.s_max) * self.power_percent / 100.0).round() as u32
+        crate::safety::spindle(self.s_max, self.power_percent)
     }
 }
 

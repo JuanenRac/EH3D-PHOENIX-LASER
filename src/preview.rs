@@ -94,6 +94,72 @@ struct LineRead {
     realtime_comment: bool,
     /// The length without spaces and comments.
     length: usize,
+    /// A `)` with no comment open: GRBL refuses the whole line.
+    stray: bool,
+    /// A checksum after `*`, which GRBL does not know: it refuses the whole line.
+    checksum: bool,
+}
+
+/// The `G` words GRBL 1.1 takes, ten times their number (`G38.2` is 382).
+const GRBL_G: [i64; 38] = [
+    0, 10, 20, 30, 40, 100, 170, 180, 190, 200, 210, 280, 281, 300, 301, 382, 383, 384, 385, 400,
+    431, 490, 530, 540, 550, 560, 570, 580, 590, 610, 800, 900, 910, 911, 920, 921, 930, 940,
+];
+
+/// The `M` words GRBL 1.1 takes.
+const GRBL_M: [f64; 10] = [0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 7.0, 8.0, 9.0, 30.0];
+
+/// The modal group of a `G` word of GRBL: two words of one group on a line make the controller refuse it.
+fn g_group(v: f64) -> Option<u8> {
+    Some(match (v * 10.0).round() as i64 {
+        0 | 10 | 20 | 30 | 382..=385 | 800 => 1,
+        170 | 180 | 190 => 2,
+        900 | 910 => 3,
+        930 | 940 => 4,
+        200 | 210 => 5,
+        431 | 490 => 6,
+        540 | 550 | 560 | 570 | 580 | 590 => 7,
+        40 | 100 | 280 | 281 | 300 | 301 | 530 | 920 | 921 => 8,
+        _ => return None,
+    })
+}
+
+/// The modal group of an `M` word (the coolant words may come together).
+fn m_group(v: f64) -> Option<u8> {
+    Some(match v.round() as i64 {
+        0 | 1 | 2 | 30 => 1,
+        3..=5 => 2,
+        _ => return None,
+    })
+}
+
+/// A word GRBL does not know. A line that holds one is refused as a whole.
+fn unknown_word((letter, v): (char, f64)) -> bool {
+    match letter {
+        'G' => !GRBL_G.contains(&((v * 10.0).round() as i64)),
+        'M' => !GRBL_M.contains(&v),
+        'F' | 'I' | 'J' | 'K' | 'L' | 'P' | 'R' | 'S' | 'T' | 'X' | 'Y' | 'Z' => false,
+        _ => true,
+    }
+}
+
+/// The first two words of a line that cannot be on it together, as a text: the same letter twice, or two words of one modal group.
+fn conflict(words: &[(char, f64)]) -> Option<String> {
+    // a line that GRBL takes is short, so a longer list is a line that fails for its length anyway
+    let words = &words[..words.len().min(MAX_CONTROLLER_LINE)];
+    for (i, &(a, x)) in words.iter().enumerate() {
+        for &(b, y) in &words[i + 1..] {
+            let clash = match (a, b) {
+                ('G', 'G') => g_group(x).is_some() && g_group(x) == g_group(y),
+                ('M', 'M') => m_group(x).is_some() && m_group(x) == m_group(y),
+                _ => a == b && !matches!(a, 'G' | 'M'),
+            };
+            if clash {
+                return Some(format!("{a}{x} and {b}{y}"));
+            }
+        }
+    }
+    None
 }
 
 fn is_realtime(c: char) -> bool {
@@ -102,13 +168,13 @@ fn is_realtime(c: char) -> bool {
         || (c.is_ascii_control() && !matches!(c, '\t' | '\r'))
 }
 
-/// Reads a line. Comments in brackets or after `;` and a checksum after `*` are not part of the code.
+/// Reads a line as GRBL does: a comment in brackets ends at the first `)` (they do not nest), a `;` starts a comment that goes to the end, and what follows a `*` is a checksum.
 fn read_line(line: &str) -> LineRead {
     let mut r = LineRead::default();
     let mut clean: Vec<char> = Vec::with_capacity(line.len());
-    let (mut depth, mut rest) = (0u32, false);
+    let (mut inside, mut rest) = (false, false);
     for c in line.chars() {
-        let in_comment = rest || depth > 0 || matches!(c, ';' | '(' | ')');
+        let in_comment = rest || inside || matches!(c, ';' | '(' | ')');
         if is_realtime(c) {
             if in_comment {
                 r.realtime_comment = true;
@@ -120,10 +186,12 @@ fn read_line(line: &str) -> LineRead {
             continue;
         }
         match c {
-            ';' | '*' if depth == 0 => rest = true,
-            '(' => depth += 1,
-            ')' => depth = depth.saturating_sub(1),
-            _ if depth > 0 => {}
+            ')' if inside => inside = false,
+            _ if inside => {}
+            ';' => rest = true,
+            '*' => (rest, r.checksum) = (true, true),
+            '(' => inside = true,
+            ')' => r.stray = true,
             _ if c.is_whitespace() || c.is_control() || is_realtime(c) => {}
             _ => clean.push(c.to_ascii_uppercase()),
         }
@@ -297,14 +365,58 @@ pub fn read_with(text: &str, arc_tolerance_mm: f64) -> Program {
             );
         }
         if read.length > MAX_CONTROLLER_LINE {
-            note(
-                &mut p.notes,
-                format!("line {line}: the line is longer than the {MAX_CONTROLLER_LINE} characters GRBL takes"),
+            fault(
+                &mut p.faults,
+                format!("line {line}: the line is longer than the {MAX_CONTROLLER_LINE} characters GRBL takes, so it refuses the whole line"),
+            );
+        }
+        if read.stray {
+            fault(
+                &mut p.faults,
+                format!("line {line}: a `)` with no comment open, so GRBL refuses the whole line (comments in brackets do not nest)"),
+            );
+        }
+        if read.checksum {
+            fault(
+                &mut p.faults,
+                format!("line {line}: GRBL knows no checksum (`*`), so it refuses the whole line"),
             );
         }
         let ws = read.words;
+        if let Some(&(letter, v)) = ws.iter().find(|w| unknown_word(**w)) {
+            if ws.iter().any(|w| !unknown_word(*w)) {
+                fault(
+                    &mut p.faults,
+                    format!("line {line}: GRBL does not know {letter}{v}, so it refuses the whole line and the other words of it are not obeyed"),
+                );
+            } else if letter != 'M' {
+                note(
+                    &mut p.notes,
+                    format!("line {line}: {letter}{v} is not a command that GRBL knows"),
+                );
+            }
+        }
+        if let Some(pair) = conflict(&ws) {
+            fault(
+                &mut p.faults,
+                format!(
+                    "line {line}: {pair} cannot be on one line, so GRBL refuses the whole line"
+                ),
+            );
+        }
         if ws.is_empty() {
             continue;
+        }
+        // what comes after the end of the program still reaches the controller
+        if ended_by_word
+            && ws
+                .iter()
+                .any(|&(l, v)| matches!(l, 'X' | 'Y' | 'Z') || (l == 'M' && (v == 3.0 || v == 4.0)))
+        {
+            fault(
+                &mut p.faults,
+                format!("line {line}: the head moves or the laser is turned on after the end of the program (M2 or M30)"),
+            );
         }
         // a dwell, a pause of the program, and a move of the focus: the head stands in the plane
         let (mut dwell, mut pause, mut nz) = (false, false, false);
@@ -343,11 +455,15 @@ pub fn read_with(text: &str, arc_tolerance_mm: f64) -> Program {
                     921 | 922 => clear_origin = true,
                     100 => {
                         table_line = true;
-                        note(
-                            &mut p.notes,
-                            format!("line {line}: G10 sets coordinates in the controller: the places in this report are the ones the program writes"),
+                        fault(
+                            &mut p.faults,
+                            format!("line {line}: G10 writes coordinates that the controller keeps for every job after this one"),
                         );
                     }
+                    281 | 301 => fault(
+                        &mut p.faults,
+                        format!("line {line}: G28.1 and G30.1 write a position that the controller keeps for every job after this one"),
+                    ),
                     280 | 300 | 530 => note(
                         &mut p.notes,
                         format!("line {line}: G28, G30 and G53 move in the coordinates of the machine: the places in this report are the ones the program writes"),
@@ -459,6 +575,12 @@ pub fn read_with(text: &str, arc_tolerance_mm: f64) -> Program {
             };
             let rapid = matches!(motion, Some(0));
             let path: Vec<Pt> = if motion.is_none() {
+                if spindle && s > 0.0 {
+                    fault(
+                        &mut p.faults,
+                        format!("line {line}: the head moves with the laser on before any G0 or G1, and the controller keeps the way of moving of the job before"),
+                    );
+                }
                 note(
                     &mut p.notes,
                     format!("line {line}: a move before any G0 or G1 was left out"),
@@ -545,8 +667,11 @@ pub fn read_with(text: &str, arc_tolerance_mm: f64) -> Program {
             ended_by_word = false;
         }
         if ended_here {
+            // the controller goes back to its usual modes at the end of a program
             ended_by_word = true;
-            spindle = false;
+            (spindle, constant) = (false, false);
+            (absolute, centre_absolute) = (true, false);
+            (motion, plane) = (Some(1), 17);
         }
     }
     // the end is M2 or M30 after the last move, or the spindle off
@@ -919,7 +1044,7 @@ mod tests {
     #[test]
     fn comments_line_numbers_and_checksums_are_left_out() {
         let p = read_ok(
-            "N10 G21 (millimetres)\n; a note\nF100 ; slow\nM3 S10\nG1 X5 (to here) Y0 *57\nM5\n",
+            "N10 G21 (millimetres)\n; a note\nF100 ; slow\nM3 S10\nG1 X5 (to here) Y0 ; *57\nM5\n",
         );
         assert_eq!(p.moves.len(), 1);
         assert_eq!(p.moves[0].to, (5.0, 0.0));

@@ -4,6 +4,14 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+- **Safety, comments in brackets end where the controller ends them:** GRBL does not nest them, so in `(a (b) S1000 G1 X500` what follows the first `)` is obeyed. The check read it as one long comment and passed it; now it judges what follows, and a `)` with no comment open fails.
+- **Safety, a line the controller would refuse fails:** a word GRBL does not know beside other words (`M5 E0`, `S0 M6`, `G64 G1 X5`), a checksum after `*`, and a line of more than 79 characters (it was only told). The whole line is refused, so an `M5` on it would never reach the laser.
+- **Safety, words that cannot be on one line fail:** the same letter twice (`S100 S0`, `X1 X2`) or two words of one group (`M3 M5`, `G0 G1`, `G90 G91`), which the controller refuses as a whole line while the check read the last one.
+- **Safety, the end of a program is read as the controller reads it:** after `M2` or `M30` it goes back to `G1`, `G90` and the XY plane with the laser off, a move or `M3`/`M4` after the end fails, and so does a move with the laser on before any `G0` or `G1`.
+- **Safety, a program that writes what the controller keeps fails:** `G10`, `G28.1` and `G30.1` change every job that comes after.
+- **Safety, a power is never written above the one asked:** `S` is the whole step at or below the percent, so half of `S255` is `S127` and not `S128`, which was over a limit of 50 %. A power under one step is refused.
+- **Safety, no program is written that the check would fail:** `engrave`, `cut`, `vector`, `text` (every row of a series before the first is written), `qr`, `barcode`, `marks`, `calibrate`, `focus`, `frame` and the export of the window run the check first with the bed and the forbidden zones of the settings, which most of them did not look at. The interlocks are looked at when a program is checked, reported or sent, not when it is written.
+- **Safety, no frame from a program that cannot be judged:** `frame --gcode` refuses a program with a fault, since the place it reads may not be where the head goes.
 - **Safety, the check reads a program the way the controller does:** spaces inside a line count for nothing, so a power written `S1 000` is judged as `S1000` and `X1 000` as a metre. Before, only the part up to the space was read, and a power over the limit or work outside the bed could pass.
 - **Safety, a danger is never lost behind other notes:** what makes a program fail (the laser on during a rapid move, a burning move with no feed and the rest) is kept apart from the ordinary notes. Before, twenty earlier notes filled the list and a later danger was dropped, so the program passed.
 - **Safety, a program too long to be read whole fails:** the check says that the rest was not looked at instead of passing it.

@@ -140,7 +140,11 @@ fn what_cannot_be_read_fails_instead_of_being_left_out() {
             v.problems
         );
     }
-    for line in ["N10 G1 X+.5 Y-0. *57", "g1x5y5", "(a note) G1 (another) X5"] {
+    for line in [
+        "N10 G1 X+.5 Y-0. ; *57",
+        "g1x5y5",
+        "(a note) G1 (another) X5",
+    ] {
         let v = with(line);
         assert!(v.passes(), "{line}: {:?}", v.problems);
     }
@@ -176,21 +180,145 @@ fn what_the_controller_obeys_at_once_fails_in_the_code_and_is_told_in_a_comment(
 }
 
 #[test]
-fn a_line_longer_than_the_controller_takes_is_told() {
+fn a_line_longer_than_the_controller_takes_fails() {
     let long = format!("G1 X1.{}", "0".repeat(90));
     let v = with(&long);
-    assert!(
-        v.notes.iter().any(|n| n.contains("longer than")),
-        "{:?}",
-        v.notes
-    );
+    assert!(failed_with(&v, "longer than"), "{:?}", v.problems);
     let spaced = format!("G1{}X5", " ".repeat(200));
-    assert!(!with(&spaced).notes.iter().any(|n| n.contains("longer")));
+    assert!(with(&spaced).passes(), "{:?}", with(&spaced).problems);
+    let commented = format!("G1 X5 ({})", "a".repeat(200));
+    assert!(with(&commented).passes());
+}
+
+#[test]
+fn a_comment_in_brackets_ends_at_the_first_bracket_as_for_the_controller() {
+    // the controller obeys what follows the first `)`: full power, outside of the bed
+    let limits = Limits {
+        max_power_percent: 20.0,
+        bed_mm: Some((100.0, 100.0)),
+        ..Limits::default()
+    };
+    let v = verify(
+        b"G21\nG90\nF600\nM4 S100\n(a (b) S1000 G1 X500\nM5\nM2\n",
+        &limits,
+    )
+    .unwrap();
+    assert_eq!(v.max_s, 1000.0);
+    assert!(failed_with(&v, "limit of power"), "{:?}", v.problems);
+    assert!(failed_with(&v, "outside of the bed"), "{:?}", v.problems);
+    // a `;` inside brackets is part of the comment
+    assert!(with("(a ; b) G1 X5").passes());
+    assert_eq!(read("(a ; b) G1 X5\n").moves.len(), 0);
+    assert_eq!(read("G0 (a ; b) X5\n").moves.len(), 1);
+}
+
+#[test]
+fn a_line_the_controller_refuses_fails() {
+    for (line, words) in [
+        ("(a (b)) M5", "no comment open"),
+        ("M5 )", "no comment open"),
+        ("M5 *12", "checksum"),
+        ("S0 E5", "does not know E5"),
+        ("M5 A1", "does not know A1"),
+        ("M5 G41", "does not know G41"),
+        ("S0 M6", "does not know M6"),
+        ("G64 G1 X5", "does not know G64"),
+    ] {
+        let v = with(line);
+        assert!(failed_with(&v, words), "{line}: {:?}", v.problems);
+    }
+    // a line with only a word the controller does not know changes nothing: it is told
+    for line in ["G64", "G41", "E5", "M6", "T1"] {
+        let v = with(line);
+        assert!(v.passes(), "{line}: {:?}", v.problems);
+    }
+}
+
+#[test]
+fn words_that_cannot_be_on_one_line_fail() {
+    for line in [
+        "M3 M5",
+        "M5 M4",
+        "M2 M30",
+        "G0 G1 X5",
+        "G90 G91",
+        "G20 G21",
+        "G54 G55",
+        "S100 S0",
+        "G1 X1 X2",
+        "F100 F200",
+        "G4 P1 P2",
+    ] {
+        let v = with(line);
+        assert!(
+            failed_with(&v, "cannot be on one line"),
+            "{line}: {:?}",
+            v.problems
+        );
+    }
+    for line in [
+        "G21 G90 G17 G94",
+        "G53 G0 X0",
+        "M8 M9",
+        "M4 S100 G1 X5 F600",
+    ] {
+        let v = with(line);
+        assert!(
+            !v.problems
+                .iter()
+                .any(|p| p.contains("cannot be on one line")),
+            "{line}: {:?}",
+            v.problems
+        );
+    }
+}
+
+#[test]
+fn after_the_end_of_a_program_nothing_may_move_and_the_modes_are_the_usual_ones() {
+    for tail in ["G0 X5", "X5", "M3 S100", "M4", "G0 Z3"] {
+        let v = check(&format!(
+            "G21\nG90\nF600\nM4 S100\nG1 X10\nM5\nM2\n{tail}\nM5\n"
+        ));
+        assert!(
+            failed_with(&v, "after the end of the program"),
+            "{tail}: {:?}",
+            v.problems
+        );
+    }
+    let v = check("G21\nG90\nF600\nM4 S100\nG1 X10\nM5\nM2\nM5\nM9\n");
+    assert!(v.passes(), "{:?}", v.problems);
+    // the controller forgets G91 at M2, so the head goes to 5 and not 15
+    let p = read("G91\nG0 X10\nM2\nX5\n");
+    assert_eq!(p.moves.last().unwrap().to, (5.0, 0.0));
+    assert!(!p.moves.last().unwrap().rapid, "G1 is the mode after M2");
+}
+
+#[test]
+fn a_move_with_the_laser_on_before_any_way_of_moving_fails() {
+    let v = check("G21\nG90\nF600\nM3 S100\nX10\nG1 X20\nM5\nM2\n");
+    assert!(failed_with(&v, "before any G0 or G1"), "{:?}", v.problems);
+    let v = check("G21\nG90\nF600\nX10\nM4 S100\nG1 X20\nM5\nM2\n");
+    assert!(v.passes(), "{:?}", v.problems);
+}
+
+#[test]
+fn a_program_that_writes_what_the_controller_keeps_fails() {
+    for (line, words) in [
+        ("G10 L2 P1 X0 Y0", "G10 writes"),
+        ("G10 L20 P1 X0", "G10 writes"),
+        ("G28.1", "G28.1 and G30.1"),
+        ("G30.1", "G28.1 and G30.1"),
+    ] {
+        let v = with(line);
+        assert!(failed_with(&v, words), "{line}: {:?}", v.problems);
+    }
+    let v = with("G92 X0 Y0");
+    assert!(v.passes(), "{:?}", v.problems);
 }
 
 #[test]
 fn random_bytes_never_stop_the_reader_and_a_fault_always_fails_the_program() {
-    let alphabet: Vec<char> = "GMXYSF$0123456789.-+ ();*!?#\n\u{e9}".chars().collect();
+    let alphabet: Vec<char> = "GMXYSFPE$0123456789.-+ ();*!?#\n\u{e9}".chars().collect();
     let mut seed = 0x1234_5678_9abc_def0u64;
     for _ in 0..400 {
         let text: String = (0..120)
