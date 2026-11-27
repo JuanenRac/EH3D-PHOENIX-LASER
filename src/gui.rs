@@ -8,7 +8,7 @@ use crate::materials;
 use crate::panels::{self, id as pid, Cmd, LayoutWatch, MenuFacts};
 use crate::shot::{ShotRequest, ShotTheme, ShotWindow, PATIENCE_FRAMES};
 use crate::suitecore;
-use crate::suitetext::S;
+use crate::suitetext::{Said, S};
 use crate::suitewin::Step;
 use crate::vconfig::{KerfSide, LayerMode, QrEcc, TextAlign};
 use crate::window::{fire, Job, Key, Kind, LayerField, Mode, Section, Window, MAX_SEGMENTS};
@@ -859,6 +859,44 @@ impl App {
             }
             Some(false) => self.win.suite_cancel(),
             None => {}
+        }
+    }
+
+    /// What is offered when a write is refused because another program saved the project: read it again, or save under another name.
+    fn suite_changed_window(&mut self, ctx: &egui::Context) {
+        let Some(file) = &self.win.suite.changed else {
+            return;
+        };
+        let code = self.win.lang.code();
+        let line = Said(S::ChangedOnDisk, vec![crate::suitecore::name_of(file)]).text(code);
+        let mut again = false;
+        let mut save_as = false;
+        let mut close = false;
+        egui::Window::new(S::Menu.tr(code))
+            .id(egui::Id::unique("suite-changed"))
+            .collapsible(false)
+            .resizable(false)
+            .anchor(egui::Align2::CENTER_CENTER, Vec2::ZERO)
+            .show(ctx, |ui| {
+                ui.set_max_width(420.0);
+                ui.label(egui::RichText::new(line.as_str()).color(DANGER));
+                ui.horizontal_wrapped(|ui| {
+                    again = ui.button(S::ReadAgain.tr(code)).clicked();
+                    save_as = ui.button(S::MenuSaveAs.tr(code)).clicked();
+                    close = ui.button(S::Close.tr(code)).clicked();
+                });
+            });
+        // Escape closes it; nothing is read and nothing is written
+        close |= ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape));
+        if again {
+            if self.win.suite_reopen() {
+                self.after_suite();
+            }
+        } else if save_as {
+            self.win.suite_dismiss_changed();
+            self.ask(Job::SuiteSaveAs);
+        } else if close {
+            self.win.suite_dismiss_changed();
         }
     }
 
@@ -2262,6 +2300,7 @@ impl eframe::App for Shell {
             app.confirm_window(&ctx);
             app.suite_list_window(&ctx);
             app.suite_confirm_window(&ctx);
+            app.suite_changed_window(&ctx);
             app.shot_tick(&ctx);
         }
         // the arrangement is kept in the settings file when it changed (a picture keeps nothing)

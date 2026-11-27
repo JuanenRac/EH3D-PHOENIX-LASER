@@ -4,6 +4,9 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+- **A project saved by another program is not written over:** the window keeps the mark of the project from the moment it opens or saves it, looks at it again after a question, and refuses to save, import or take when another program wrote the file meanwhile. It says so in the eight languages and offers to read it again, to save under another name or to close. 3 new tests.
+- **What the tag v0.3.7 of EH3D-COMMON brings to the window:** the panel «Attachments» refuses the same writes and reads its list again, and `viewer.max_preview_mb` (16 by default) in the settings says how much text a whole preview keeps.
+
 - **The top bar takes a second row in a narrow window:** under about 1000 points of width the buttons lay over the box of the language, which was cut at the edge; what does not fit now goes to a further row.
 - **The key of the powers no longer lies over the preview of an engraving:** in a low window the key was drawn on top of the picture; it now has its own strip over the preview, the work is fitted and clipped under it, and in a low panel the key takes a single row. A test draws the preview with no screen at several sizes.
 

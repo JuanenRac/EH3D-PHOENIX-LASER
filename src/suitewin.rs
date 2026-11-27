@@ -4,7 +4,8 @@
 //! The work is done by the functions of the command `project` (`eh3dfile`); what is here decides what the window holds, what goes into
 //! the branch and what a person has to agree to first. The window (`gui`) only draws and asks, so all of it is tested without a screen.
 //! Only the branch `laser` is written. A project that was not opened here, a branch that changed since it was read and a signature that
-//! a write removes are asked about before anything is written.
+//! a write removes are asked about before anything is written. A project that another program saved since it was read here is not
+//! written over: the window says so and offers to read it again or to save under another name.
 
 use std::path::{Path, PathBuf};
 
@@ -49,6 +50,8 @@ pub struct Pending {
     pub action: Action,
     /// What has to be agreed to.
     pub warnings: Vec<Said>,
+    /// The mark of the project that was asked about, looked at again after the answer.
+    seen: Option<String>,
 }
 
 /// How an entry ended.
@@ -77,9 +80,11 @@ pub struct SuiteState {
     pub extra: Vec<String>,
     /// The write that waits for the person.
     pub pending: Option<Pending>,
+    /// The project a write was refused for because another program saved it meanwhile, until the person chooses what to do.
+    pub changed: Option<PathBuf>,
     /// The branch that is going to be extracted.
     pub extract_branch: String,
-    /// The content hash of the branch of the program when it was read or written.
+    /// The mark of the project of the window when it was read or written here.
     seen: Option<String>,
     /// Where the settings file that goes into the project comes from.
     pub settings: Source,
@@ -266,6 +271,7 @@ impl Window {
             .cloned()
             .collect();
         self.suite.pending = None;
+        self.suite.changed = None;
         self.suite.seen = found.own_hash.clone();
         self.suite.view = Some(found);
         self.suite.file = Some(path.to_path_buf());
@@ -485,10 +491,20 @@ impl Window {
 
     /// The person agreed to the write that was waiting.
     pub fn suite_confirm(&mut self) -> Step {
-        match self.suite.pending.take() {
-            Some(pending) => self.suite_run(pending.action, true),
-            None => Step::Refused,
+        let Some(pending) = self.suite.pending.take() else {
+            return Step::Refused;
+        };
+        let target = match &pending.action {
+            Action::Save(target) => Some(target.clone()),
+            _ => self.suite.file.clone(),
+        };
+        // the person may have taken long to answer: another program may have saved the project meanwhile
+        if let (Some(target), Some(seen)) = (target, pending.seen.as_deref()) {
+            if let Err(why) = suitecore::check_unchanged(&target, seen) {
+                return self.suite_refused(&target, why);
+            }
         }
+        self.suite_run(pending.action, true)
     }
 
     /// The person did not agree: nothing was written and nothing is.
@@ -517,8 +533,46 @@ impl Window {
         }
     }
 
+    /// Reads again the project that another program saved: its work replaces what the window holds.
+    pub fn suite_reopen(&mut self) -> bool {
+        match self.suite.changed.take() {
+            Some(file) => self.suite_open(&file),
+            None => false,
+        }
+    }
+
+    /// The person closed the notice of a project that another program saved: nothing is read and nothing is written.
+    pub fn suite_dismiss_changed(&mut self) {
+        self.suite.changed = None;
+    }
+
+    /// A write that failed. When the reason is that another program saved the project, it is said in the language of the window and
+    /// the window offers to read it again or to save under another name.
+    fn suite_refused(&mut self, target: &Path, why: String) -> Step {
+        if !suitecore::is_changed_refusal(&why) {
+            return self.suite_fail(why);
+        }
+        self.suite.changed = Some(target.to_path_buf());
+        self.suite_refresh();
+        self.status = Status::Suite(Said(S::ChangedOnDisk, vec![name_of(target)]));
+        Step::Refused
+    }
+
     /// Asks for the agreement of the person when there is something to agree to.
     fn suite_ask(&mut self, target: &Path, action: &Action) -> Option<Step> {
+        // the mark of what is asked about: the one taken when the project of the window was read, or the file as it is now
+        let ours = self
+            .suite
+            .file
+            .as_deref()
+            .is_some_and(|c| suitecore::same_file(c, target));
+        let mark = if ours {
+            self.suite.seen.clone()
+        } else {
+            suitecore::view(target, BRANCH)
+                .ok()
+                .and_then(|v| v.own_hash)
+        };
         let found = suitecore::warnings(
             target,
             self.suite.file.as_deref(),
@@ -531,15 +585,17 @@ impl Window {
                 self.suite.pending = Some(Pending {
                     action: action.clone(),
                     warnings,
+                    seen: mark,
                 });
                 Some(Step::Asked)
             }
-            Err(e) => Some(self.suite_fail(e)),
+            Err(e) => Some(self.suite_refused(target, e)),
         }
     }
 
     fn suite_run(&mut self, action: Action, agreed: bool) -> Step {
         self.suite.pending = None;
+        self.suite.changed = None;
         match &action {
             Action::Save(target) => self.suite_write(target, &action, agreed),
             Action::Import(source) => self.suite_bring(&action, agreed, |w, file| {
@@ -608,7 +664,7 @@ impl Window {
                 self.status = Status::Suite(status);
                 Step::Done
             }
-            Err(e) => self.suite_fail(e),
+            Err(e) => self.suite_refused(&file, e),
         }
     }
 
@@ -684,7 +740,7 @@ impl Window {
                     if copy_from.is_some() {
                         let _ = std::fs::remove_file(target);
                     }
-                    return self.suite_fail(e);
+                    return self.suite_refused(target, e);
                 }
             }
         };

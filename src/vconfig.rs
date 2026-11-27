@@ -1905,10 +1905,11 @@ mod tests {
 
     #[test]
     fn the_limits_of_the_attachments_are_read_anywhere_and_a_project_never_changes_them() {
-        let text = "attachments.max_mb = 16\n[machine]\ns_max = 500\nviewer.max_pdf_mb = 8\n";
+        let text = "attachments.max_mb = 16\n[machine]\ns_max = 500\nviewer.max_pdf_mb = 8\nviewer.max_preview_mb = 32\n";
         let mine = parse(text).unwrap();
         assert_eq!(mine.panel.attachments.max_attachment_bytes, 16 << 20);
         assert_eq!(mine.panel.viewer.max_pdf_bytes, 8 << 20);
+        assert_eq!(mine.panel.viewer.max_preview_bytes, 32 << 20);
         assert_eq!(mine.machine.s_max, 500);
         for bad in [
             "attachments.max_mb = 0",

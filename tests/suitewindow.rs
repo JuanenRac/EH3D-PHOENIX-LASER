@@ -67,6 +67,16 @@ fn foreign(path: &Path) {
     write_branch(path, "x-vendor", &[("blob", b"anything")]);
 }
 
+/// Saves the project the way another program does: the change is made on a copy and the file is replaced with it, so this
+/// process has no memory of that write.
+fn saved_by_another(project: &Path) {
+    let copy = project.with_file_name("another.eh3d");
+    fs::copy(project, &copy).unwrap();
+    write_branch(&copy, "pcb", &[("board.json", b"{\"made\":\"up\"}")]);
+    fs::copy(&copy, project).unwrap();
+    fs::remove_file(&copy).unwrap();
+}
+
 /// Every file of every branch but `laser`.
 fn others(path: &Path) -> BTreeMap<String, Vec<u8>> {
     let mut project = Project::open(path, &OpenOptions::default()).unwrap();
@@ -389,4 +399,74 @@ fn a_damaged_project_leaves_the_window_as_it_was() {
     assert!(!w.open_dropped(&junk));
     assert_eq!(w.suite_save_as(&junk), Step::Refused);
     assert_eq!(fs::read(&junk).unwrap(), b"not a project");
+}
+
+#[test]
+fn a_project_another_program_saved_is_not_written_over_and_can_be_read_again_or_saved_apart() {
+    let dir = folder("changed");
+    let project = dir.join("job.eh3d");
+    foreign(&project);
+    let mut w = Window::new(Lang::En);
+    assert!(w.suite_open(&project));
+    assert!(w.run_job(Job::OpenImage, &file(&dir, "plate.svg", OUTLINE)));
+    saved_by_another(&project);
+    // looking at it again for the bar is not reading the work again
+    w.suite_refresh();
+    let bytes = fs::read(&project).unwrap();
+    assert_eq!(w.suite_save(), Step::Refused);
+    assert_eq!(said(&w), S::ChangedOnDisk);
+    assert!(w.status.is_problem());
+    assert_eq!(w.suite.changed.as_deref(), Some(project.as_path()));
+    assert!(w.suite.pending.is_none());
+    assert_eq!(fs::read(&project).unwrap(), bytes);
+    // under another name the work is saved beside what the other program saved
+    let apart = dir.join("mine.eh3d");
+    assert_eq!(w.suite_save_as(&apart), Step::Done);
+    assert!(w.suite.changed.is_none());
+    assert_eq!(others(&apart), others(&project));
+    assert_eq!(fs::read(&project).unwrap(), bytes);
+    // reading the project again lets it be saved
+    assert!(w.suite_open(&project));
+    assert!(w.run_job(Job::OpenImage, &dir.join("plate.svg")));
+    assert_eq!(w.suite_save(), Step::Done);
+}
+
+#[test]
+fn a_save_by_another_program_while_a_question_waits_refuses_the_agreed_write() {
+    let dir = folder("while");
+    let theirs = dir.join("theirs.eh3d");
+    foreign(&theirs);
+    let mut w = window_with_drawing(&dir);
+    assert_eq!(w.suite_save_as(&theirs), Step::Asked);
+    saved_by_another(&theirs);
+    let bytes = fs::read(&theirs).unwrap();
+    assert_eq!(w.suite_confirm(), Step::Refused);
+    assert_eq!(said(&w), S::ChangedOnDisk);
+    assert_eq!(fs::read(&theirs).unwrap(), bytes);
+    // read again, and the file is the one of the window
+    assert!(w.suite_reopen());
+    assert!(w.suite.changed.is_none());
+    assert_eq!(w.suite.file.as_deref(), Some(theirs.as_path()));
+    assert!(!w.suite_reopen());
+}
+
+#[test]
+fn a_take_and_an_import_do_not_write_over_what_another_program_saved() {
+    let dir = folder("bring");
+    let project = dir.join("job.eh3d");
+    foreign(&project);
+    let mut w = Window::new(Lang::En);
+    assert!(w.suite_open(&project));
+    saved_by_another(&project);
+    let bytes = fs::read(&project).unwrap();
+    assert_eq!(w.suite_take("cad", "outline.svg"), Step::Refused);
+    assert_eq!(said(&w), S::ChangedOnDisk);
+    assert_eq!(
+        w.suite_import(&file(&dir, "other.svg", OTHER)),
+        Step::Refused
+    );
+    assert_eq!(said(&w), S::ChangedOnDisk);
+    assert_eq!(fs::read(&project).unwrap(), bytes);
+    w.suite_dismiss_changed();
+    assert!(w.suite.changed.is_none());
 }

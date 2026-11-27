@@ -32,6 +32,7 @@ The limits of the panel «Attachments» are lines of their own that may be writt
 | `viewer.max_image_mb` | 64 | largest picture file shown |
 | `viewer.max_text_mb` | 2 | bytes of a text file shown |
 | `viewer.max_office_mb` | 128 | largest office document previewed |
+| `viewer.max_preview_mb` | 16 | text a whole preview keeps; the rest is cut and said |
 
 `phoenix-laser settings` lists every key of the sections of this file and of a library of materials (section, key, kind of value, default and whether it is a safety setting), as text or as JSON with `--json`; a test keeps that list equal to the keys the reader takes and to the defaults of the tables below.
 
