@@ -4,6 +4,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+- **Third-party notices in every package (`docs/THIRD_PARTY_NOTICES`):** the packages of the releases now carry the copyright notices and licence texts of the Rust crates and of the data the program is built with, and the CI fails when a new dependency or licence is not in the file.
+
 - **Dynamic or constant power:** `laser_mode = m4|m3` in `[machine]` or in a profile, and the list "Power mode" of the window with its help in the eight languages, choose how every program that is written turns the laser on. `m4` stays the default. With `m3` the program is written with `M3`, the power at 0 before every rapid move and stop, and run-ups and run-outs with the laser off, `overscan_mm` long; with `overscan_mm = 0` nothing is written. Tried only as text, not on a machine.
 - **Safety, the check says where constant power burns more:** for a program with `M3`, `verify` notes that the power does not follow the speed, the burns that begin from rest or turn sharply, and a beam turned on or changed while the head stands.
 - **Accents in a comment are taken:** only `!`, `~`, `?` and control characters of a comment are noted; accented letters and other characters outside ASCII still fail outside a comment.
