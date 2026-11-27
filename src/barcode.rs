@@ -280,7 +280,7 @@ pub fn program(
             b.speed_mm_min, b.max_minutes
         ));
     }
-    let s = (f64::from(m.s_max) * b.power_percent / 100.0).round() as u32;
+    let s = crate::safety::spindle(m.s_max, b.power_percent);
     if s == 0 {
         return Err(format!(
             "a power of {} % of S{} is less than one step of S",

@@ -18,7 +18,9 @@ use eh3d_phoenix_laser::dxf::read_dxf;
 use eh3d_phoenix_laser::energy::describe;
 use eh3d_phoenix_laser::export;
 use eh3d_phoenix_laser::frame::{self, Frame};
+use eh3d_phoenix_laser::gate;
 use eh3d_phoenix_laser::gcode_out::{header, sha256_hex, Header};
+use eh3d_phoenix_laser::guard::Zone;
 use eh3d_phoenix_laser::image::from_bytes;
 use eh3d_phoenix_laser::lang::Lang;
 use eh3d_phoenix_laser::lbrn2::{read_lbrn2, read_project};
@@ -117,7 +119,7 @@ align finds the positioning marks (the ones `marks` burns, with the same --size,
 frame writes a program that traces the rectangle of the work with the laser OFF, to see where it will land: --size W,H from the corner --origin, or the box of what burns in --gcode PROGRAM.nc (its real place). --margin widens it. A --pilot power (a percent, at most max_pilot_percent of [frame], 5 unless the file says another, and at most the limit of power) turns the laser on weakly and only with --confirm-laser-on; the [frame] section of --config holds the usual values.
 preview reads a G-code program (this program's or another's) and says what it would do: moves, burnt and travelled length, the box, the powers, a time that counts the corners (--accel in mm/s2), with --laser-watts the energy that the program burns (the power of each move as a part of the full power --smax, over the time it burns) and its mean power, and what looks dangerous (the laser on during a rapid move, a burning move with no feed, S above --smax, work outside --bed, no end); with OUT.svg it also draws the path. It only reads text.
 verify reads a G-code program as text (it never runs it) and says its SHA-256, what it does and whether it passes: under the limit of power and of speed, inside the bed (--overscan-mm lets the head go that far past the bed with the laser off, as the overscan of another program does; burning outside the bed always fails, and [verify] overscan_mm of --config sets the same), with the laser off during every rapid move and a feed on every burning move; --expect-sha256 HASH ties the check to a program that was authorised: when the SHA-256 of the file is not that one (64 hex digits) the program fails, so a program that was changed after it was looked at is not run by mistake; --json gives the report for another program to keep, and the exit code is 1 when it fails.
-verify also fails a program that holds a command of the controller ($), a part that is not a letter with a number, G93 or G95, an M code that other controllers use to switch a laser, a character GRBL obeys at once, a number of S or F below zero, a program too long to be read whole, or M3 left on while the head waits, pauses, moves only its height or ends; spaces inside a line count for nothing, as for GRBL. --controller SETTINGS.txt compares the saved answer of the controller to $$ with the limits and the program: laser mode off or unknown and a full power $30 that is not s_max fail it.
+verify also fails a program that holds a command of the controller ($), a part that is not a letter with a number, G93 or G95, an M code that other controllers use to switch a laser, a character GRBL obeys at once, a number of S or F below zero, a program too long to be read whole, or M3 left on while the head waits, pauses, moves only its height or ends; spaces inside a line count for nothing and a comment in brackets ends at the first ), as for GRBL. It fails a line GRBL would refuse (a word it does not know beside other words, two words that cannot share a line, a checksum, more than 79 characters), a move or M3/M4 after M2 or M30, and G10, G28.1 and G30.1. The commands that write a program run this check first (without the interlocks) and write nothing when it fails. --controller SETTINGS.txt compares the saved answer of the controller to $$ with the limits and the program: laser mode off or unknown and a full power $30 that is not s_max fail it.
 controller reads the saved answer of a GRBL controller to $$ (a text file: nothing is sent to a machine) and says in a language what does not agree with the machine of --config: the laser mode ($32), the S of full power ($30), the least S ($31), inches ($13) and the travel ($130, $131); a serious finding gives exit code 1. explain says what ALARM:n or error:n means. interval writes a row of squares filled at different spacings of the lines, and kerf a rectangle cut into strips: push the strips to one side, measure the gap and give it to kerf --gap to have the width of the beam. Both test programs are checked like any program and are not written when they fail.
 report is the check of verify written to be read before a job in one of eight languages (--lang en, es, de, fr, it, ja, zh or pt, the one of the system when it is not given): the SHA-256 of the file, the moves, the length burnt and the time, the box of the work, the highest power and speed against the limits, the energy when [machine] laser_watts is set, whether the material of --material was verified, how many forbidden zones were checked, what the interlocks say, the reasons of a failure (these in English, as verify gives them) and a verdict; it reads the file as text, runs nothing, and the exit code is 1 when the program fails.
 project works with a project of the suite (.eh3d, one file with a branch for each program) and writes only the branch laser: save puts the drawing, the settings, the library of materials and the programs there (what is not given stays), import takes a drawing of another program (LBRN2, LBRN, SVG or DXF) and keeps its original with a report of what was read, not read and lost on export, take copies a file of another branch (an outline or a mesh of cad) with a reference to the state it was taken from, so that list and open say OUT OF DATE when that branch changes, open reads the branch and with --into writes its files, extract writes the files of any branch. Every other branch keeps its bytes; a file that is there is never written over by open or extract.
@@ -182,6 +184,10 @@ struct MachineLimits {
     calibrate: vconfig::CalibrateSettings,
     /// How a drawing or a project is read (the defaults when there is no file).
     read: ReadOptions,
+    /// The bed and the forbidden zones of the settings file, and how far past the bed the head may go with the laser off.
+    bed_mm: Option<(f64, f64)>,
+    zones: Vec<Zone>,
+    overscan_mm: f64,
 }
 
 /// The limits and the spindle value that `--config`, `--profile`, `--max-power` and `--max-speed` give to `engrave` and `calibrate`: the file is read as a whole (so it is checked), and
@@ -199,6 +205,7 @@ fn machine_limits(args: &mut Vec<String>) -> Result<MachineLimits, String> {
     let tone = s.tone;
     let calibrate = s.calibrate;
     let read = s.read;
+    let (bed_mm, zones, overscan_mm) = (s.machine.bed_mm, s.zones.clone(), s.verify.overscan_mm);
     if let Some(v) = flag(args, "--max-power")? {
         max_power = num(&v, "--max-power")?;
     }
@@ -215,6 +222,9 @@ fn machine_limits(args: &mut Vec<String>) -> Result<MachineLimits, String> {
         config,
         calibrate,
         read,
+        bed_mm,
+        zones,
+        overscan_mm,
     })
 }
 
@@ -262,6 +272,28 @@ fn whole(text: &str, what: &str) -> Result<u32, String> {
             "{what} '{text}' is not a whole number from 0 to 1000000"
         ))
     }
+}
+
+/// Writes a G-code program after the check of `gate`: one that the check would fail is not written.
+fn write_program(
+    out: &Path,
+    text: &str,
+    limits: &verify::Limits,
+    zones: &[Zone],
+) -> Result<(), String> {
+    gate::before_write(text, limits, zones)?;
+    write_atomic(out, text)
+}
+
+/// What the program of a command is held to: the machine of the command and the overscan of `[verify]`.
+fn held_to(machine: &vconfig::Machine, overscan_mm: f64) -> verify::Limits {
+    gate::limits(
+        machine.s_max,
+        machine.max_power_percent,
+        machine.max_speed_mm_min,
+        machine.bed_mm,
+        overscan_mm,
+    )
 }
 
 /// What the options of a drawing command change in the settings of every layer.
@@ -487,7 +519,12 @@ fn emit_plan(
                 source: Some((&name, sha256_hex(bytes))),
                 tools: &tools,
             });
-            write_atomic(out_path, &format!("{head}{}", planned.gcode))?;
+            write_program(
+                out_path,
+                &format!("{head}{}", planned.gcode),
+                &held_to(&settings.machine, settings.verify.overscan_mm),
+                &settings.zones,
+            )?;
         }
     }
     for note in &planned.warnings {
@@ -872,6 +909,7 @@ fn text_job(mut args: Vec<String>) -> Result<(), String> {
             },
             &read_options,
             (&machine, &t, &m),
+            (&settings.zones, settings.verify.overscan_mm),
         );
     }
     let out = args.first().ok_or("text needs an output file")?;
@@ -890,7 +928,12 @@ fn text_job(mut args: Vec<String>) -> Result<(), String> {
         source: None,
         tools: &format!("laser, S 0-{}, text with a font of strokes", machine.s_max),
     });
-    write_atomic(Path::new(out), &format!("{head}{gcode}"))?;
+    write_program(
+        Path::new(out),
+        &format!("{head}{gcode}"),
+        &held_to(&machine, settings.verify.overscan_mm),
+        &settings.zones,
+    )?;
     println!(
         "{} characters, {:.1} x {:.1} mm, {} strokes, at {} % and {} mm/min, written to {out}",
         words.chars().count(),
@@ -948,8 +991,10 @@ fn text_series(
         &vconfig::TextSettings,
         &laser_text::Machine,
     ),
+    held: (&[Zone], f64),
 ) -> Result<(), String> {
     let (machine, t, m) = parts;
+    let (zones, overscan_mm) = held;
     let lim = read.limits;
     let (csv, csv_bytes) = match input.csv {
         Some(path) => {
@@ -1031,14 +1076,22 @@ fn text_series(
             .map_or((*path).to_string(), |n| n.to_string_lossy().into_owned());
         (name, sha256_hex(bytes))
     });
-    for (file, gcode) in &programs {
+    // every program is checked before the first one is written
+    let limits = held_to(machine, overscan_mm);
+    let mut checked: Vec<(&std::path::PathBuf, String)> = Vec::new();
+    for (i, (file, gcode)) in programs.iter().enumerate() {
         let head = header(&Header {
             generator: "phoenix-laser",
             version: env!("CARGO_PKG_VERSION"),
             source: source.as_ref().map(|(n, h)| (n.as_str(), h.clone())),
             tools: &tools,
         });
-        write_atomic(file, &format!("{head}{gcode}"))?;
+        let text = format!("{head}{gcode}");
+        gate::before_write(&text, &limits, zones).map_err(|e| format!("row {}: {e}", i + 1))?;
+        checked.push((file, text));
+    }
+    for (file, text) in &checked {
+        write_atomic(file, text)?;
     }
     println!(
         "{} programs written next to {out}, from {} to {}, at {} % and {} mm/min",
@@ -1157,7 +1210,12 @@ fn marks_job(mut args: Vec<String>) -> Result<(), String> {
         source: None,
         tools: &format!("laser, S 0-{}, positioning marks", machine.s_max),
     });
-    write_atomic(Path::new(out), &format!("{head}{gcode}"))?;
+    write_program(
+        Path::new(out),
+        &format!("{head}{gcode}"),
+        &held_to(&machine, settings.verify.overscan_mm),
+        &settings.zones,
+    )?;
     println!(
         "marks round {:.1} x {:.1} mm, arms of {} mm{}, at {} % and {} mm/min, written to {out}",
         size[0],
@@ -1252,7 +1310,12 @@ fn barcode_job(mut args: Vec<String>) -> Result<(), String> {
             machine.s_max
         ),
     });
-    write_atomic(Path::new(out), &format!("{head}{gcode}"))?;
+    write_program(
+        Path::new(out),
+        &format!("{head}{gcode}"),
+        &held_to(&machine, settings.verify.overscan_mm),
+        &settings.zones,
+    )?;
     println!(
         "{} characters, set {}, {:.1} x {:.1} mm, at {} % and {} mm/min, written to {out}",
         data.len(),
@@ -1782,7 +1845,12 @@ fn qr_job(mut args: Vec<String>) -> Result<(), String> {
         source: None,
         tools: &format!("laser, S 0-{}, QR code filled with lines", machine.s_max),
     });
-    write_atomic(Path::new(out), &format!("{head}{gcode}"))?;
+    write_program(
+        Path::new(out),
+        &format!("{head}{gcode}"),
+        &held_to(&machine, settings.verify.overscan_mm),
+        &settings.zones,
+    )?;
     println!(
         "{} bytes, version {} ({} x {} modules, level {}), {:.1} x {:.1} mm, at {} % and {} mm/min, written to {out}",
         data.len(),
@@ -2048,7 +2116,18 @@ fn calibrate_job(mut args: Vec<String>) -> Result<(), String> {
             if c.labels { " with figures" } else { "" }
         ),
     });
-    write_atomic(Path::new(out), &format!("{head}{program}"))?;
+    write_program(
+        Path::new(out),
+        &format!("{head}{program}"),
+        &gate::limits(
+            g.s_max,
+            max_power,
+            max_speed,
+            limits.bed_mm,
+            limits.overscan_mm,
+        ),
+        &limits.zones,
+    )?;
     println!("{} squares written to {out}", powers.len() * feeds.len());
     if let Some((m, _)) = &material {
         let join = |v: &[f64]| {
@@ -2248,7 +2327,18 @@ fn run(mut args: Vec<String>) -> Result<(), String> {
                     source: Some((&name, sha256_hex(&bytes))),
                     tools: &tools,
                 });
-                write_atomic(Path::new(&args[1]), &format!("{head}{}", e.gcode))?;
+                write_program(
+                    Path::new(&args[1]),
+                    &format!("{head}{}", e.gcode),
+                    &gate::limits(
+                        p.s_max,
+                        max_power,
+                        limits.max_speed,
+                        limits.bed_mm,
+                        limits.overscan_mm,
+                    ),
+                    &limits.zones,
+                )?;
             }
             println!("{} x {} dots ({:.1} x {:.1} mm), {} lines, {} runs, {:.0} mm burned, about {:.0} s", dots.w, dots.h, dots.w as f64 * p.pixel_mm, dots.h as f64 * p.pixel_mm, e.rows, e.runs, e.burn_mm, e.seconds);
             Ok(())
@@ -2359,7 +2449,12 @@ fn run(mut args: Vec<String>) -> Result<(), String> {
                     machine.s_max
                 ),
             });
-            write_atomic(Path::new(out), &format!("{head}{text}"))?;
+            write_program(
+                Path::new(out),
+                &format!("{head}{text}"),
+                &held_to(&machine, settings.verify.overscan_mm),
+                &settings.zones,
+            )?;
             eprintln!("note: this program moves Z: check which way is down before running it");
             let z_end = f.z_start_mm + f.z_step_mm * f64::from(f.steps - 1);
             match &powers {
@@ -2468,6 +2563,11 @@ fn run(mut args: Vec<String>) -> Result<(), String> {
                     }
                     let bytes = fs::read(path).map_err(|e| format!("{path}: {e}"))?;
                     let program = preview::read(&String::from_utf8_lossy(&bytes));
+                    if let Some(first) = program.faults.first() {
+                        return Err(format!(
+                            "{path}: no frame is made of a program that fails the check, since its place may not be the one it reads: {first}"
+                        ));
+                    }
                     let report = preview::analyse(&program, &preview::Options::default())?;
                     report
                         .burn_bounds
@@ -2513,7 +2613,12 @@ fn run(mut args: Vec<String>) -> Result<(), String> {
                 source: None,
                 tools: &tools,
             });
-            write_atomic(out_path, &format!("{head}{text}"))?;
+            write_program(
+                out_path,
+                &format!("{head}{text}"),
+                &held_to(&machine, settings.verify.overscan_mm),
+                &settings.zones,
+            )?;
             println!(
                 "frame of {:.1} x {:.1} mm at {:.1},{:.1}, {} lap(s), {}",
                 hi.0 - lo.0,

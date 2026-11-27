@@ -457,7 +457,7 @@ pub fn program(
             t.speed_mm_min, t.max_minutes
         ));
     }
-    let s = (f64::from(m.s_max) * t.power_percent / 100.0).round() as u32;
+    let s = crate::safety::spindle(m.s_max, t.power_percent);
     let feed = n(t.speed_mm_min)?;
     let mut out = String::from("G21\nG90\nM4 S0\n");
     out.push_str(&format!(

@@ -84,7 +84,7 @@ fn a_value_that_is_not_a_number_is_refused_in_every_field() {
 }
 
 #[test]
-fn the_power_is_zero_at_zero_percent_the_whole_s_max_at_a_hundred_and_rounds_in_between() {
+fn the_power_is_zero_at_zero_percent_the_whole_s_max_at_a_hundred_and_rounds_down_in_between() {
     assert_eq!(with(|q| q.power_percent = 0.0).power(), 0);
     assert_eq!(with(|q| q.power_percent = 100.0).power(), 1000);
     assert_eq!(
@@ -93,7 +93,7 @@ fn the_power_is_zero_at_zero_percent_the_whole_s_max_at_a_hundred_and_rounds_in_
             q.power_percent = 50.0
         })
         .power(),
-        128
+        127
     );
     assert_eq!(
         with(|q| {
@@ -109,7 +109,7 @@ fn the_power_is_zero_at_zero_percent_the_whole_s_max_at_a_hundred_and_rounds_in_
             q.power_percent = 50.0
         })
         .power(),
-        1
+        0
     );
     assert_eq!(Params::default().power(), 500);
 }

@@ -18,6 +18,7 @@ pub mod energy;
 pub mod export;
 pub mod flatten;
 pub mod frame;
+pub mod gate;
 pub mod gcode_out;
 pub mod grblcodes;
 pub mod grblset;

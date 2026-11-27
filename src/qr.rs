@@ -592,7 +592,7 @@ pub fn program(
             }
         }
     }
-    let s = (f64::from(m.s_max) * q.power_percent / 100.0).round() as u32;
+    let s = crate::safety::spindle(m.s_max, q.power_percent);
     let feed = n(q.speed_mm_min)?;
     let mut out = String::from("G21\nG90\nM4 S0\n");
     let mut notes = String::new();

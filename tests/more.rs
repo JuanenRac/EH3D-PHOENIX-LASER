@@ -150,7 +150,7 @@ fn an_empty_row_between_two_full_ones_does_not_break_the_zigzag() {
 }
 
 #[test]
-fn the_power_is_a_percent_of_the_spindle_value_rounded() {
+fn the_power_is_a_percent_of_the_spindle_value_never_rounded_up() {
     let d = dots(&["#"]);
     let s_of = |s_max: u32, percent: f64| {
         let p = Params {
@@ -169,7 +169,7 @@ fn the_power_is_a_percent_of_the_spindle_value_rounded() {
     };
     assert_eq!(s_of(1000, 100.0), "1000");
     assert_eq!(s_of(1000, 33.3), "333");
-    assert_eq!(s_of(3, 50.0), "2", "1.5 rounds up");
+    assert_eq!(s_of(3, 50.0), "1", "1.5 is not rounded up");
     assert_eq!(s_of(255, 100.0), "255");
     assert_eq!(s_of(100_000, 0.001), "1");
     // with no power at all nothing burns, and the code still has the lines

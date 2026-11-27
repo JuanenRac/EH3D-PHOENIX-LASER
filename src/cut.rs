@@ -481,14 +481,14 @@ impl Out<'_> {
 
 /// The spindle value of a power in percent; a power that rounds to nothing would not be a cut.
 fn power_value(p: &LayerParams, s_max: u32) -> Result<u32, String> {
-    let v = (f64::from(s_max) * p.power_percent / 100.0).round();
-    if v < 1.0 {
+    let v = crate::safety::spindle(s_max, p.power_percent);
+    if v == 0 {
         return Err(format!(
             "a power of {} % is too low for s_max {s_max}: it rounds to S0",
             p.power_percent
         ));
     }
-    Ok((v as u32).min(s_max))
+    Ok(v)
 }
 
 fn order_options(s: &Settings) -> OrderOptions {

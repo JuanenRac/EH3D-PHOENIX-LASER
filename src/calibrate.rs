@@ -286,7 +286,7 @@ fn build(
         {
             return Err("the power or the feed of the figures is out of range".to_string());
         }
-        label_s = (f64::from(g.s_max) * l.power_percent / 100.0).round() as u32;
+        label_s = crate::safety::spindle(g.s_max, l.power_percent);
         let widest = feeds_mm_min
             .iter()
             .map(|f| text_width(&label_text(*f), l.height_mm))
@@ -312,7 +312,7 @@ fn build(
         for (col, power) in powers_percent.iter().enumerate() {
             let x0 = ox + col as f64 * (g.square_mm + g.gap_mm);
             let y0 = oy + row as f64 * (g.square_mm + g.gap_mm);
-            let s = (f64::from(g.s_max) * power / 100.0).round() as u32;
+            let s = crate::safety::spindle(g.s_max, *power);
             // no rapid move with the power of the last square still set
             if last_s != 0 {
                 out.push_str("S0\n");
@@ -405,7 +405,7 @@ pub fn interval_test(
     if g.s_max == 0 || g.s_max > 100_000 {
         return Err(format!("s_max is {}: it must be from 1 to 100000", g.s_max));
     }
-    let s = (f64::from(g.s_max) * power_percent / 100.0).round() as u32;
+    let s = crate::safety::spindle(g.s_max, power_percent);
     if s == 0 {
         return Err(format!(
             "a power of {power_percent} % of S{} is less than one step of S",
@@ -526,7 +526,7 @@ pub fn kerf_test(k: &Kerf, s_max: u32) -> Result<String, String> {
     if s_max == 0 || s_max > 100_000 {
         return Err(format!("s_max is {s_max}: it must be from 1 to 100000"));
     }
-    let s = (f64::from(s_max) * k.power_percent / 100.0).round() as u32;
+    let s = crate::safety::spindle(s_max, k.power_percent);
     if s == 0 {
         return Err(format!(
             "a power of {} % of S{s_max} is less than one step of S",
@@ -596,7 +596,7 @@ pub fn focus_test(f: &FocusSettings, s_max: u32, max_power_percent: f64) -> Resu
     if s_max == 0 || s_max > 100_000 {
         return Err(format!("s_max is {s_max}: it must be from 1 to 100000"));
     }
-    let s = (f64::from(s_max) * f.power_percent / 100.0).round() as u32;
+    let s = crate::safety::spindle(s_max, f.power_percent);
     if s == 0 {
         return Err(format!(
             "a power of {} % of S{s_max} is less than one step of S",
@@ -655,7 +655,7 @@ pub fn focus_grid(
             ));
         }
         crate::safety::check_power("a power of the focus grid", p, max_power_percent)?;
-        let s = (f64::from(s_max) * p / 100.0).round() as u32;
+        let s = crate::safety::spindle(s_max, p);
         if s == 0 {
             return Err(format!(
                 "a power of {p} % of S{s_max} is less than one step of S"
@@ -807,7 +807,7 @@ mod tests {
         };
         let g = focus_test(&up, 255, 100.0).unwrap();
         assert!(g.contains("G0 Z3\n") && g.contains("G0 Z3.25\n") && g.contains("G0 Z3.5\n"));
-        assert!(g.contains(" S77\n"), "30 % of 255: {g}");
+        assert!(g.contains(" S76\n"), "30 % of 255 is 76.5: {g}");
     }
 
     #[test]

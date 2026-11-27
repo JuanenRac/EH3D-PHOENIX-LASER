@@ -2,7 +2,7 @@
 
 This register is the single source of the state of each capability: `STATUS.md` and the README files cite it and never state a state that it does not. A state is one of `planned`, `prototype`, `implemented` and `validated`. `validated` means that a person has run the capability on a real machine and the evidence of the manifest says `bench` or `field`; nothing here is validated, because nothing of this program has run on a real laser, a real material or a real server: the G-code is checked by the program's own reader, the server is a stand-in, and the pictures for the marks are simulated.
 
-The register has 156 requirements: 134 implemented, 18 prototype, 4 planned and 0 validated. By progress: 134 done, 18 partial, 0 pending and 4 blocked. High coverage is not proof of correctness, so each row says how it is checked: the test that names it, and what it shows.
+The register has 165 requirements: 143 implemented, 18 prototype, 4 planned and 0 validated. By progress: 143 done, 18 partial, 0 pending and 4 blocked. High coverage is not proof of correctness, so each row says how it is checked: the test that names it, and what it shows.
 
 ## How to read the register
 
@@ -205,3 +205,12 @@ The check is `tests/reqs.rs`: it reads this table, finds each test and fails whe
 | PLAS-154 | The test of the width of the beam cuts strips, and the gap gives the width. | implemented | done | host-test | `tests/testcuts::the_width_of_the_beam_is_the_gap_over_the_cuts` | - |
 | PLAS-155 | Jarvis, Stucki, Sierra and Burkes dithering keep white, black and the darkness of a grey. | implemented | done | host-test | `src/dither::the_new_ways_of_spreading_keep_white_black_and_the_darkness_of_a_grey` | - |
 | PLAS-156 | A line that would be cut twice is told in the warnings of the plan. | implemented | done | host-test | `tests/testcuts::a_drawing_with_a_line_drawn_twice_says_it_in_the_plan` | - |
+| PLAS-157 | A comment in brackets ends at the first `)`, as for the controller. | implemented | done | host-test | `tests/faults::a_comment_in_brackets_ends_at_the_first_bracket_as_for_the_controller` | - |
+| PLAS-158 | A line the controller would refuse fails. | implemented | done | host-test | `tests/faults::a_line_the_controller_refuses_fails` | - |
+| PLAS-159 | Words that cannot be on one line fail. | implemented | done | host-test | `tests/faults::words_that_cannot_be_on_one_line_fail` | - |
+| PLAS-160 | The modes after the end of a program are the ones of the controller, and nothing moves after it. | implemented | done | host-test | `tests/faults::after_the_end_of_a_program_nothing_may_move_and_the_modes_are_the_usual_ones` | - |
+| PLAS-161 | A program that writes what the controller keeps fails. | implemented | done | host-test | `tests/faults::a_program_that_writes_what_the_controller_keeps_fails` | - |
+| PLAS-162 | A power is never written above the one asked. | implemented | done | host-test | `src/safety::the_spindle_value_is_never_more_than_the_power_that_was_asked` | - |
+| PLAS-163 | A command writes no program that fails the check, with the bed and the zones of the settings. | implemented | done | host-test | `tests/gate::a_program_that_burns_in_a_forbidden_zone_is_not_written` | - |
+| PLAS-164 | The window exports no program that fails the check. | implemented | done | host-test | `tests/gate::the_window_does_not_export_a_program_that_burns_in_a_forbidden_zone` | - |
+| PLAS-165 | No frame is made of a program that fails the check. | implemented | done | host-test | `tests/gate::no_frame_is_made_of_a_program_that_fails_the_check` | - |
