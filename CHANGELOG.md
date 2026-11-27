@@ -4,6 +4,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.1.8] - No program is written that fails the check, and the checker refuses what the controller would refuse (not tried on a machine)
+
 - **Safety, comments in brackets end where the controller ends them:** GRBL does not nest them, so in `(a (b) S1000 G1 X500` what follows the first `)` is obeyed. The check read it as one long comment and passed it; now it judges what follows, and a `)` with no comment open fails.
 - **Safety, a line the controller would refuse fails:** a word GRBL does not know beside other words (`M5 E0`, `S0 M6`, `G64 G1 X5`), a checksum after `*`, and a line of more than 79 characters (it was only told). The whole line is refused, so an `M5` on it would never reach the laser.
 - **Safety, words that cannot be on one line fail:** the same letter twice (`S100 S0`, `X1 X2`) or two words of one group (`M3 M5`, `G0 G1`, `G90 G91`), which the controller refuses as a whole line while the check read the last one.
