@@ -114,6 +114,20 @@ pub static ENTRIES: &[Entry] = &[
     },
     Entry {
         section: "layer",
+        key: "perf_cut",
+        kind: Kind::Number,
+        default: "0",
+        safety: false,
+    },
+    Entry {
+        section: "layer",
+        key: "perf_gap",
+        kind: Kind::Number,
+        default: "0",
+        safety: false,
+    },
+    Entry {
+        section: "layer",
         key: "hatch_angle",
         kind: Kind::Number,
         default: "0",
@@ -306,6 +320,13 @@ pub static ENTRIES: &[Entry] = &[
         key: "two_opt",
         kind: Kind::Switch,
         default: "on",
+        safety: false,
+    },
+    Entry {
+        section: "order",
+        key: "merge_doubled",
+        kind: Kind::Switch,
+        default: "off",
         safety: false,
     },
     Entry {
@@ -544,6 +565,13 @@ pub static ENTRIES: &[Entry] = &[
         key: "arc_tolerance_mm",
         kind: Kind::Number,
         default: "0.01",
+        safety: true,
+    },
+    Entry {
+        section: "verify",
+        key: "s_max_mismatch_warns",
+        kind: Kind::Switch,
+        default: "off",
         safety: true,
     },
     Entry {

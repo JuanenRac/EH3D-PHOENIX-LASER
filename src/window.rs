@@ -35,6 +35,7 @@ use crate::vconfig::{
 use crate::vector::{Drawing, ReadOptions};
 use crate::verify;
 use crate::viewport::Viewport;
+use crate::winshop::Shop;
 use std::path::{Path, PathBuf};
 
 /// The largest file the window reads.
@@ -57,6 +58,10 @@ pub enum Job {
     OpenGcode,
     /// A new, empty library of materials (the name is typed; a file that is there is never written over).
     NewMaterials,
+    /// A saved answer of the controller to `$$`.
+    OpenController,
+    /// Another library of materials to bring into the one that is open.
+    MergeMaterials,
     /// A project file of the suite to open.
     SuiteOpen,
     /// The name of a project file of the suite to save into.
@@ -95,6 +100,8 @@ impl Job {
             Job::OpenMaterials => &["cfg"],
             Job::OpenGcode => &["nc", "ngc", "gcode", "gc", "tap", "txt"],
             Job::NewMaterials => &["cfg"],
+            Job::OpenController => &["txt", "log", "cfg"],
+            Job::MergeMaterials => &["cfg"],
             Job::SuiteOpen | Job::SuiteSaveAs => &["eh3d"],
             Job::SuiteImport => &["svg", "dxf", "lbrn2", "lbrn"],
             Job::SuiteExtract => &[],
@@ -109,6 +116,8 @@ impl Job {
             Job::OpenMaterials => Msg::TitleOpenMaterials,
             Job::OpenGcode => Msg::TitleOpenGcode,
             Job::NewMaterials => Msg::TitleNewMaterials,
+            Job::OpenController => Msg::TitleOpenController,
+            Job::MergeMaterials => Msg::TitleMergeMaterials,
             Job::SuiteOpen | Job::SuiteImport => Msg::TitleOpenImage,
             Job::SuiteSaveAs | Job::SuiteExtract => Msg::TitleExport,
         }
@@ -603,10 +612,12 @@ pub enum LayerField {
     TabWidth,
     HatchAngle,
     HatchSpacing,
+    PerfCut,
+    PerfGap,
 }
 
 impl LayerField {
-    pub const ALL: [LayerField; 9] = [
+    pub const ALL: [LayerField; 11] = [
         LayerField::Power,
         LayerField::Speed,
         LayerField::Passes,
@@ -616,6 +627,8 @@ impl LayerField {
         LayerField::TabWidth,
         LayerField::HatchAngle,
         LayerField::HatchSpacing,
+        LayerField::PerfCut,
+        LayerField::PerfGap,
     ];
 
     pub fn label(self) -> Msg {
@@ -629,6 +642,8 @@ impl LayerField {
             LayerField::TabWidth => Msg::TabWidth,
             LayerField::HatchAngle => Msg::HatchAngle,
             LayerField::HatchSpacing => Msg::HatchSpacing,
+            LayerField::PerfCut => Msg::PerfCut,
+            LayerField::PerfGap => Msg::PerfGap,
         }
     }
 }
@@ -643,7 +658,7 @@ pub struct LayerRow {
     /// Whether the shapes that are engraved are filled a second time at right angles.
     pub hatch_cross: bool,
     /// The text of each box, in the order of [`LayerField::ALL`].
-    pub fields: [String; 9],
+    pub fields: [String; 11],
 }
 
 impl LayerRow {
@@ -665,6 +680,8 @@ impl LayerRow {
                 t(p.tab_width_mm),
                 t(p.hatch_angle_deg),
                 t(p.hatch_spacing_mm),
+                t(p.perf_cut_mm),
+                t(p.perf_gap_mm),
             ],
         }
     }
@@ -844,7 +861,7 @@ pub fn opens_file(path: &Path) -> bool {
 }
 
 /// The bytes of a file, if it is not larger than `max` bytes.
-fn read_file_up_to(path: &Path, max: u64) -> Result<Vec<u8>, String> {
+pub(crate) fn read_file_up_to(path: &Path, max: u64) -> Result<Vec<u8>, String> {
     let shown = path.display();
     let meta = std::fs::metadata(path).map_err(|e| format!("{shown}: {e}"))?;
     if meta.len() > max {
@@ -900,7 +917,7 @@ pub(crate) fn read_vector(
     })
 }
 
-fn name_of(path: &Path) -> String {
+pub(crate) fn name_of(path: &Path) -> String {
     path.file_name().map_or_else(
         || path.display().to_string(),
         |n| n.to_string_lossy().into_owned(),
@@ -1081,6 +1098,20 @@ pub enum Status {
     MarksTaken(f64, f64),
     /// A program that was opened to be seen is sent only when it passes the check and the person ticked the box that says so.
     ServerOpenedRefused,
+    /// A saved answer of the controller was read: the name of its file and how many settings it holds.
+    ControllerLoaded(String, usize),
+    /// The answer of the controller that was read does not agree with the program in something serious.
+    ControllerRefused(Vec<crate::grblset::Finding>),
+    /// The result of a test was written: the material and the file of the library.
+    Recorded(String, String),
+    /// The material says what the result says already.
+    RecordUnchanged(String),
+    /// The result would write over other values and must be asked for again: the material and the values.
+    RecordAsk(String, String),
+    /// Another library was brought in: how many materials were added and replaced, and the file.
+    Merged(usize, usize, String),
+    /// Both libraries have these materials with other values.
+    MergeAsk(String),
     /// A machine profile was chosen: its name, its full-power value and its limits of power and speed.
     ProfileApplied {
         name: String,
@@ -1100,6 +1131,7 @@ impl Status {
                 | Status::NeedConfirm
                 | Status::NothingToWrite
                 | Status::ServerOpenedRefused
+                | Status::ControllerRefused(_)
                 | Status::BadValue(_)
                 | Status::SameFile(_)
                 | Status::Failed(_)
@@ -1298,6 +1330,21 @@ impl Status {
                 &[&format!("{w}"), &format!("{h}")],
             ),
             Status::ServerOpenedRefused => Msg::ServerOpenedRefused.tr(lang).to_string(),
+            Status::ControllerLoaded(name, n) => {
+                fill(Msg::ControllerLoaded.tr(lang), &[name, &n.to_string()])
+            }
+            Status::ControllerRefused(found) => {
+                let list: Vec<String> = found.iter().map(|f| f.text(lang)).collect();
+                fill(Msg::ControllerRefused.tr(lang), &[&list.join(" ")])
+            }
+            Status::Recorded(name, file) => fill(Msg::Recorded.tr(lang), &[name, file]),
+            Status::RecordUnchanged(name) => fill(Msg::RecordUnchanged.tr(lang), &[name]),
+            Status::RecordAsk(name, list) => fill(Msg::RecordAsk.tr(lang), &[name, list]),
+            Status::Merged(added, replaced, file) => fill(
+                Msg::Merged.tr(lang),
+                &[&added.to_string(), &replaced.to_string(), file],
+            ),
+            Status::MergeAsk(names) => fill(Msg::MergeAsk.tr(lang), &[names]),
             Status::MaterialSaved(name, file) => fill(Msg::MaterialSaved.tr(lang), &[name, file]),
             Status::MaterialDeleted(name, file) => {
                 fill(Msg::MaterialDeleted.tr(lang), &[name, file])
@@ -1434,6 +1481,8 @@ pub struct Window {
     pub report_text: Option<String>,
     /// The project file of the suite the window works on.
     pub suite: SuiteState,
+    /// The controller, the extra passes and the results of the tests (`winshop`).
+    pub shop: Shop,
 }
 
 impl Window {
@@ -1493,6 +1542,7 @@ impl Window {
             common_thickness: "3".to_string(),
             report_text: None,
             suite: SuiteState::default(),
+            shop: Shop::default(),
         }
     }
 
@@ -1808,6 +1858,12 @@ impl Window {
         Ok(p)
     }
 
+    /// The `S` of full power the box holds, or the one of the settings while the box does not hold one.
+    pub(crate) fn s_max_of_box(&self) -> u32 {
+        self.whole(Key::SMax, 1.0, 100_000.0)
+            .unwrap_or(self.settings.machine.s_max)
+    }
+
     /// The way the picture becomes dots.
     pub fn method(&self) -> Result<Method, Status> {
         Ok(match self.kind {
@@ -1980,7 +2036,7 @@ impl Window {
     }
 
     /// The settings of a layer from its row: what the settings file says for it with what is typed in the table over it.
-    fn layer_params(&self, row: &LayerRow) -> Result<LayerParams, Status> {
+    pub(crate) fn layer_params(&self, row: &LayerRow) -> Result<LayerParams, Status> {
         let num = |f: LayerField| {
             row.fields[f as usize]
                 .trim()
@@ -2010,6 +2066,8 @@ impl Window {
         p.tab_width_mm = num(LayerField::TabWidth)?;
         p.hatch_angle_deg = num(LayerField::HatchAngle)?;
         p.hatch_spacing_mm = num(LayerField::HatchSpacing)?;
+        p.perf_cut_mm = num(LayerField::PerfCut)?;
+        p.perf_gap_mm = num(LayerField::PerfGap)?;
         Ok(p)
     }
 
@@ -2027,7 +2085,18 @@ impl Window {
             .iter()
             .map(|r| Ok((r.key.clone(), self.layer_params(r)?)))
             .collect::<Result<_, Status>>()?;
+        s.sublayers = self.sublayers_of_window()?;
+        s.merge_doubled = self.shop.merge_doubled;
         s.validate().map_err(Status::Failed)?;
+        for p in s
+            .layers
+            .iter()
+            .map(|(_, p)| p)
+            .chain(s.sublayers.iter().map(|sub| &sub.params))
+            .filter(|p| p.mode != LayerMode::Skip)
+        {
+            self.material_ceiling(p.power_percent, p.speed_mm_min)?;
+        }
         Ok(s)
     }
 
@@ -2074,6 +2143,7 @@ impl Window {
     fn rebuild_rows(&mut self) {
         let Some(v) = &self.vector else {
             self.rows.clear();
+            self.shop.passes.clear();
             return;
         };
         self.rows = layer_list(&v.drawing, &self.settings)
@@ -2088,6 +2158,7 @@ impl Window {
                 LayerRow::new(&l.key, l.shapes, &params)
             })
             .collect();
+        self.rebuild_passes();
     }
 
     fn put(&mut self, key: Key, text: String) {
@@ -2192,6 +2263,8 @@ impl Window {
         self.barcode_mirror = s.barcode.mirror;
         self.qr_ecc = s.qr.ecc;
         self.laser_mode = s.machine.laser_mode;
+        self.shop.merge_doubled = s.merge_doubled;
+        self.shop.s_max_warns = s.verify.s_max_mismatch_warns;
         self.qr_invert = s.qr.invert;
         self.qr_mirror = s.qr.mirror;
         self.text_mirror = s.text.mirror;
@@ -2222,6 +2295,8 @@ impl Window {
                 self.material = None;
                 self.material_draft = None;
                 self.material_delete_armed = None;
+                self.shop.record_armed = None;
+                self.shop.merge_pending = None;
                 true
             }
             Err(e) => {
@@ -2491,7 +2566,7 @@ impl Window {
     }
 
     /// The file of the library and what it says, read as text: a file that is not UTF-8 text or is too big is not rewritten.
-    fn materials_text(&self) -> Result<(PathBuf, String), String> {
+    pub(crate) fn materials_text(&self) -> Result<(PathBuf, String), String> {
         let path = self.materials_path.clone().ok_or_else(|| {
             "there is no library of materials: open one or create one first, it is the file the material is saved in".to_string()
         })?;
@@ -2506,7 +2581,7 @@ impl Window {
     }
 
     /// Writes the library and reads it again, so that the list of materials is what the file says.
-    fn materials_written(&mut self, path: &Path, text: &str) -> Result<(), String> {
+    pub(crate) fn materials_written(&mut self, path: &Path, text: &str) -> Result<(), String> {
         write_atomic(path, text)?;
         let lib = materials::parse(text.strip_prefix('\u{feff}').unwrap_or(text))
             .map_err(|e| format!("{}: {e}", path.display()))?;
@@ -2624,6 +2699,7 @@ impl Window {
         s.machine.s_max = done.s_max;
         (s.machine.max_power_percent, s.machine.max_speed_mm_min) = self.limits()?;
         server::check_before_send(&text, &s).map_err(Status::Failed)?;
+        self.controller_refuses(&text, done.s_max)?;
         let name = self
             .suggested_output_for(Job::ExportGcode)
             .map(|p| name_of(&p))
@@ -2653,6 +2729,7 @@ impl Window {
         s.machine.s_max = s_max;
         (s.machine.max_power_percent, s.machine.max_speed_mm_min) = self.limits()?;
         server::check_before_send(&program.text, &s).map_err(Status::Failed)?;
+        self.controller_refuses(&program.text, s_max)?;
         Ok((program.name.clone(), program.text.clone()))
     }
 
@@ -2937,6 +3014,7 @@ impl Window {
             return Err(Status::BadValue(Msg::WidthMm));
         }
         let p = self.params()?;
+        self.material_ceiling(p.power_percent, p.feed_mm_min)?;
         let method = self.method()?;
         let tone = self.tone()?;
         let w = (width / p.pixel_mm).round().max(1.0) as usize;
@@ -3035,6 +3113,7 @@ impl Window {
         };
         p.power_percent = self.number(Key::Power)?;
         p.speed_mm_min = feed;
+        self.material_ceiling(p.power_percent, p.speed_mm_min)?;
         s.layers = vec![(trace::LAYER.to_string(), p)];
         s.validate().map_err(Status::Failed)?;
         let plan = plan_cut(&drawing, &s).map_err(Status::Failed)?;
@@ -3130,7 +3209,7 @@ impl Window {
     }
 
     /// The limits the check of a program is made with: the ones of the boxes and the settings file, and the overscan of the box of the check.
-    fn verify_limits(&self, s_max: u32) -> Option<verify::Limits> {
+    pub(crate) fn verify_limits(&self, s_max: u32) -> Option<verify::Limits> {
         let (max_power, max_speed) = self.limits().ok()?;
         let m = &self.settings.machine;
         Some(verify::Limits {
@@ -3146,7 +3225,7 @@ impl Window {
     }
 
     /// What `verify` says about a program, with the limits of the window and the settings file and the overscan of its box.
-    fn verdict_of(&self, gcode: &str, s_max: u32) -> Option<verify::Verdict> {
+    pub(crate) fn verdict_of(&self, gcode: &str, s_max: u32) -> Option<verify::Verdict> {
         let l = self.verify_limits(s_max)?;
         verify::verify_with(gcode.as_bytes(), &l, &verify::guard_of(&self.settings)).ok()
     }
@@ -3164,13 +3243,19 @@ impl Window {
             return false;
         };
         let guard = verify::guard_of(&self.settings);
-        let verdict = match verify::verify_with(done.gcode.as_bytes(), &limits, &guard) {
+        let mut verdict = match verify::verify_with(done.gcode.as_bytes(), &limits, &guard) {
             Ok(v) => v,
             Err(e) => {
                 self.status = Status::Failed(e);
                 return false;
             }
         };
+        let warns = self.shop.s_max_warns;
+        let found = self
+            .shop
+            .controller
+            .as_ref()
+            .map(|(_, dump)| verdict.add_controller(dump, &limits, warns));
         let program = preview::read_with(&done.gcode, limits.arc_tolerance_mm);
         let analysis = match preview::analyse(&program, &self.preview_options(done.s_max)) {
             Ok(a) => a,
@@ -3202,6 +3287,7 @@ impl Window {
                 material,
                 zones: self.settings.zones.len(),
                 interlocks: &self.settings.interlocks,
+                controller: found.as_deref(),
             },
             self.lang,
         ));
@@ -3867,9 +3953,11 @@ impl Window {
             .done
             .as_ref()
             .and_then(|done| self.verify_limits(done.s_max));
-        if let Some(Err(e)) =
-            held.map(|limits| crate::gate::before_write(&text, &limits, &self.settings.zones))
-        {
+        let warns = self.shop.s_max_warns;
+        let controller = self.shop.controller.as_ref().map(|(_, dump)| (dump, warns));
+        if let Some(Err(e)) = held.map(|limits| {
+            crate::gate::before_write_with(&text, &limits, &self.settings.zones, controller)
+        }) {
             self.status = Status::Failed(e);
             return false;
         }
@@ -3917,6 +4005,8 @@ impl Window {
                 read
             }
             Job::OpenGcode => self.open_gcode(path),
+            Job::OpenController => self.load_controller(path),
+            Job::MergeMaterials => self.merge_library(path),
             Job::ExportGcode => self.export(path),
             Job::NewMaterials => {
                 let made = self.create_materials(path);

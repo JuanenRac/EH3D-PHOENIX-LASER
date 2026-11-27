@@ -70,6 +70,8 @@ const HELP: &str = "phoenix-laser: laser engraving from an image
   phoenix-laser convert DRAWING OUT.svg|dxf [--config FILE] [--dpi N] [--tolerance MM]
   phoenix-laser trace IMAGE OUT.nc --width-mm W [--threshold 128] [--invert] [--simplify MM] [--min-area MM2] [--engrave] [the options of cut]
   phoenix-laser materials FILE
+  phoenix-laser record LIBRARY --material NAME [--power P] [--speed MM/MIN] [--passes N] [--kerf MM | --gap MM [--strips 10]] [--replace] [--max-power P] [--max-speed MM/MIN] [--config FILE] [--profile NAME]
+  phoenix-laser merge LIBRARY OTHER [--keep-mine|--take-theirs]
   phoenix-laser focus OUT.nc --z-step MM [--z-start MM] [--steps 9] [--length 10] [--spacing 2] [--feed 1000] [--power 30 | --powers 10,20,30] [--smax 1000] [--max-power P] [--max-speed MM/MIN] [--config FILE] [--profile NAME]
   phoenix-laser text OUT.nc --text TEXT [--csv FILE.csv] [--counter START[,STEP[,COUNT]] | --counter-project PROJECT.lbrn2] [--preview] [--height-mm 10] [--spacing 25] [--line-spacing 50] [--power 20] [--feed 1000] [--passes 1] [--max-minutes 240] [--align left|center|right] [--mirror] [--origin X,Y] [--bed X,Y] [--smax N]
                 [--max-power P] [--max-speed MM/MIN] [--config FILE] [--profile NAME]
@@ -94,7 +96,7 @@ const HELP: &str = "phoenix-laser: laser engraving from an image
   phoenix-laser interval OUT.nc --spacings 0.08:0.2:0.02 --power P --feed MM/MIN [--square-mm 8] [--gap-mm 3] [--label-mm 2|--no-labels] [--smax N] [--max-power P] [--max-speed MM/MIN] [--bed X,Y] [--config FILE] [--profile NAME]
   phoenix-laser kerf OUT.nc --power P --feed MM/MIN [--strips 10] [--strip-mm 5] [--height-mm 20] [--passes 1] [--smax N] [--max-power P] [--max-speed MM/MIN] [--bed X,Y] [--config FILE] [--profile NAME]
   phoenix-laser kerf --gap MM [--strips 10]
-  phoenix-laser report PROGRAM.nc [--config FILE] [--profile NAME] [--lang CODE] [--material NAME --materials FILE]
+  phoenix-laser report PROGRAM.nc [--config FILE] [--profile NAME] [--lang CODE] [--material NAME --materials FILE] [--controller SETTINGS.txt]
   phoenix-laser project list FILE.eh3d [--json] | save FILE.eh3d [--drawing D] [--config FILE] [--materials FILE] [--program P.nc] [--name NAME] [--id ID] | import FILE.eh3d DRAWING [--name NAME] [--id ID]
                 | open FILE.eh3d [--into DIR] | take FILE.eh3d BRANCH NAME | extract FILE.eh3d BRANCH DIR
   phoenix-laser settings [--json]
@@ -120,7 +122,8 @@ align finds the positioning marks (the ones `marks` burns, with the same --size,
 frame writes a program that traces the rectangle of the work with the laser OFF, to see where it will land: --size W,H from the corner --origin, or the box of what burns in --gcode PROGRAM.nc (its real place). --margin widens it. A --pilot power (a percent, at most max_pilot_percent of [frame], 5 unless the file says another, and at most the limit of power) turns the laser on weakly and only with --confirm-laser-on; the [frame] section of --config holds the usual values.
 preview reads a G-code program (this program's or another's) and says what it would do: moves, burnt and travelled length, the box, the powers, a time that counts the corners (--accel in mm/s2), with --laser-watts the energy that the program burns (the power of each move as a part of the full power --smax, over the time it burns) and its mean power, and what looks dangerous (the laser on during a rapid move, a burning move with no feed, S above --smax, work outside --bed, no end); with OUT.svg it also draws the path. It only reads text.
 verify reads a G-code program as text (it never runs it) and says its SHA-256, what it does and whether it passes: under the limit of power and of speed, inside the bed (--overscan-mm lets the head go that far past the bed with the laser off, as the overscan of another program does; burning outside the bed always fails, and [verify] overscan_mm of --config sets the same), with the laser off during every rapid move and a feed on every burning move; --expect-sha256 HASH ties the check to a program that was authorised: when the SHA-256 of the file is not that one (64 hex digits) the program fails, so a program that was changed after it was looked at is not run by mistake; --json gives the report for another program to keep, and the exit code is 1 when it fails.
-verify also fails a program that holds a command of the controller ($), a part that is not a letter with a number, G93 or G95, an M code that other controllers use to switch a laser, a character GRBL obeys at once, a number of S or F below zero, a program too long to be read whole, or M3 left on while the head waits, pauses, moves only its height or ends; spaces inside a line count for nothing and a comment in brackets ends at the first ), as for GRBL. It fails a line GRBL would refuse (a word it does not know beside other words, two words that cannot share a line, a checksum, more than 79 characters), a move or M3/M4 after M2 or M30, and G10, G28.1 and G30.1. The commands that write a program run this check first (without the interlocks) and write nothing when it fails. --controller SETTINGS.txt compares the saved answer of the controller to $$ with the limits and the program: laser mode off or unknown and a full power $30 that is not s_max fail it.
+verify also fails a program that holds a command of the controller ($), a part that is not a letter with a number, G93 or G95, an M code that other controllers use to switch a laser, a character GRBL obeys at once, a number of S or F below zero, a program too long to be read whole, or M3 left on while the head waits, pauses, moves only its height or ends; spaces inside a line count for nothing and a comment in brackets ends at the first ), as for GRBL. It fails a line GRBL would refuse (a word it does not know beside other words, two words that cannot share a line, a checksum, more than 79 characters), a move or M3/M4 after M2 or M30, and G10, G28.1 and G30.1. The commands that write a program run this check first (without the interlocks) and write nothing when it fails. --controller SETTINGS.txt compares the saved answer of the controller to $$ with the limits and the program: laser mode off or unknown and a full power $30 that is not s_max fail it. s_max_mismatch_warns = on in [verify] (off by default) turns a $30 that is not s_max into a warning: a wrongly scaled power can burn more than asked, so leave it off unless you know why they differ.
+record writes what a test showed into a material of a library (adding the material when it is not there): the power, the speed and the passes of the square chosen on a grid, and the width of the beam, given with --kerf or worked out from the gap of the strips of kerf with --gap and --strips. What is written is marked verified = off; a value the material already has is not written over without --replace; a power or a speed over a limit is refused. merge brings the materials of OTHER into LIBRARY, marked verified = off; when both have a material with other values nothing is written until --keep-mine or --take-theirs says which stays, and a max_power or max_speed is never raised. report --controller adds the comparison of the saved answer to $$ to the report, which otherwise says that it was not read.
 controller reads the saved answer of a GRBL controller to $$ (a text file: nothing is sent to a machine) and says in a language what does not agree with the machine of --config: the laser mode ($32), the S of full power ($30), the least S ($31), inches ($13) and the travel ($130, $131); a serious finding gives exit code 1. explain says what ALARM:n or error:n means. interval writes a row of squares filled at different spacings of the lines, and kerf a rectangle cut into strips: push the strips to one side, measure the gap and give it to kerf --gap to have the width of the beam. Both test programs are checked like any program and are not written when they fail.
 report is the check of verify written to be read before a job in one of eight languages (--lang en, es, de, fr, it, ja, zh or pt, the one of the system when it is not given): the SHA-256 of the file, the moves, the length burnt and the time, the box of the work, the highest power and speed against the limits, the energy when [machine] laser_watts is set, whether the material of --material was verified, how many forbidden zones were checked, what the interlocks say, the reasons of a failure (these in English, as verify gives them) and a verdict; it reads the file as text, runs nothing, and the exit code is 1 when the program fails.
 project works with a project of the suite (.eh3d, one file with a branch for each program) and writes only the branch laser: save puts the drawing, the settings, the library of materials and the programs there (what is not given stays), import takes a drawing of another program (LBRN2, LBRN, SVG or DXF) and keeps its original with a report of what was read, not read and lost on export, take copies a file of another branch (an outline or a mesh of cad) with a reference to the state it was taken from, so that list and open say OUT OF DATE when that branch changes, open reads the branch and with --into writes its files, extract writes the files of any branch. Every other branch keeps its bytes; a file that is there is never written over by open or extract.
@@ -460,8 +463,14 @@ fn drawing_settings(
     s.validate()?;
     // the ceiling of the material holds over the options of the command line too
     if let Some((m, _)) = &material {
-        for (name, p) in std::iter::once(("[defaults]", &s.defaults))
-            .chain(s.layers.iter().map(|(n, p)| (n.as_str(), p)))
+        // the sub-layers are passes of their own: the ceiling holds over each of them as well
+        for (name, p) in std::iter::once(("[defaults]".to_string(), &s.defaults))
+            .chain(s.layers.iter().map(|(n, p)| (n.clone(), p)))
+            .chain(
+                s.sublayers
+                    .iter()
+                    .map(|sub| (format!("sublayer {}/{}", sub.layer, sub.label), &sub.params)),
+            )
             .filter(|(_, p)| p.mode != LayerMode::Skip)
         {
             m.check_limits(Some(p.power_percent), Some(p.speed_mm_min))
@@ -724,6 +733,10 @@ fn report_job(mut args: Vec<String>) -> Result<(), String> {
         None => Lang::from_env(),
     };
     let material = take_material(&mut args)?;
+    let dump = flag(&mut args, "--controller")?
+        .as_deref()
+        .map(testcli::read_dump)
+        .transpose()?;
     finish(&args, 1)?;
     let input = args.first().ok_or("report needs a G-code file")?;
     let meta = fs::metadata(input).map_err(|e| format!("{input}: {e}"))?;
@@ -744,7 +757,10 @@ fn report_job(mut args: Vec<String>) -> Result<(), String> {
         overscan_mm: settings.verify.overscan_mm,
         arc_tolerance_mm: settings.verify.arc_tolerance_mm,
     };
-    let verdict = verify::verify_with(&bytes, &limits, &verify::guard_of(&settings))?;
+    let mut verdict = verify::verify_with(&bytes, &limits, &verify::guard_of(&settings))?;
+    let found = dump
+        .as_ref()
+        .map(|dump| verdict.add_controller(dump, &limits, settings.verify.s_max_mismatch_warns));
     let program = preview::read_with(&String::from_utf8_lossy(&bytes), limits.arc_tolerance_mm);
     let watts = (m.laser_watts > 0.0).then_some(m.laser_watts);
     let analysis = preview::analyse(
@@ -774,6 +790,7 @@ fn report_job(mut args: Vec<String>) -> Result<(), String> {
                     .map(|(mat, _)| (mat.name.as_str(), mat.verified)),
                 zones: settings.zones.len(),
                 interlocks: &settings.interlocks,
+                controller: found.as_deref(),
             },
             lang,
         )
@@ -2395,6 +2412,8 @@ fn run(mut args: Vec<String>) -> Result<(), String> {
         "report" => report_job(args),
         "controller" => testcli::controller_job(args),
         "explain" => testcli::explain_job(args),
+        "record" => testcli::record_job(args),
+        "merge" => testcli::merge_job(args),
         "interval" => testcli::interval_job(args),
         "kerf" => testcli::kerf_job(args),
         "trace" => trace_job(args),
@@ -2837,7 +2856,7 @@ fn run(mut args: Vec<String>) -> Result<(), String> {
                 ));
             }
             if let Some(dump) = &dump {
-                v.add_controller(dump, &l);
+                v.add_controller(dump, &l, settings.verify.s_max_mismatch_warns);
             }
             if json {
                 // the profile and the settings file the limits came from are part of the record

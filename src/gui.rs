@@ -301,6 +301,7 @@ impl App {
         egui::ScrollArea::vertical().show(ui, |ui| {
             ui.add_space(4.0);
             self.material_group(ui);
+            self.result_group(ui);
         });
     }
 
@@ -441,6 +442,7 @@ impl App {
     fn panel_machine(&mut self, ui: &mut egui::Ui) {
         egui::ScrollArea::vertical().show(ui, |ui| {
             ui.add_space(4.0);
+            self.controller_group(ui);
             self.server_group(ui);
         });
     }
@@ -1760,7 +1762,9 @@ impl App {
         ui.scope(|ui| {
             ui.label(self.heading(ui, Msg::SectionLayers));
             egui::ScrollArea::both()
+                .id_salt("layers_scroll")
                 .auto_shrink([false, true])
+                .max_height((ui.available_height() * 0.55).max(120.0))
                 .show(ui, |ui| {
                     egui::Grid::new("layers_grid")
                         .striped(true)
@@ -1777,6 +1781,8 @@ impl App {
                                 Msg::KerfSide,
                                 Msg::Tabs,
                                 Msg::TabWidth,
+                                Msg::PerfCut,
+                                Msg::PerfGap,
                                 Msg::HatchAngle,
                                 Msg::HatchSpacing,
                                 Msg::HatchCross,
@@ -1792,7 +1798,174 @@ impl App {
                             }
                         });
                 });
+            egui::ScrollArea::vertical()
+                .id_salt("passes_scroll")
+                .show(ui, |ui| self.pass_group(ui));
         });
+    }
+
+    /// The lines drawn twice and the extra passes of the layers (sub-layers). A pass lives in the window: the settings file is not written.
+    fn pass_group(&mut self, ui: &mut egui::Ui) {
+        let lang = self.win.lang;
+        let mut once = self.win.shop.merge_doubled;
+        if ui.checkbox(&mut once, Msg::MergeDoubled.tr(lang)).changed() {
+            self.win.set_merge_doubled(once);
+        }
+        ui.label(self.heading(ui, Msg::SectionPasses));
+        let mut remove = None;
+        for at in 0..self.win.shop.passes.len() {
+            let row = self.win.shop.passes[at].clone();
+            ui.separator();
+            ui.label(format!("{}/{}", row.layer, row.label));
+            let mut mode = row.mode;
+            egui::ComboBox::from_id_salt(("pass-mode", at))
+                .width(110.0)
+                .selected_text(mode_word(mode).tr(lang))
+                .show_ui(ui, |ui| {
+                    for m in [LayerMode::Cut, LayerMode::Engrave, LayerMode::Skip] {
+                        ui.selectable_value(&mut mode, m, mode_word(m).tr(lang));
+                    }
+                });
+            if mode != row.mode {
+                self.win.set_pass_mode(at, mode);
+            }
+            for (field, msg) in [Msg::LayerPower, Msg::LayerSpeed, Msg::Passes]
+                .into_iter()
+                .enumerate()
+            {
+                ui.label(msg.tr(lang));
+                let mut text = row.fields[field].clone();
+                if ui
+                    .add(egui::TextEdit::singleline(&mut text).desired_width(90.0))
+                    .changed()
+                {
+                    self.win.set_pass_field(at, field, text);
+                }
+            }
+            if ui.button(Msg::PassRemove.tr(lang)).clicked() {
+                remove = Some(at);
+            }
+        }
+        if let Some(at) = remove {
+            self.win.remove_pass(at);
+        }
+        ui.separator();
+        if let Some(chosen) = self.win.rows.get(self.win.shop.new_layer) {
+            let shown = chosen.key.clone();
+            egui::ComboBox::from_id_salt("pass-layer")
+                .width(110.0)
+                .selected_text(shown)
+                .show_ui(ui, |ui| {
+                    let keys: Vec<String> = self.win.rows.iter().map(|r| r.key.clone()).collect();
+                    for (i, key) in keys.iter().enumerate() {
+                        ui.selectable_value(&mut self.win.shop.new_layer, i, key.as_str());
+                    }
+                });
+        }
+        ui.label(Msg::PassLabel.tr(lang));
+        ui.add(egui::TextEdit::singleline(&mut self.win.shop.new_label).desired_width(140.0));
+        if ui.button(Msg::PassAdd.tr(lang)).clicked() {
+            self.win.add_pass();
+        }
+    }
+
+    /// The saved answer of the controller and the meaning of an alarm. Nothing is asked of a machine.
+    fn controller_group(&mut self, ui: &mut egui::Ui) {
+        let lang = self.win.lang;
+        egui::CollapsingHeader::new(self.heading(ui, Msg::SectionController))
+            .default_open(true)
+            .show(ui, |ui| {
+                if ui.button(Msg::OpenController.tr(lang)).clicked() {
+                    self.ask(Job::OpenController);
+                }
+                match self.win.controller_findings() {
+                    None => {
+                        let text = Msg::ControllerUnknown.tr(lang);
+                        ui.label(egui::RichText::new(text).color(CAUTION));
+                    }
+                    Some(found) => {
+                        if let Some((name, _)) = &self.win.shop.controller {
+                            ui.label(name.as_str());
+                        }
+                        if !found.iter().any(|f| f.kind.serious()) {
+                            ui.label(egui::RichText::new(Msg::ControllerOk.tr(lang)).color(OK));
+                        }
+                        for f in &found {
+                            let colour = if f.kind.serious() { DANGER } else { CAUTION };
+                            ui.label(egui::RichText::new(f.text(lang)).color(colour));
+                        }
+                        if ui.button(Msg::ForgetController.tr(lang)).clicked() {
+                            self.win.forget_controller();
+                        }
+                    }
+                }
+                let mut warns = self.win.shop.s_max_warns;
+                if ui.checkbox(&mut warns, Msg::SMaxWarns.tr(lang)).changed() {
+                    self.win.set_s_max_warns(warns);
+                }
+                ui.label(
+                    egui::RichText::new(Msg::SMaxWarnsHelp.tr(lang))
+                        .small()
+                        .color(CAUTION),
+                );
+                ui.separator();
+                ui.label(Msg::AlarmBox.tr(lang));
+                ui.add(
+                    egui::TextEdit::singleline(&mut self.win.shop.alarm)
+                        .hint_text("ALARM:2, error:22")
+                        .desired_width(f32::INFINITY),
+                );
+                match self.win.alarm_answer() {
+                    Some(Ok(meaning)) => {
+                        ui.label(meaning);
+                    }
+                    Some(Err(why)) => {
+                        ui.label(egui::RichText::new(why).color(DANGER));
+                    }
+                    None => {}
+                }
+            });
+    }
+
+    /// The result of a test written into the library, and another library brought into it.
+    fn result_group(&mut self, ui: &mut egui::Ui) {
+        let lang = self.win.lang;
+        egui::CollapsingHeader::new(self.heading(ui, Msg::SectionTestResult))
+            .default_open(true)
+            .show(ui, |ui| {
+                let open = self.win.materials_path.is_some();
+                let r = &mut self.win.shop.result;
+                for (msg, text) in [
+                    (Msg::ResultName, &mut r.name),
+                    (Msg::LayerPower, &mut r.power),
+                    (Msg::LayerSpeed, &mut r.speed),
+                    (Msg::Passes, &mut r.passes),
+                    (Msg::ResultGap, &mut r.gap),
+                    (Msg::ResultStrips, &mut r.strips),
+                ] {
+                    ui.label(msg.tr(lang));
+                    ui.add(egui::TextEdit::singleline(text).desired_width(f32::INFINITY));
+                }
+                let write = egui::Button::new(Msg::ResultWrite.tr(lang));
+                if ui.add_enabled(open, write).clicked() {
+                    self.win.record_result();
+                }
+                let merge = egui::Button::new(Msg::MergeLibrary.tr(lang));
+                if ui.add_enabled(open, merge).clicked() {
+                    self.ask(Job::MergeMaterials);
+                }
+                if let Some((_, names)) = &self.win.shop.merge_pending {
+                    let asked = Msg::MergeAsk.tr(lang).replace("{0}", &names.join(", "));
+                    ui.label(egui::RichText::new(asked).color(CAUTION));
+                    if ui.button(Msg::MergeKeep.tr(lang)).clicked() {
+                        self.win.merge_resolve(false);
+                    } else if ui.button(Msg::MergeTake.tr(lang)).clicked() {
+                        self.win.merge_resolve(true);
+                    } else if ui.button(Msg::Cancel.tr(lang)).clicked() {
+                        self.win.merge_cancel();
+                    }
+                }
+            });
     }
 
     /// The cells of one row of the table of layers.
@@ -1848,6 +2021,8 @@ impl App {
         for f in [
             LayerField::Tabs,
             LayerField::TabWidth,
+            LayerField::PerfCut,
+            LayerField::PerfGap,
             LayerField::HatchAngle,
             LayerField::HatchSpacing,
         ] {
@@ -2097,7 +2272,11 @@ impl App {
                             }
                         }
                         Job::OpenGcode => self.fit_pending = true,
-                        Job::OpenMaterials | Job::NewMaterials | Job::ExportGcode => {}
+                        Job::OpenMaterials
+                        | Job::NewMaterials
+                        | Job::ExportGcode
+                        | Job::OpenController
+                        | Job::MergeMaterials => {}
                     }
                 } else {
                     // the window stays open so that another file or name can be tried
@@ -2743,6 +2922,75 @@ mod tests {
                 out.drop_without_applying_deltas();
             }
         }
+    }
+
+    /// The boxes of the controller, of the result of a test and of the extra passes are whole in a narrow panel, in every language.
+    #[test]
+    fn the_boxes_of_the_controller_the_results_and_the_passes_cut_nothing_in_any_language() {
+        let dir = std::env::temp_dir().join(format!("eh3d-laser-shop-fit-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let drawing = dir.join("outline.svg");
+        std::fs::write(&drawing, OUTLINE).unwrap();
+        let listing = dir.join("grbl.txt");
+        std::fs::write(&listing, "$30=255\n$31=2\n$32=0\n$13=1\n").unwrap();
+        for lang in Lang::ALL {
+            let mut app = App::build(lang, None, false);
+            assert!(app.win.open_dropped(&drawing));
+            assert!(app.win.load_controller(&listing), "{:?}", app.win.status);
+            app.win.shop.alarm = "error:22".to_string();
+            app.win.shop.new_label = "fill".to_string();
+            assert!(app.win.add_pass(), "{:?}", app.win.status);
+            app.win.shop.merge_pending = Some((dir.join("other.cfg"), vec!["birch".to_string()]));
+            for width in [260.0, 420.0] {
+                let screen = Rect::from_min_size(Pos2::ZERO, Vec2::new(width, 4000.0));
+                let ctx = egui::Context::default();
+                let input = || egui::RawInput {
+                    screen_rect: Some(screen),
+                    ..Default::default()
+                };
+                let mut draw = |ui: &mut egui::Ui| {
+                    app.controller_group(ui);
+                    app.result_group(ui);
+                    app.pass_group(ui);
+                };
+                for _ in 0..4 {
+                    ctx.run_ui(input(), &mut draw)
+                        .drop_without_applying_deltas();
+                }
+                let out = ctx.run_ui(input(), &mut draw);
+                let mut seen = Vec::new();
+                for c in &out.shapes {
+                    if let egui::Shape::Text(t) = &c.shape {
+                        let place = c.shape.visual_bounding_rect();
+                        let room = c.clip_rect.intersect(screen).expand(1.0);
+                        assert!(
+                            place.min.x >= room.min.x && place.max.x <= room.max.x,
+                            "{lang:?} {width}: {} is cut: {place:?} in {room:?}",
+                            t.galley.text()
+                        );
+                        seen.push(t.galley.text().to_string());
+                    }
+                }
+                for word in [
+                    Msg::OpenController.tr(lang),
+                    Msg::ForgetController.tr(lang),
+                    Msg::SMaxWarns.tr(lang),
+                    Msg::SMaxWarnsHelp.tr(lang),
+                    Msg::ResultWrite.tr(lang),
+                    Msg::MergeKeep.tr(lang),
+                    Msg::PassAdd.tr(lang),
+                    Msg::PassRemove.tr(lang),
+                ] {
+                    assert!(
+                        seen.iter().any(|s| s == word),
+                        "{lang:?} {width}: {word} is not drawn"
+                    );
+                }
+                out.drop_without_applying_deltas();
+            }
+        }
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     /// The top bar takes as many rows as it needs: its buttons and the box of the language are whole at every width and in every language.

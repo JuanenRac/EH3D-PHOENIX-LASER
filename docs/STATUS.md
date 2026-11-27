@@ -6,6 +6,8 @@ EH3D-PHOENIX-LASER works on a computer: the command line engraves pictures, cuts
 
 ## Recent work
 
+The window reads a saved answer of the controller to `$$`, refuses what it speaks against and explains alarms; the report says what the controller answered or that it was not read. A cut can be perforated, lines drawn twice can be cut once, the sub-layers have their place in the window, the result of a test is written into the library and libraries are merged. The ceiling of a material now holds over sub-layers and over the window.
+
 The check of a program now also fails what the controller would refuse and what changes the jobs that come after, no command writes a program that fails it, and a power is never written above the one asked.
 
 The check of a program reads a line as the controller does and fails what it cannot judge: spaces inside a number, constant power left on while the head stands, commands of the controller inside a program, parts that cannot be read, outputs of other controllers and a program too long to be read whole; a danger is no longer pushed out of the report by other notes. A saved listing of the settings of the controller can be compared with the machine (`controller`, `verify --controller`), alarms are explained (`explain`), two further test programs find the spacing of the lines and the width of the beam (`interval`, `kerf`), four more ways of dithering were added and a line that would be cut twice is told.
@@ -16,7 +18,7 @@ The menu File of the window opens, saves, imports, takes and extracts an `.eh3d`
 
 ## Capabilities
 
-The official state of each capability is in `REQUIREMENTS.md`. The register has 169 requirements: 147 implemented, 18 prototype, 4 planned and 0 validated. By progress: 147 done, 18 partial, 0 pending and 4 blocked. This page never states a state that `REQUIREMENTS.md` does not.
+The official state of each capability is in `REQUIREMENTS.md`. The register has 179 requirements: 153 implemented, 22 prototype, 4 planned and 0 validated. By progress: 153 done, 22 partial, 0 pending and 4 blocked. This page never states a state that `REQUIREMENTS.md` does not.
 
 ## Open questions
 
@@ -32,7 +34,7 @@ The official state of each capability is in `REQUIREMENTS.md`. The register has 
 
 ## Known technical debt and omitted tests
 
-* 1121 tests (`#[test]` lines of `src/` and `tests/`; nine of them keep this register true), all on a computer, with fixed seeds where chance is involved.
+* 1134 tests (`#[test]` lines of `src/` and `tests/`; nine of them keep this register true), all on a computer, with fixed seeds where chance is involved.
 * Nothing has been burnt: the checks read the program as text and the server is a stand-in.
 * The window has not been looked at on a screen by a person.
 * The QR code and the barcode are read back by readers of the program's own; no scanner has read a burnt symbol.

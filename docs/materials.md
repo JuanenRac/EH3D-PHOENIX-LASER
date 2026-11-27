@@ -35,4 +35,12 @@ A preset is a power, a speed and a number of passes for a material and, when it 
 
 The values come from a person or from the common database of materials (feature `common-machining`, on by default), exactly as the database gives them. The database's seed was never tried on a machine, so every preset made from it is marked as not tried, and every place that shows it carries the warning in the language of the window; a preset that a person changes is marked as not tried again, because the values that were tried are no longer the ones in use. A second figure that another source gives for the same case (an alternative of the database) is kept apart: it is listed on request and is never given to a layer unless the person asks for it.
 
-A value over a limit of the machine (`max_power_percent`, `max_speed_mm_min`, `max_passes`) is an error that names the preset and the layer, never lowered in silence, and a change of a preset that any linked layer cannot take is refused as a whole: the preset and every layer stay as they were. The links are kept in memory; the settings file and the window do not hold them yet.
+A value over a limit of the machine (`max_power_percent`, `max_speed_mm_min`, `max_passes`) is an error that names the preset and the layer, never lowered in silence, and a change of a preset that any linked layer cannot take is refused as a whole: the preset and every layer stay as they were. The links are kept in memory; the settings file and the window do not hold them yet. The ceiling of a material (`max_power`, `max_speed`) holds over every sub-layer and over what the window works out with the material applied.
+
+## Results of tests and other libraries
+
+`phoenix-laser record LIBRARY --material NAME` writes what a test showed: `--power`, `--speed` and `--passes` of the square chosen on a grid, and the width of the beam with `--kerf`, or with `--gap` and `--strips` from the strips of the `kerf` test. The material is added when it is not there. What is written is marked `verified = off`. A value that differs from one the material has is not written over without `--replace`; a power or a speed over the limit of the machine or the ceiling of the material is refused.
+
+`phoenix-laser merge LIBRARY OTHER` brings the materials of another library into one. What comes in is marked `verified = off`, since it was not tried here. When both have a material with other values nothing at all is written until `--keep-mine` or `--take-theirs` says which stays; a material taken from the other library keeps the lower `max_power` and `max_speed` of the two.
+
+In the window the same is in the library panel, under "Test result": a second press of the button replaces other values, and a merge with the same names asks with two buttons.

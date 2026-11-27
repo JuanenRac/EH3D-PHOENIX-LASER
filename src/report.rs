@@ -5,6 +5,7 @@
 //! the interlocks say, and the verdict. The words of the report are in the eight languages of the program (English, Spanish, German, French, Italian, Japanese, Chinese and Portuguese of
 //! Portugal); the reasons that the check gives (`problems` and `notes`) are written in English by the check itself and are shown as they are.
 
+use crate::grblset::Finding;
 use crate::guard::{AirAssist, Enclosure, Estop, Interlocks};
 use crate::lang::{fill, Lang};
 use crate::preview::{clock, Report};
@@ -30,6 +31,9 @@ pub enum Key {
     NoZones,
     Interlocks,
     InterlocksOff,
+    ControllerNotRead,
+    ControllerRead,
+    ControllerSerious,
     EstopReleased,
     EstopPressed,
     EnclosureClosed,
@@ -47,7 +51,7 @@ pub enum Key {
 
 impl Key {
     /// Every key, to check that none is missing a language.
-    pub const ALL: [Key; 30] = [
+    pub const ALL: [Key; 33] = [
         Key::Title,
         Key::Program,
         Key::Hash,
@@ -65,6 +69,9 @@ impl Key {
         Key::NoZones,
         Key::Interlocks,
         Key::InterlocksOff,
+        Key::ControllerNotRead,
+        Key::ControllerRead,
+        Key::ControllerSerious,
         Key::EstopReleased,
         Key::EstopPressed,
         Key::EnclosureClosed,
@@ -83,6 +90,36 @@ impl Key {
     /// The text in a language, in the order of [`Lang::ALL`]. `{0}`, `{1}`... are the places of the values.
     fn texts(self) -> [&'static str; 8] {
         match self {
+            Key::ControllerNotRead => [
+                "Controller: its answer to $$ was not read, so the laser mode and the value of full power are unknown: take it as unsafe",
+                "Controlador: no se ha leído su respuesta a $$, así que el modo láser y el valor de la potencia máxima se desconocen: considéralo inseguro",
+                "Steuerung: ihre Antwort auf $$ wurde nicht gelesen, Lasermodus und Wert der vollen Leistung sind also unbekannt: als unsicher behandeln",
+                "Contrôleur : sa réponse à $$ n'a pas été lue, le mode laser et la valeur de la pleine puissance sont donc inconnus : à tenir pour dangereux",
+                "Controllore: la sua risposta a $$ non è stata letta, quindi la modalità laser e il valore della piena potenza sono ignoti: considerarlo non sicuro",
+                "コントローラ：$$ への応答が読み込まれていないため、レーザーモードと最大出力の値は不明です：安全でないとみなしてください",
+                "控制器：未读取其对 $$ 的回复，激光模式和满功率值未知：请按不安全处理",
+                "Controlador: a sua resposta a $$ não foi lida, por isso o modo laser e o valor da potência máxima são desconhecidos: considere-o inseguro",
+            ],
+            Key::ControllerRead => [
+                "Controller: its saved answer to $$ was compared and nothing serious was found",
+                "Controlador: se ha comparado su respuesta guardada a $$ y no se ha encontrado nada grave",
+                "Steuerung: ihre gespeicherte Antwort auf $$ wurde verglichen, nichts Ernstes gefunden",
+                "Contrôleur : sa réponse enregistrée à $$ a été comparée, rien de grave trouvé",
+                "Controllore: la sua risposta salvata a $$ è stata confrontata, nulla di grave",
+                "コントローラ：保存された $$ の応答を照合し、重大な問題はありませんでした",
+                "控制器：已比对其保存的 $$ 回复，未发现严重问题",
+                "Controlador: a resposta guardada a $$ foi comparada e nada de grave foi encontrado",
+            ],
+            Key::ControllerSerious => [
+                "Controller: its saved answer to $$ does not agree, serious findings: {0}",
+                "Controlador: su respuesta guardada a $$ no concuerda, hallazgos graves: {0}",
+                "Steuerung: ihre gespeicherte Antwort auf $$ passt nicht, ernste Befunde: {0}",
+                "Contrôleur : sa réponse enregistrée à $$ ne concorde pas, constats graves : {0}",
+                "Controllore: la sua risposta salvata a $$ non concorda, riscontri gravi: {0}",
+                "コントローラ：保存された $$ の応答が一致しません。重大な指摘：{0}",
+                "控制器：其保存的 $$ 回复不一致，严重问题：{0}",
+                "Controlador: a resposta guardada a $$ não concorda, problemas graves: {0}",
+            ],
             Key::Title => [
                 "Report before the job",
                 "Informe previo del trabajo",
@@ -399,6 +436,8 @@ pub struct Input<'a> {
     pub zones: usize,
     /// The interlocks of the settings.
     pub interlocks: &'a Interlocks,
+    /// What the comparison with the saved answer of the controller to `$$` found; `None` when no answer was read, which the report says.
+    pub controller: Option<&'a [Finding]>,
 }
 
 /// A number as short text (no more than 3 decimals).
@@ -492,6 +531,21 @@ pub fn render(i: &Input, lang: Lang) -> String {
             t(Key::InterlocksOff).to_string()
         },
     );
+    match i.controller {
+        None => out.push(t(Key::ControllerNotRead).to_string()),
+        Some(found) => {
+            let serious = found.iter().filter(|f| f.kind.serious()).count();
+            out.push(if serious == 0 {
+                t(Key::ControllerRead).to_string()
+            } else {
+                fill(t(Key::ControllerSerious), &[&serious.to_string()])
+            });
+            out.extend(found.iter().map(|f| {
+                let mark = if f.kind.serious() { "!!" } else { "--" };
+                format!("  {mark} {}", f.text(lang))
+            }));
+        }
+    }
     if !v.problems.is_empty() {
         out.push(t(Key::Problems).to_string());
         out.extend(v.problems.iter().map(|p| format!("  - {p}")));
@@ -534,6 +588,7 @@ mod tests {
             material: Some(("birch", Some(false))),
             zones: 2,
             interlocks: i,
+            controller: None,
         }
     }
 
@@ -692,6 +747,7 @@ mod tests {
             material: None,
             zones: 0,
             interlocks: &none,
+            controller: None,
         };
         for lang in Lang::ALL {
             let text = render(&input, lang);

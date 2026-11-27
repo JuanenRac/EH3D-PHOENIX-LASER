@@ -76,6 +76,9 @@ For each pass of a `cut` layer the program writes `F` (the speed), moves the foc
   too short for them (the bridges would be more than half of it) is cut whole, with a note. Bridges are left on every pass.
 * **Several passes:** `passes` times, with the focus (the Z axis) at `focus_z_mm + focus_step * pass`; it goes back to `focus_z_mm` after the layer. A negative step goes down.
 
+* **Perforation:** with `perf_cut` and `perf_gap` a cut is made of dashes. On a closed contour they are spread evenly round it, so that no bridge is shorter than `perf_gap`, the one at the start included; on an open piece the first dash starts at its start. A closed contour too short for one dash and one bridge is cut whole, with a note. A layer takes at most 100000 dashes. Engraving ignores it, and a vector job sent to the server is cut whole (a note says so).
+* **Lines drawn twice:** with `merge_doubled = on` in `[order]` a segment that the same operation has cut already (the same two ends within a hundredth of a millimetre, either way round) is left out; segments that only overlap in part are not found. A layer with tabs or a perforation keeps both copies, because the second one would burn through the bridges of the first, and says so.
+
 ## Engraving
 
 A closed shape of an `engrave` layer is filled with lines `hatch_spacing` mm apart at `hatch_angle` degrees (the even-odd rule: a shape inside another is a hole), one way and then the other. The
@@ -153,6 +156,7 @@ comments replaced by `_`.
 | `order_max_items` | 20000 | with more contours than this they are cut inside ones first but not in the shortest order |
 | `containment_max_items` | 1500 | with more closed contours than this holes are not told from pieces |
 | `two_opt` | on | the improvement of the order |
+| `merge_doubled` | off | a piece of a cut that was already cut in the same operation is not cut again |
 | `two_opt_budget` | 20000000 | the most moves it tries |
 | `two_opt_max_items` | 2000 | it is not tried for more contours than this |
 
@@ -271,8 +275,9 @@ The check of a program (`phoenix-laser verify`). Work outside the bed is a failu
 |---|---|---|
 | `overscan_mm` | 0 | how far (mm) the head may go past the bed with the laser off, from 0 to 100; 0 allows none. A move that burns outside the bed fails whatever this says |
 | `arc_tolerance_mm` | 0.01 | how far (mm) the straight pieces that an arc (`G2`, `G3`) of the program is cut into may lie from the true arc, from 0.0005 to 1; a finer tolerance gives more pieces. The length, the time, the box and the check against the bed follow the curve |
+| `s_max_mismatch_warns` | off | a full power of the controller (`$30`, from a saved answer to `$$`) that is not `s_max` is only a warning. Leave it off: the power is then wrongly scaled and can burn more than asked, which can damage the material or set it on fire. A full power that the answer does not give stays an error, and the settings of an `.eh3d` project cannot turn this on |
 
-The keys of `[verify]` are `overscan_mm` and `arc_tolerance_mm`.
+The keys of `[verify]` are `overscan_mm`, `arc_tolerance_mm` and `s_max_mismatch_warns`.
 
 ### `[send]`: what is held back before something goes to the server
 
@@ -482,6 +487,8 @@ The keys of `[live]` are `power_min_percent`, `power_max_percent`, `speed_min_pe
 | `kerf_side` | none | `none`, `auto`, `inside`, `outside` | on which side of the line the beam goes |
 | `tabs` | 0 | 0 to 100 | bridges left on the outline of a piece |
 | `tab_width` | 1 | 0 to 100 | width of a bridge in mm |
+| `perf_cut` | 0 | 0, or 0.1 to 100 | perforation of a cut: the length burnt, in mm; 0 cuts the line whole |
+| `perf_gap` | 0 | 0, or 0.1 to 100 | perforation of a cut: the bridge left after each burnt length, in mm; given together with `perf_cut` |
 | `hatch_angle` | 0 | -360 to 360 | degrees |
 | `hatch_spacing` | 0.1 | 0.01 to 5 | mm between the lines |
 | `hatch_cross` | off | `on`, `off` | fill a second time with lines at right angles to the first ones (`hatch_angle` + 90 degrees), in every pass; the limit of lines holds over each set |

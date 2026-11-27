@@ -108,14 +108,14 @@
         {
           "name": "testcli.rs",
           "desc": {
-            "en": "the commands interval, kerf, controller and explain",
-            "es": "los comandos interval, kerf, controller y explain",
-            "de": "die Befehle interval, kerf, controller und explain",
-            "fr": "les commandes interval, kerf, controller et explain",
-            "it": "i comandi interval, kerf, controller ed explain",
-            "ja": "interval、kerf、controller、explain コマンド",
-            "zh": "interval、kerf、controller、explain 命令",
-            "pt": "os comandos interval, kerf, controller e explain"
+            "en": "interval, kerf, controller, explain, record, merge",
+            "es": "interval, kerf, controller, explain, record, merge",
+            "de": "interval, kerf, controller, explain, record, merge",
+            "fr": "interval, kerf, controller, explain, record, merge",
+            "it": "interval, kerf, controller, explain, record, merge",
+            "ja": "interval, kerf, controller, explain, record, merge",
+            "zh": "interval, kerf, controller, explain, record, merge",
+            "pt": "interval, kerf, controller, explain, record, merge"
           }
         },
         {
@@ -522,6 +522,19 @@
           }
         },
         {
+          "name": "libedit.rs",
+          "desc": {
+            "en": "test results and other libraries into a library",
+            "es": "resultados y otras bibliotecas a una biblioteca",
+            "de": "Testergebnisse und Bibliotheken in eine Bibliothek",
+            "fr": "résultats et autres bibliothèques dans une bibliothèque",
+            "it": "risultati e altre librerie in una libreria",
+            "ja": "テスト結果と別ライブラリをライブラリへ",
+            "zh": "将测试结果与其他库写入材料库",
+            "pt": "resultados e outras bibliotecas numa biblioteca"
+          }
+        },
+        {
           "name": "vartext.rs",
           "desc": {
             "en": "the variable text: a counter and the columns of a CSV file, one text per row",
@@ -766,6 +779,19 @@
             "ja": "画面なしのウィンドウの状態：画像または図面、設定、レイヤー、パス、書き出し",
             "zh": "无屏幕的窗口状态：图像或图纸、设置、图层、遍数和导出",
             "pt": "o estado da janela sem ecrã: imagem ou desenho, definições, camadas, passagens e exportação"
+          }
+        },
+        {
+          "name": "winshop.rs",
+          "desc": {
+            "en": "window: controller, extra passes, test results",
+            "es": "ventana: controlador, pasadas y resultados",
+            "de": "Fenster: Steuerung, Durchgänge, Ergebnisse",
+            "fr": "fenêtre : contrôleur, passes, résultats",
+            "it": "finestra: controllore, passate, risultati",
+            "ja": "ウィンドウ：コントローラ、追加パス、結果",
+            "zh": "窗口：控制器、附加工序、测试结果",
+            "pt": "janela: controlador, passagens, resultados"
           }
         }
       ]
@@ -1124,6 +1150,19 @@
             "ja": "レーザープラグインの代役に対する server コマンド",
             "zh": "针对激光插件替身的 server 命令",
             "pt": "o comando server contra um substituto do plugin laser"
+          }
+        },
+        {
+          "name": "shopfloor.rs",
+          "desc": {
+            "en": "tests of perforation, libraries and controller",
+            "es": "pruebas de perforado, bibliotecas y controlador",
+            "de": "Tests: Perforation, Bibliotheken, Steuerung",
+            "fr": "tests : perforation, bibliothèques, contrôleur",
+            "it": "test di perforazione, librerie e controllore",
+            "ja": "ミシン目、ライブラリ、コントローラのテスト",
+            "zh": "打孔、材料库与控制器的测试",
+            "pt": "testes de perfuração, bibliotecas e controlador"
           }
         },
         {

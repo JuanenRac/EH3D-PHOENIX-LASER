@@ -17,7 +17,7 @@
 
 ---
 
-**诚实性检查 - 今天实际能运行的内容：**一个 Rust 库和一个命令行程序（`phoenix-laser`），带有 1121 个在计算机上运行的测试：它通过抖动把图像变成点，并写出逐行烧蚀、带动态功率和过扫的激光 G 代码；读取 SVG、DXF 和 LBRN2 图纸，写出切割其轮廓的 G 代码（先切内部轮廓，考虑光束宽度，带连接桥，可多道），并用线条雕刻其图形，每个图层的设置放在文件中；烧蚀文字、二维码和条形码；按机器的限制检查程序；并写出功率对进给的测试网格。它有一个窗口（用 `--features gui` 构建），即套件的停靠面板框架，有十三个面板和四个工作区，可打开图片或图纸，显示激光路径，允许修改设置并导出 G 代码；窗口还没有人在屏幕上看过。LBRN2 工程读取器用某激光器厂商的十二个真实工程测量过（十二个都能读取，其中唯一的图片会被解码并逐点雕刻；它们的 y 轴方向从未用真实零件确认过）。它还可以把程序发送到 EH3D 服务器的激光插件，并跟踪、暂停或停止作业（`phoenix-laser server`），只针对服务器的替身测试过。**这里没有任何内容在真实激光器上运行过**：用这些工程或其他任何东西做出的东西都没有在机器上切割或烧蚀过。
+**诚实性检查 - 今天实际能运行的内容：**一个 Rust 库和一个命令行程序（`phoenix-laser`），带有 1134 个在计算机上运行的测试：它通过抖动把图像变成点，并写出逐行烧蚀、带动态功率和过扫的激光 G 代码；读取 SVG、DXF 和 LBRN2 图纸，写出切割其轮廓的 G 代码（先切内部轮廓，考虑光束宽度，带连接桥，可多道），并用线条雕刻其图形，每个图层的设置放在文件中；烧蚀文字、二维码和条形码；按机器的限制检查程序；并写出功率对进给的测试网格。它有一个窗口（用 `--features gui` 构建），即套件的停靠面板框架，有十三个面板和四个工作区，可打开图片或图纸，显示激光路径，允许修改设置并导出 G 代码；窗口还没有人在屏幕上看过。LBRN2 工程读取器用某激光器厂商的十二个真实工程测量过（十二个都能读取，其中唯一的图片会被解码并逐点雕刻；它们的 y 轴方向从未用真实零件确认过）。它还可以把程序发送到 EH3D 服务器的激光插件，并跟踪、暂停或停止作业（`phoenix-laser server`），只针对服务器的替身测试过。**这里没有任何内容在真实激光器上运行过**：用这些工程或其他任何东西做出的东西都没有在机器上切割或烧蚀过。
 
 ---
 
@@ -30,7 +30,7 @@
 |---|---|
 | 版本 | `0.1.8` |
 | 成熟度 | 可用 |
-| 测试 | 1121 |
+| 测试 | 1134 |
 | 技术栈 | Rust |
 | 真实硬件 | 未试过：这里的任何内容都没有在机器上运行过 |
 
@@ -46,7 +46,7 @@
 |---|---|---|
 | 核心 | 🟡 | 用抖动把图像变成点，并写出逐行烧蚀、带动态功率和超程的激光 G 代码；读取 SVG 和 DXF 图纸并按图层切割或雕刻（轮廓排序、光束宽度、连接桥、遍数、填充）；还有功率对进给的测试网格；已在计算机上用正常和损坏的输入测试，没有用一批真实文件检查。 |
 | 命令行 | 🟡 | `phoenix-laser`（`engrave`、`calibrate`、`info`、`cut`、`vector`、`layers`）运行与库相同的函数并打印结果；每个错误都以消息和非零退出码返回。 |
-| 测试 | 🟡 | 1121 个测试通过（`cargo test`），包含正常情况、边界情况和损坏的输入。 |
+| 测试 | 🟡 | 1134 个测试通过（`cargo test`），包含正常情况、边界情况和损坏的输入。 |
 | 安全 | 🟡 | 纯安全 Rust（`forbid(unsafe_code)`）：处理收到的文件时不会 panic，错误的值会返回带原因的错误；没有独立审查。 |
 | 窗口 | 🟠 | 已编写（egui，`--features gui`），作为套件的停靠面板框架：打开或拖入图像或 SVG、DXF、LBRN2 图纸，查看激光路径（切割为单一颜色，空移变淡），编辑图层表，文字、二维码、条形码、标记、取景框和焦点模式，校准网格，缩放与平移，估算时间，检查，报告，发送到服务器，导出；其逻辑已测试，但还没有人在屏幕上看过。 |
 | 真实硬件 | 🔴 | 未试过：这里的任何内容都没有在机器上运行过。 |
@@ -106,6 +106,7 @@
 * **控制器设置与报警**（`src/grblset.rs`、`src/grblcodes.rs`）：`phoenix-laser controller` 把保存的 `$$` 回答与机器（激光模式、满功率 `$30`、最小功率、英寸、行程）比较，`verify --controller` 将结果计入结论，`phoenix-laser explain` 用八种语言说明报警或错误的含义；不向任何机器发送内容，也未用真实控制器的列表或报警试验过。
 * **动态功率或恒定功率**（`src/lasermode.rs`）：在 `[machine]`、配置档或窗口中设置 `laser_mode = m4|m3`。默认为 `M4`；使用 `M3` 时程序会加入关闭激光的引入和引出段，检查会指出恒定功率烧蚀更重的位置，两种方式下控制器都必须处于激光模式（`$32=1`）。尚未在机器上试过。
 * **线间距与光束宽度测试**（`src/calibrate.rs`）：`phoenix-laser interval` 以不同间距填充一排方块，`phoenix-laser kerf` 把矩形切成条，由缝隙得出光束宽度；只有通过检查才写出文件，尚未实际烧制。
+* **在机器前与测试之后**（`src/winshop.rs`、`src/libedit.rs`）：窗口读取保存的 `$$` 回复，之后不会写出或发送与其相悖的内容；解释报警，并管理图层的附加工序；`report --controller` 说明控制器的回复或尚未读取；`record` 和 `merge` 扩充材料库，未经询问不覆盖任何内容；切割可以打孔（`perf_cut`、`perf_gap`），重复的线可以只切一次（`merge_doubled`）。开关 `s_max_mismatch_warns`（默认关闭）把不同的 `$30` 降为警告：功率换算错误可能导致过度烧蚀。均未在机器上试过。
 * **更多抖动方式与重复切割提示**（`src/dither.rs`、`src/cut.rs`）：Jarvis、Stucki、Sierra 和 Burkes（窗口中也可选），以及切割图层中线段画了两次时的警告。
 * **色调曲线**（`src/tone.rs`）：生成点阵之前，可以把灰度拉伸到整个范围（`--auto-level`）、调整对比度和亮度、用伽马曲线弯曲或反相，只用一张 256 项的表；使用默认值时图像完全不变。
 * **经过检查的 G 代码：**图纸的程序在交出之前逐行检查：快速移动时或没有速度时激光不会开启，`S` 不会超过满功率，不会移动到床面之外，结尾是 `M5`；文件绝不会写在它所来自的图纸或设置之上。
@@ -193,11 +194,13 @@ phoenix-laser layers DRAWING [--config FILE] [--project-layers] [--dpi N] [--acc
 phoenix-laser convert DRAWING OUT.svg|dxf [--config FILE] [--dpi N] [--tolerance MM]
 phoenix-laser trace IMAGE OUT.nc --width-mm W [--threshold 128] [--invert] [--simplify MM] [--min-area MM2] [--engrave] [the options of cut]
 phoenix-laser materials FILE
+phoenix-laser record LIBRARY --material NAME [--power P] [--speed MM/MIN] [--passes N] [--kerf MM | --gap MM [--strips 10]] [--replace] [--max-power P] [--max-speed MM/MIN] [--config FILE] [--profile NAME]
+phoenix-laser merge LIBRARY OTHER [--keep-mine|--take-theirs]
 phoenix-laser focus OUT.nc --z-step MM [--z-start MM] [--steps 9] [--length 10] [--spacing 2] [--feed 1000] [--power 30 | --powers 10,20,30] [--smax 1000] [--max-power P] [--max-speed MM/MIN] [--config FILE] [--profile NAME]
 phoenix-laser frame OUT.nc --size W,H | --gcode PROGRAM.nc [--origin X,Y] [--margin MM] [--feed 3000] [--laps 1] [--bed X,Y] [--smax N]
               [--pilot P --confirm-laser-on] [--max-power P] [--max-speed MM/MIN] [--config FILE] [--profile NAME]
 phoenix-laser verify PROGRAM.nc [--config FILE] [--profile NAME] [--smax N] [--max-power P] [--max-speed MM/MIN] [--bed X,Y] [--overscan-mm MM] [--accel 1000] [--expect-sha256 HASH] [--controller SETTINGS.txt] [--json]
-phoenix-laser report PROGRAM.nc [--config FILE] [--profile NAME] [--lang CODE] [--material NAME --materials FILE]
+phoenix-laser report PROGRAM.nc [--config FILE] [--profile NAME] [--lang CODE] [--material NAME --materials FILE] [--controller SETTINGS.txt]
 phoenix-laser controller SETTINGS.txt [--config FILE] [--profile NAME] [--smax N] [--bed X,Y] [--lang CODE]
 phoenix-laser explain ALARM:n|error:n [--lang CODE]
 phoenix-laser interval OUT.nc --spacings 0.08:0.2:0.02 --power P --feed MM/MIN [--square-mm 8] [--gap-mm 3] [--label-mm 2|--no-labels] [--smax N] [--max-power P] [--max-speed MM/MIN] [--bed X,Y] [--config FILE] [--profile NAME]
@@ -241,7 +244,7 @@ cargo run --release --features gui -- --shot screen.png examples/plate.svg   # a
 
 ## 🧪 测试
 
-测试套件有 1121 个测试（`cargo test`，CI 在 Windows 和 Linux 上运行）。它们检查正常情况、边界情况和损坏的输入：空文件、乱码和被截断的文件绝不会 panic。CI 还运行 `cargo fmt --check`、把警告当作错误的 `cargo clippy` 以及 `python -I tools/ci_validate.py`。
+测试套件有 1134 个测试（`cargo test`，CI 在 Windows 和 Linux 上运行）。它们检查正常情况、边界情况和损坏的输入：空文件、乱码和被截断的文件绝不会 panic。CI 还运行 `cargo fmt --check`、把警告当作错误的 `cargo clippy` 以及 `python -I tools/ci_validate.py`。
 
 ## 🏗️ 构建与发布
 
@@ -269,7 +272,7 @@ EH3D-PHOENIX-LASER/
 │   ├── cli_args.rs                              命令行参数：每个小工具中的同一个文件
 │   ├── grblset.rs                               保存的控制器设置与机器的比较
 │   ├── grblcodes.rs                             GRBL 报警和错误的含义（八种语言）
-│   ├── testcli.rs                               interval、kerf、controller、explain 命令
+│   ├── testcli.rs                               interval, kerf, controller, explain, record, merge
 │   ├── dither.rs                                从灰度到点：阈值、Bayer 和六种误差扩散
 │   ├── materials.rs                             材料库：功率、速度、遍数、点阵和色调
 │   ├── commonmat.rs                             通用材料数据库的起始点，按原样使用
@@ -301,6 +304,7 @@ EH3D-PHOENIX-LASER/
 │   ├── suitewin.rs                              窗口“文件”菜单对 .eh3d 工程的操作：打开、保存、导入、取用、提取
 │   ├── lbrn2.rs                                 LBRN2 工程文件读取：图层、图形、分组和曲线
 │   ├── lbrn2_pic.rs                             LBRN2 工程中的图片：base64、PNG、限制，按摆放方向转动
+│   ├── libedit.rs                               将测试结果与其他库写入材料库
 │   ├── vartext.rs                               可变文字：计数器和 CSV 的列，每行一个文字
 │   ├── sublayers.rs                             图层的额外加工道次：独立设置、上限与加工顺序
 │   ├── job.rs                                   作业起点、显示作业范围的边框以及以区间表示的时间
@@ -319,7 +323,8 @@ EH3D-PHOENIX-LASER/
 │   ├── panels.rs                                窗口的面板、工作区和菜单（纯数据）
 │   ├── lang.rs                                  窗口的文字（八种语言）
 │   ├── viewport.rs                              图像的缩放和平移（纯数值）
-│   └── window.rs                                无屏幕的窗口状态：图像或图纸、设置、图层、遍数和导出
+│   ├── window.rs                                无屏幕的窗口状态：图像或图纸、设置、图层、遍数和导出
+│   └── winshop.rs                               窗口：控制器、附加工序、测试结果
 ├── tests/
 │   ├── fuzz.rs                                  固定种子的测试：损坏的文件、截断和异常数字
 │   ├── dry_run.rs                               --dry-run 测试：计数相同且不写入任何内容
@@ -348,6 +353,7 @@ EH3D-PHOENIX-LASER/
 │   ├── samples.rs                               指定样本文件夹时对读取器的测试
 │   ├── guard.rs                                 对禁区、联锁、材料上限、报告和设置清单的测试
 │   ├── server_cli.rs                            针对激光插件替身的 server 命令
+│   ├── shopfloor.rs                             打孔、材料库与控制器的测试
 │   ├── window_cli.rs                            测试没有 gui 特性的构建仍然只是命令行
 │   ├── dockwindow.rs                            窗口模型测试：工程图层、报告、联锁、布局和材料
 │   ├── eh3dfile.rs                              工程分支测试：往返、其他分支、过期副本、损坏文件
@@ -398,7 +404,7 @@ EH3D-PHOENIX-LASER/
 * LBRN2 工程读取器只用某激光器厂商的十二个真实工程测量过：工程内的图片、其中没有出现的图形类型、y 轴方向和矩形的圆角都尚未得到确认。
 * 图纸只按安全子集读取（不含对其他文件的 `use`、文字、渐变和带选择器的样式；DXF 中不含填充、文字和标注）；比光束更窄的轮廓不会被切割，程序会说明；激光是使用 `M4`/`M3` 的 GRBL 控制器的激光。
 * 二维码和条形码由程序自带的读取器回读；还没有扫描器读过烧蚀出的符号，窗口也还没有人在屏幕上看过。
-* 子图层、预设的关联和实时调整在窗口中还没有位置；预设的关联保存在内存中而不在设置文件里，实时调整的任何内容都不会发送给机器。
+* 预设的链接和运行中调整在窗口中还没有位置；链接只保存在内存中而不写入设置文件，运行中调整不会向机器发送任何内容。窗口中的附加工序不会写入设置文件。
 
 **下一步**
 

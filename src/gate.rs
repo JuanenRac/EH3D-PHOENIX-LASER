@@ -4,6 +4,7 @@
 //! the bed, burns in a zone or breaks a limit is not written. The interlocks are not part of it: they say how the machine is at this moment, and they are looked at when a program is checked,
 //! reported or sent.
 
+use crate::grblset::Dump;
 use crate::guard::Zone;
 use crate::verify::{self, Guard, Limits};
 
@@ -27,11 +28,25 @@ pub fn limits(
 
 /// The check before `program` is written. The error says every reason.
 pub fn before_write(program: &str, limits: &Limits, zones: &[Zone]) -> Result<(), String> {
+    before_write_with(program, limits, zones, None)
+}
+
+/// The check before `program` is written, also against the saved answer of the controller to `$$` when one was read: a laser mode that is off and a full power that is not the one of the program
+/// refuse it, as `verify --controller` does. The switch beside the answer is `s_max_mismatch_warns` of the settings.
+pub fn before_write_with(
+    program: &str,
+    limits: &Limits,
+    zones: &[Zone],
+    controller: Option<(&Dump, bool)>,
+) -> Result<(), String> {
     let guard = Guard {
         zones,
         interlocks: None,
     };
-    let verdict = verify::verify_with(program.as_bytes(), limits, &guard)?;
+    let mut verdict = verify::verify_with(program.as_bytes(), limits, &guard)?;
+    if let Some((dump, s_max_mismatch_warns)) = controller {
+        verdict.add_controller(dump, limits, s_max_mismatch_warns);
+    }
     if verdict.passes() {
         Ok(())
     } else {

@@ -100,7 +100,12 @@ impl Verdict {
 
     /// Adds what a saved listing of the settings of the controller says against this program and its limits (see [`crate::grblset`]): the serious findings make it fail, the others are
     /// notes. The name `controller_settings` goes to the list of checks.
-    pub fn add_controller(&mut self, dump: &crate::grblset::Dump, l: &Limits) {
+    pub fn add_controller(
+        &mut self,
+        dump: &crate::grblset::Dump,
+        l: &Limits,
+        s_max_mismatch_warns: bool,
+    ) -> Vec<crate::grblset::Finding> {
         let found = crate::grblset::check(
             dump,
             &crate::grblset::Expect {
@@ -109,8 +114,9 @@ impl Verdict {
                 max_feed_mm_min: (self.max_feed > 0.0).then_some(self.max_feed),
             },
         );
+        let found = crate::grblset::judge(found, s_max_mismatch_warns);
         self.guards.push("controller_settings");
-        for f in found {
+        for f in &found {
             let text = f.text(crate::lang::Lang::En);
             if f.kind.serious() {
                 self.problems.push(text);
@@ -118,6 +124,7 @@ impl Verdict {
                 self.notes.push(text);
             }
         }
+        found
     }
 }
 
