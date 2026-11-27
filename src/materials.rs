@@ -38,7 +38,7 @@ pub struct Material {
     /// The size of a dot of a picture, in mm.
     pub dot: Option<f64>,
     pub overscan: Option<f64>,
-    /// The word of the dithering (`fs`, `atkinson`, `threshold` or `bayer`).
+    /// The word of the dithering (`fs`, `atkinson`, `threshold`, `bayer`, `jarvis`, `stucki`, `sierra` or `burkes`).
     pub dither: Option<String>,
     pub threshold: Option<u8>,
     pub gamma: Option<f64>,
